@@ -122,8 +122,13 @@ describe("recherche et dossiers", () => {
       expect(buy(r.state, "MC", 1, 500, T0).ok).toBe(true);
     }
   });
-  it("respecte les prérequis", () => {
-    expect(doResearch(newGame(T0), "etf", T0).ok).toBe(false);
+  it("respecte les prérequis multiples", () => {
+    let g = { ...newGame(T0), cash: 1_000_000 };
+    expect(doResearch(g, "etf", T0).ok).toBe(false);
+    for (const id of ["eu_stocks", "history_1y"]) { const r = doResearch(g, id, T0); if (r.ok) g = r.state; }
+    expect(doResearch(g, "etf", T0).ok).toBe(false); // manque l'analyse sectorielle
+    const r = doResearch(g, "sector_view", T0); if (r.ok) g = r.state;
+    expect(doResearch(g, "etf", T0).ok).toBe(true);
   });
   it("2 dossiers maximum au départ", () => {
     let g = newGame(T0);

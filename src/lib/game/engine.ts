@@ -346,6 +346,7 @@ function removePlot(plots: Plot[], id: string): Plot[] {
 export function normalize(input: GameState): GameState {
   let state = input;
   if (!Array.isArray(state.research)) state = { ...state, research: [...STARTING_RESEARCH] };
+  else if (STARTING_RESEARCH.some((r) => !state.research.includes(r))) state = { ...state, research: [...new Set([...STARTING_RESEARCH, ...state.research])] };
   if (!Array.isArray(state.folders)) state = { ...state, folders: [] };
   const plots = Array.isArray(state.plots) ? state.plots : [];
   const counts: Record<string, number> = {};
@@ -362,7 +363,8 @@ export function doResearch(state: GameState, id: string, at: number): ActionResu
   const n = RESEARCH_BY_ID[id];
   if (!n) return { ok: false, error: "Recherche inconnue." };
   if (hasResearch(state, id)) return { ok: false, error: "Déjà acquis." };
-  if (n.requires && !hasResearch(state, n.requires)) return { ok: false, error: `Nécessite d'abord « ${RESEARCH_BY_ID[n.requires].name} ».` };
+  const missing = n.requires.filter((r) => !hasResearch(state, r));
+  if (missing.length) return { ok: false, error: `Nécessite d'abord : ${missing.map((r) => `« ${RESEARCH_BY_ID[r].name} »`).join(" et ")}.` };
   if (n.cost > state.cash) return { ok: false, error: "Liquidités insuffisantes." };
   return {
     ok: true,
