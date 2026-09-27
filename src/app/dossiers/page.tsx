@@ -10,7 +10,7 @@ import { Button, Card, Delta, Empty, PageHeader } from "@/components/ui";
 import NewsList from "@/components/NewsList";
 import CompanyLogo from "@/components/CompanyLogo";
 import AssetPicker from "@/components/AssetPicker";
-import { eur2, num } from "@/lib/format";
+import { eur2, num, qtyFmt } from "@/lib/format";
 
 export default function FoldersPage() {
   const { game, quotes } = useDerived();
@@ -124,7 +124,7 @@ function FolderDetail({ id }: { id: string }) {
                     <td className="text-muted hidden sm:table-cell">{a?.sector}</td>
                     <td className="text-right tabular whitespace-nowrap">{q ? eur2(q.price) : "—"}</td>
                     <td className="text-right">{q ? <Delta value={q.change} /> : "—"}</td>
-                    <td className="text-right tabular">{h ? num(h.qty) : "—"}</td>
+                    <td className="text-right tabular">{h ? qtyFmt(h.qty) : "—"}</td>
                     <td className="text-right pl-2">
                       <button aria-label={`Retirer ${a?.name ?? s}`} onClick={() => updateFolder(f.id, { symbols: f.symbols.filter((x) => x !== s) })} className="p-1 rounded-[6px] text-muted hover:text-danger hover:bg-danger-soft"><X size={14} /></button>
                     </td>

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, Plus, Search, X } from "lucide-react";
-import { ASSETS } from "@/lib/market/universe";
+import { ASSETS, KIND_LABEL, regionOf } from "@/lib/market/universe";
 import { useGame } from "@/store/game";
 import CompanyLogo from "@/components/CompanyLogo";
 import { Delta } from "@/components/ui";
@@ -20,7 +20,7 @@ export default function AssetPicker({ selected, onAdd, onClose, title = "Ajouter
 
   const results = useMemo(() => {
     const n = norm(q.trim());
-    return ASSETS.filter((a) => !n || norm(`${a.symbol} ${a.name} ${a.sector}`).includes(n));
+    return ASSETS.filter((a) => !n || norm(`${a.symbol} ${a.name} ${a.sector} ${KIND_LABEL[a.kind]} ${a.kind === "stock" ? regionOf(a) : ""}`).includes(n));
   }, [q]);
 
   useEffect(() => {
@@ -30,7 +30,7 @@ export default function AssetPicker({ selected, onAdd, onClose, title = "Ajouter
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const sectors = [...new Set(ASSETS.map((a) => a.sector))];
+  const sectors = ["Europe", "Asie", "ETF", "Matières premières", "Crypto", "Semi-conducteurs", "Luxe", "Jeux vidéo", "Banque", "Santé", "Énergie", "Automobile"];
 
   // Rendu directement dans <body> : la fenêtre couvre toute la page
   return createPortal(

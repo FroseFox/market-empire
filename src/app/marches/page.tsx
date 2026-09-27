@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { LineChart, Lock, Search } from "lucide-react";
 import { useDerived, useGame } from "@/store/game";
-import { ASSETS, ASSET_BY_SYMBOL } from "@/lib/market/universe";
+import { ASSETS, ASSET_BY_SYMBOL, KIND_LABEL, flag, fractional, regionOf, type AssetKind, type Region } from "@/lib/market/universe";
 import { simulatedHistory, type Range } from "@/lib/market/simulate";
 import { hasResearch, tradeFee } from "@/lib/game/engine";
 import { RESEARCH_BY_ID } from "@/lib/game/research";
@@ -15,9 +15,11 @@ import NewsList from "@/components/NewsList";
 import { fetchHistory } from "@/lib/market/client";
 import { Button, Card, Delta, PageHeader, Segmented } from "@/components/ui";
 import { Sparkline, WealthChart } from "@/components/charts";
-import { eur, eur2, num, pctPlain, signedEur } from "@/lib/format";
+import { eur, eur2, pctPlain, qtyFmt, signedEur } from "@/lib/format";
 
-const FLAG: Record<string, string> = { US: "🇺🇸", FR: "🇫🇷", NL: "🇳🇱", DE: "🇩🇪", TW: "🇹🇼" };
+const KINDS: AssetKind[] = ["stock", "etf", "commodity", "crypto"];
+const REGIONS: ("Toutes" | Region)[] = ["Toutes", "États-Unis", "Europe", "Asie", "Autres"];
+const norm = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 
 function fmtTime(range: Range) {
   return (v: number | string) => {
@@ -32,7 +34,8 @@ export default function MarketsPage() {
   const { game, quotes } = useDerived();
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState("NVDA");
-  const [kind, setKind] = useState<"Actions" | "ETF">("Actions");
+  const [kind, setKind] = useState<AssetKind>("stock");
+  const [region, setRegion] = useState<"Toutes" | Region>("Toutes");
 
   // Mini-courbes 1J (même moteur que le serveur, recalées sur le dernier prix)
   const lastQuoteAt = useGame((s) => s.lastQuoteAt);
@@ -47,7 +50,12 @@ export default function MarketsPage() {
     }));
   }, [lastQuoteAt, quotes, showSparks]);
 
-  const list = ASSETS.filter((a) => (kind === "ETF" ? a.kind === "etf" : a.kind === "stock") && (a.symbol + a.name + a.sector).toLowerCase().includes(query.toLowerCase()));
+  // Recherche dans tout l'univers ; sans recherche, filtre par catégorie et par région
+  const n = norm(query.trim());
+  const list = ASSETS.filter((a) => n
+    ? norm(`${a.symbol} ${a.name} ${a.sector} ${regionOf(a)}`).includes(n)
+    : a.kind === kind && (kind !== "stock" || region === "Toutes" || regionOf(a) === region));
+  const count = (k: AssetKind) => ASSETS.filter((a) => a.kind === k).length;
 
   // Analyse sectorielle (recherche) : variation moyenne sur 24 h par secteur
   const sectors = hasResearch(game, "sector_view")
@@ -59,18 +67,39 @@ export default function MarketsPage() {
 
   return (
     <>
-      <PageHeader icon={LineChart} title="Marchés" subtitle="Actions réelles · prix exécutés côté serveur au moment de l'ordre" />
+      <PageHeader icon={LineChart} title="Marchés" subtitle={`${ASSETS.length} actifs : actions, ETF, matières premières et cryptos · cours en euros`} />
       <div className="grid gap-4 grid-cols-1 xl:grid-cols-12">
         <Card className="xl:col-span-7 !p-0 overflow-hidden">
           <div className="p-4 border-b border-line flex items-center gap-3">
             <div className="flex items-center gap-2 flex-1 rounded-[10px] bg-slate-50 px-3 py-2">
               <Search size={16} className="text-muted" />
-              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Rechercher une entreprise, un secteur…"
+              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Rechercher : entreprise, secteur, pays, crypto…"
                 className="bg-transparent outline-none text-[13px] flex-1" />
             </div>
-            <Segmented options={["Actions", "ETF"] as ("Actions" | "ETF")[]} value={kind} onChange={setKind} />
           </div>
-          {sectors && kind === "Actions" && (
+          {!n && (
+            <div className="px-4 pt-3 pb-2 border-b border-line space-y-2">
+              <div role="tablist" aria-label="Catégorie" className="flex gap-1.5 overflow-x-auto">
+                {KINDS.map((k) => (
+                  <button key={k} role="tab" aria-selected={kind === k} onClick={() => setKind(k)}
+                    className={`shrink-0 rounded-[10px] px-3 py-1.5 text-[12px] font-semibold transition-colors ${kind === k ? "bg-primary text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>
+                    {KIND_LABEL[k]} <span className={kind === k ? "text-white/70" : "text-muted"}>{count(k)}</span>
+                  </button>
+                ))}
+              </div>
+              {kind === "stock" && (
+                <div className="flex gap-1 overflow-x-auto">
+                  {REGIONS.map((r) => (
+                    <button key={r} onClick={() => setRegion(r)}
+                      className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium ${region === r ? "bg-primary-soft text-primary" : "text-muted hover:bg-slate-100"}`}>{r}</button>
+                  ))}
+                </div>
+              )}
+              {kind !== "stock" && <UnlockHint kind={kind} />}
+            </div>
+          )}
+          {n && <div className="px-4 py-2 border-b border-line text-[12px] text-muted">{list.length} résultat{list.length > 1 ? "s" : ""} dans tous les marchés</div>}
+          {sectors && kind === "stock" && !n && (
             <div className="px-4 py-3 border-b border-line flex gap-2 overflow-x-auto">
               {sectors.map((x) => (
                 <button key={x.sec} onClick={() => setQuery(x.sec)} className="shrink-0 rounded-[10px] bg-slate-50 px-3 py-1.5 text-left hover:bg-slate-100">
@@ -107,7 +136,7 @@ export default function MarketsPage() {
                               {held && <span className="text-[10px] rounded bg-primary-soft text-primary px-1.5 py-0.5 font-semibold">Détenu</span>}
                               {!hasResearch(game, a.research) && <span className="inline-flex items-center gap-0.5 text-[10px] rounded bg-slate-100 text-muted px-1.5 py-0.5 font-semibold"><Lock size={9} />Recherche</span>}
                             </div>
-                            <div className="text-[11px] text-muted">{a.symbol} · {FLAG[a.country]}</div>
+                            <div className="text-[11px] text-muted">{a.symbol} · {flag(a.country)}{a.kind === "crypto" ? " · 24 h/24" : ""}</div>
                           </div>
                         </div>
                       </td>
@@ -148,11 +177,14 @@ function AssetPanel({ symbol, onSelect }: { symbol: string; onSelect: (s: string
   }, [symbol, range]);
 
   const held = game.holdings[symbol];
-  const n = Math.max(0, Math.floor(Number(qty.replace(",", ".")) || 0));
+  const frac = fractional(symbol);
+  const typed = Number(qty.replace(",", ".")) || 0;
+  const n = Math.max(0, frac ? Math.floor(typed * 10_000) / 10_000 : Math.floor(typed));
   const price = q?.price ?? 0;
   const gross = n * price;
   const fee = n > 0 ? tradeFee(gross) : 0;
-  const maxBuy = price > 0 ? Math.floor((game.cash - 1) / (price * 1.001)) : 0;
+  const maxRaw = price > 0 ? (game.cash - 1) / (price * 1.001) : 0;
+  const maxBuy = frac ? Math.floor(maxRaw * 10_000) / 10_000 : Math.floor(maxRaw);
   const first = hist?.points[0]?.p;
   const rangeChange = first && price ? price / first - 1 : q?.change ?? 0;
   const positionValue = held ? held.qty * price : 0;
@@ -171,7 +203,7 @@ function AssetPanel({ symbol, onSelect }: { symbol: string; onSelect: (s: string
         <CompanyLogo symbol={symbol} size={44} />
         <div className="flex-1">
           <div className="text-[18px] font-semibold leading-tight">{asset.name}</div>
-          <div className="text-[12px] text-muted">{symbol} · {asset.sector} · {FLAG[asset.country]}</div>
+          <div className="text-[12px] text-muted">{symbol} · {asset.sector} · {flag(asset.country)}</div>
         </div>
         <AddToFolder symbols={[symbol]} label="Dossier" />
       </div>
@@ -192,7 +224,7 @@ function AssetPanel({ symbol, onSelect }: { symbol: string; onSelect: (s: string
 
       {held && (
         <div className="grid grid-cols-3 gap-2 mt-4 text-[12px]">
-          <Info label="Détenu" value={`${num(held.qty)} actions`} />
+          <Info label="Détenu" value={frac ? qtyFmt(held.qty) : `${qtyFmt(held.qty)} ${asset.kind === "stock" ? "actions" : "parts"}`} />
           <Info label="Prix de revient" value={eur2(held.avgCost)} />
           <Info label="Plus-value" value={signedEur(positionValue - held.qty * held.avgCost)} tone={positionValue >= held.qty * held.avgCost ? "text-success" : "text-danger"} />
         </div>
@@ -202,10 +234,10 @@ function AssetPanel({ symbol, onSelect }: { symbol: string; onSelect: (s: string
       <div className="mt-4 rounded-[12px] border border-line p-4">
         <div className="flex items-center gap-2 mb-3">
           <label htmlFor="qty" className="text-[13px] font-medium">Quantité</label>
-          <input id="qty" inputMode="numeric" value={qty} onChange={(e) => setQty(e.target.value)}
+          <input id="qty" inputMode={frac ? "decimal" : "numeric"} value={qty} onChange={(e) => setQty(e.target.value)}
             className="w-24 rounded-[8px] border border-line px-2.5 py-1.5 text-[14px] tabular outline-none focus:border-primary" />
           <div className="flex gap-1 ml-auto">
-            {[1, 10].map((k) => <button key={k} onClick={() => setQty(String(k))} className="text-[11px] px-2 py-1 rounded-[6px] bg-slate-100 text-muted hover:text-ink">{k}</button>)}
+            {(frac ? [0.01, 0.1, 1] : [1, 10]).map((k) => <button key={k} onClick={() => setQty(String(k))} className="text-[11px] px-2 py-1 rounded-[6px] bg-slate-100 text-muted hover:text-ink">{qtyFmt(k)}</button>)}
             <button onClick={() => setQty(String(Math.max(0, maxBuy)))} className="text-[11px] px-2 py-1 rounded-[6px] bg-slate-100 text-muted hover:text-ink">Max</button>
           </div>
         </div>
@@ -243,6 +275,20 @@ function AssetPanel({ symbol, onSelect }: { symbol: string; onSelect: (s: string
         </div>
       )}
     </Card>
+  );
+}
+
+function UnlockHint({ kind }: { kind: AssetKind }) {
+  const game = useGame((s) => s.game);
+  const need = kind === "etf" ? "etf" : kind === "commodity" ? "commodities" : "crypto";
+  const text = kind === "crypto" ? "Cotées jour et nuit, achetables par fractions (0,01 BTC…)."
+    : kind === "commodity" ? "Suivies via des ETF cotés à New York, convertis en euros."
+    : "Un indice, un pays ou un secteur entier en un seul achat.";
+  return (
+    <p className="text-[11px] text-muted flex items-center gap-1.5 pb-1">
+      {!hasResearch(game, need) && <><Lock size={11} /><span>Achat après « {RESEARCH_BY_ID[need]?.name} ».</span></>}
+      <span>{text}</span>
+    </p>
   );
 }
 

@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import {
-  Check, DollarSign, Euro, FlaskConical, Folder, FolderPlus, Filter, History, Landmark, LayoutGrid, Lock, Network, Newspaper, PieChart, Workflow,
+  Bitcoin, Check, DollarSign, Earth, Euro, Gem, FlaskConical, Folder, FolderPlus, Filter, History, Landmark, LayoutGrid, Lock, Network, Newspaper, PieChart, Workflow,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useGame } from "@/store/game";
@@ -10,14 +10,14 @@ import { Button, Card, PageHeader } from "@/components/ui";
 import { compactEur, eur } from "@/lib/format";
 
 const ICONS: Record<string, LucideIcon> = {
-  hq: Landmark, us_stocks: DollarSign, eu_stocks: Euro, etf: PieChart, history_1y: History, sector_view: LayoutGrid,
+  hq: Landmark, us_stocks: DollarSign, eu_stocks: Euro, world_stocks: Earth, crypto: Bitcoin, commodities: Gem, etf: PieChart, history_1y: History, sector_view: LayoutGrid,
   relations_1: Network, supply_chain: Workflow, news_1: Newspaper, news_filters: Filter, folders_1: Folder, folders_plus: FolderPlus,
 };
 
 // Géométrie de l'arbre (en px, dans un cadre qui défile à l'horizontale sur mobile)
 const COL_W = 185, ROW_H = 150, PAD_X = 90, PAD_Y = 56, NODE = 60, LABEL_H = 50;
-const WIDTH = PAD_X * 2 + COL_W * 4;
-const HEIGHT = PAD_Y + ROW_H * 3 + 110;
+const WIDTH = PAD_X * 2 + COL_W * Math.max(...RESEARCH.map((n) => n.col));
+const HEIGHT = PAD_Y + ROW_H * Math.max(...RESEARCH.map((n) => n.row)) + 110;
 const pos = (n: ResearchNode) => ({ x: PAD_X + n.col * COL_W, y: PAD_Y + n.row * ROW_H });
 
 type Status = "done" | "open" | "locked";

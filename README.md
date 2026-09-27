@@ -43,14 +43,19 @@ Adresse : `https://<compte>.github.io/market-empire/`
 
 ## Cours de bourse : Supabase
 
+Environ 200 actifs : actions américaines, européennes, asiatiques et d'autres pays, ETF, matières premières et cryptomonnaies.
+La liste est dans `src/lib/market/universe.ts` ; `npx tsx scripts/assets-sql.mts > supabase/assets.sql` génère le SQL qui synchronise la table `assets`.
+
 Le site lit les cours dans la base Supabase (lecture seule). Une fonction Supabase
-(`supabase/functions/refresh-market`) les met à jour **toutes les heures** (tâche `pg_cron`) :
+(`supabase/functions/refresh-market`) est appelée **toutes les 10 minutes** (tâche `pg_cron`) et met à jour les actifs par lots :
 
 | Table | Contenu | Fréquence |
 |---|---|---|
-| `asset_prices` | Dernier cours (Finnhub), converti en euros (taux BCE) | 1 h |
+| `asset_prices` | Dernier cours, en euros (Finnhub + taux BCE ; cryptos : CoinGecko) | ≈ 1 h par action, 10 min pour les cryptos |
 | `market_series` (`1h`) | Points horaires → courbes 1 jour et 1 semaine | 1 h |
-| `market_series` (`1d`) | Clôtures quotidiennes (Twelve Data) → courbes 1 mois et 1 an | 1 fois par jour |
+| `market_series` (`1d`) | Clôtures quotidiennes (Twelve Data ; cryptos : CoinGecko) → courbes 1 mois et 1 an | 1 fois par jour |
+
+Les sociétés étrangères sont cotées via leur cotation américaine (action ou ADR), ramenée au prix d'une action sur leur place d'origine.
 
 Clés à ajouter dans Supabase → **Edge Functions → Secrets** : `FINNHUB_API_KEY`, `TWELVE_DATA_API_KEY`.
 Sans clé, le jeu utilise des cours simulés.

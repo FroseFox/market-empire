@@ -13,6 +13,9 @@ export const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 export const SUPABASE_URL = "https://elpkixotuarcymalehjs.supabase.co";
 const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVscGtpeG90dWFyY3ltYWxlaGpzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA1MjEzMDAsImV4cCI6MjEwNjA5NzMwMH0.tP0WZYp1bPW2-hEEOdzQVmTiysyh3cKs_hBq0MJWu8M";
 
+/** Arrondi d'un prix : au centime, ou 4 décimales sous 10 € (petites cryptos). */
+export const roundPrice = (v: number) => (Math.abs(v) < 10 ? Math.round(v * 10_000) / 10_000 : Math.round(v * 100) / 100);
+
 export interface ClientQuote { symbol: string; price: number; change: number; source: string }
 type Point = { t: number; p: number };
 
@@ -47,7 +50,7 @@ export async function fetchQuotes(symbols?: string[]): Promise<{ mode: string; u
     "asset_prices?select=symbol,price,change_1d,updated_at");
   const real = new Map((rows ?? [])
     .filter((r) => Number(r.price) > 0)
-    .map((r) => [r.symbol, { symbol: r.symbol, price: Math.round(Number(r.price) * 100) / 100, change: Number(r.change_1d ?? 0), source: "réel" }]));
+    .map((r) => [r.symbol, { symbol: r.symbol, price: roundPrice(Number(r.price)), change: Number(r.change_1d ?? 0), source: "réel" }]));
   const updatedAt = Math.max(0, ...(rows ?? []).map((r) => Date.parse(r.updated_at) || 0));
   return {
     mode: real.size ? "réel" : "simulé",
@@ -61,13 +64,13 @@ async function simulatedFor(symbol: string, range: Range) {
   const pts = simulatedHistory(symbol, range, Date.now());
   const q = (await fetchQuotes([symbol])).quotes[0];
   const k = q && pts.length ? q.price / pts[pts.length - 1].p : 1;
-  return pts.map((p) => ({ t: p.t, p: Math.round(p.p * k * 100) / 100 }));
+  return pts.map((p) => ({ t: p.t, p: roundPrice(p.p * k) }));
 }
 
 async function series(symbol: string, interval: "1h" | "1d", filter: string, ttl: number): Promise<Point[]> {
   const rows = await rest<{ t: string; price: string | number }[]>(
     `market_series?select=t,price&symbol=eq.${encodeURIComponent(symbol)}&interval=eq.${interval}${filter}`, ttl);
-  return (rows ?? []).map((r) => ({ t: Date.parse(r.t), p: Math.round(Number(r.price) * 100) / 100 })).filter((p) => p.p > 0).sort((a, b) => a.t - b.t);
+  return (rows ?? []).map((r) => ({ t: Date.parse(r.t), p: roundPrice(Number(r.price)) })).filter((p) => p.p > 0).sort((a, b) => a.t - b.t);
 }
 
 export async function fetchHistory(symbol: string, range: Range): Promise<{ points: Point[]; source: "réel" | "simulé" }> {

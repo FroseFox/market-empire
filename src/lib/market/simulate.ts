@@ -46,7 +46,7 @@ export function simulatedPrice(symbol: string, t: number): number {
   OCTAVES.forEach(([period, amp], k) => { n += valueNoise((t - EPOCH) / period, seed + k * 7919) * amp; });
   const years = (t - EPOCH) / (365 * DAY);
   const p = asset.basePrice * Math.exp(asset.drift * years + n * asset.volatility * 1.6);
-  return Math.round(p * 100) / 100;
+  return p < 10 ? Math.round(p * 10_000) / 10_000 : Math.round(p * 100) / 100;
 }
 
 export type Range = "1J" | "1S" | "1M" | "1A";
