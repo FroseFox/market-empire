@@ -1,12 +1,11 @@
 "use client";
 // Logo d'une entreprise.
-// - Site hébergé : le logo officiel est chargé depuis Logo.dev (clé NEXT_PUBLIC_LOGO_DEV_KEY).
+// - Site hébergé : le logo est servi par /api/logo, qui l'obtient chez Logo.dev
+//   avec une clé privée (LOGO_DEV_KEY, jamais envoyée au navigateur).
 // - Sans clé, ou si l'image ne charge pas : un badge aux couleurs du secteur.
 import { useState } from "react";
 import { ASSET_BY_SYMBOL } from "@/lib/market/universe";
 import { STATIC_MODE } from "@/lib/market/client";
-
-const LOGO_KEY = process.env.NEXT_PUBLIC_LOGO_DEV_KEY ?? "";
 
 const SECTOR_TINT: Record<string, [string, string]> = {
   "Technologie": ["#1E3A8A", "#2563EB"],
@@ -28,13 +27,13 @@ const SECTOR_TINT: Record<string, [string, string]> = {
 export default function CompanyLogo({ symbol, size = 32 }: { symbol: string; size?: number }) {
   const asset = ASSET_BY_SYMBOL[symbol];
   const [failed, setFailed] = useState(false);
-  const useImage = !!LOGO_KEY && !STATIC_MODE && !failed && asset?.kind === "stock";
+  const useImage = !STATIC_MODE && !failed && asset?.kind === "stock";
   const radius = Math.round(size * 0.26);
 
   if (useImage) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
-      <img src={`https://img.logo.dev/ticker/${encodeURIComponent(asset.providerSymbol)}?token=${LOGO_KEY}&size=${size * 2}&format=png&retina=true`}
+      <img src={`/api/logo?s=${encodeURIComponent(symbol)}`}
         alt={`Logo ${asset.name}`} width={size} height={size} loading="lazy" onError={() => setFailed(true)}
         className="shrink-0 bg-white object-contain border border-line" style={{ borderRadius: radius, width: size, height: size }} />
     );
