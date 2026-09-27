@@ -10,10 +10,16 @@ export interface Asset {
   basePrice: number;
   volatility: number;   // 1 = volatilité moyenne
   drift: number;        // tendance annuelle du mode simulé
+  kind: "stock" | "etf";
+  /** Recherche nécessaire pour acheter cet actif. */
+  research: string;
 }
 
 const a = (symbol: string, name: string, sector: string, country: Asset["country"], currency: Asset["currency"], basePrice: number, volatility: number, drift = 0.06, providerSymbol = symbol): Asset =>
-  ({ symbol, providerSymbol, name, sector, country, currency, basePrice, volatility, drift });
+  ({ symbol, providerSymbol, name, sector, country, currency, basePrice, volatility, drift, kind: "stock", research: currency === "EUR" ? "eu_stocks" : "us_stocks" });
+
+const etf = (symbol: string, name: string, country: Asset["country"], currency: Asset["currency"], basePrice: number, providerSymbol = symbol): Asset =>
+  ({ symbol, providerSymbol, name, sector: "Indice", country, currency, basePrice, volatility: 0.6, drift: 0.07, kind: "etf", research: "etf" });
 
 export const ASSETS: Asset[] = [
   a("AAPL", "Apple", "Technologie", "US", "USD", 205, 1.0),
@@ -40,6 +46,9 @@ export const ASSETS: Asset[] = [
   a("SAN", "Sanofi", "Santé", "FR", "EUR", 90, 0.7, 0.03, "SAN.PA"),
   a("OR", "L'Oréal", "Consommation", "FR", "EUR", 370, 0.8, 0.04, "OR.PA"),
   a("SAP", "SAP", "Logiciels", "DE", "EUR", 250, 1.0, 0.08, "SAP.DE"),
+  etf("SPY", "ETF S&P 500", "US", "USD", 590),
+  etf("QQQ", "ETF Nasdaq 100", "US", "USD", 520),
+  etf("CAC", "ETF CAC 40", "FR", "EUR", 78, "CAC.PA"),
 ];
 
 export const ASSET_BY_SYMBOL: Record<string, Asset> = Object.fromEntries(ASSETS.map((x) => [x.symbol, x]));

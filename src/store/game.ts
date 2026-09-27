@@ -26,6 +26,10 @@ interface Store {
   sell: (symbol: string, qty: number) => Promise<boolean>;
   build: (id: string) => boolean;
   demolish: (id: string) => boolean;
+  research: (id: string) => boolean;
+  createFolder: (name: string, symbols?: string[]) => string | null;
+  updateFolder: (id: string, patch: Partial<Omit<E.Folder, "id">>) => void;
+  deleteFolder: (id: string) => void;
   skipDay: () => void;
   reset: () => void;
   notify: (text: string, kind?: "ok" | "error") => void;
@@ -96,6 +100,27 @@ export const useGame = create<Store>()(
         set({ game: r.state });
         return true;
       },
+      research: (id) => {
+        const r = E.doResearch(get().game, id, Date.now());
+        if (!r.ok) { get().notify(r.error, "error"); return false; }
+        set({ game: r.state });
+        get().notify("Recherche débloquée");
+        return true;
+      },
+      createFolder: (name, symbols = []) => {
+        const r = E.createFolder(get().game, name, Date.now(), symbols);
+        if (!r.ok) { get().notify(r.error, "error"); return null; }
+        set({ game: r.state });
+        return r.state.folders[r.state.folders.length - 1].id;
+      },
+      updateFolder: (id, patch) => {
+        const r = E.updateFolder(get().game, id, patch);
+        if (r.ok) set({ game: r.state });
+      },
+      deleteFolder: (id) => {
+        const r = E.deleteFolder(get().game, id);
+        if (r.ok) set({ game: r.state });
+      },
       // Outil de test : avance d'un jour de ville.
       skipDay: () => {
         const g = get().game;
@@ -121,6 +146,11 @@ export const useGame = create<Store>()(
         return { ...p, game: p.game ? E.normalize(p.game) : E.newGame(Date.now()) } as Store;
       },
       partialize: (s) => ({ game: s.game, quotes: s.quotes, savedAt: s.savedAt }),
+      // Toujours réparer la partie chargée (nouveaux champs ajoutés depuis la sauvegarde)
+      merge: (persisted, current) => {
+        const p = (persisted ?? {}) as Partial<Store>;
+        return { ...current, ...p, game: p.game ? E.normalize(p.game) : current.game };
+      },
     },
   ),
 );

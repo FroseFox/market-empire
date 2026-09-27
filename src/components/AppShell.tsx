@@ -17,10 +17,10 @@ const NAV = [
   { href: "/portefeuille", label: "Portefeuille", icon: Wallet },
   { href: "/ville", label: "Ville", icon: Building2 },
   { href: "/monde", label: "Monde", icon: Globe2, soon: true },
-  { href: "/actualites", label: "Actualités", icon: Newspaper, soon: true },
-  { href: "/relations", label: "Relations", icon: Network, soon: true },
-  { href: "/dossiers", label: "Dossiers", icon: Folder, soon: true },
-  { href: "/recherche", label: "Recherche", icon: FlaskConical, soon: true },
+  { href: "/actualites", label: "Actualités", icon: Newspaper },
+  { href: "/relations", label: "Relations", icon: Network },
+  { href: "/dossiers", label: "Dossiers", icon: Folder },
+  { href: "/recherche", label: "Recherche", icon: FlaskConical },
 ];
 
 export function Logo({ light = false }: { light?: boolean }) {
@@ -167,9 +167,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       </div>
 
       {/* Navigation mobile */}
-      <nav className="lg:hidden fixed bottom-0 inset-x-0 z-30 bg-navy text-slate-400 flex justify-around py-2 border-t border-white/10">
+      <nav className="lg:hidden fixed bottom-0 inset-x-0 z-30 bg-navy text-slate-400 flex justify-between gap-1 overflow-x-auto px-2 pt-2 border-t border-white/10" style={{ paddingBottom: "calc(8px + env(safe-area-inset-bottom, 0px))" }}>
         {NAV.filter((n) => !n.soon).map(({ href, label, icon: Icon }) => (
-          <Link key={href} href={href} className={`flex flex-col items-center gap-0.5 text-[10px] px-2 ${isActive(href) ? "text-white" : ""}`}>
+          <Link key={href} href={href} className={`flex flex-col items-center gap-0.5 text-[10px] px-1.5 min-w-[56px] shrink-0 ${isActive(href) ? "text-white" : ""}`}>
             <Icon size={20} strokeWidth={1.8} />{label}
           </Link>
         ))}

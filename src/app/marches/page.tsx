@@ -1,10 +1,16 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { LineChart, Search } from "lucide-react";
+import Link from "next/link";
+import { LineChart, Lock, Search } from "lucide-react";
 import { useDerived, useGame } from "@/store/game";
 import { ASSETS, ASSET_BY_SYMBOL } from "@/lib/market/universe";
 import { simulatedHistory, type Range } from "@/lib/market/simulate";
-import { tradeFee } from "@/lib/game/engine";
+import { hasResearch, tradeFee } from "@/lib/game/engine";
+import { RESEARCH_BY_ID } from "@/lib/game/research";
+import { neighbors } from "@/lib/market/relations";
+import { useNews } from "@/lib/news";
+import AddToFolder from "@/components/AddToFolder";
+import NewsList from "@/components/NewsList";
 import { fetchHistory } from "@/lib/market/client";
 import { Button, Card, Delta, PageHeader, Segmented } from "@/components/ui";
 import { Sparkline, WealthChart } from "@/components/charts";
@@ -25,6 +31,7 @@ export default function MarketsPage() {
   const { game, quotes } = useDerived();
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState("NVDA");
+  const [kind, setKind] = useState<"Actions" | "ETF">("Actions");
 
   // Mini-courbes 1J (même moteur que le serveur, recalées sur le dernier prix)
   const lastQuoteAt = useGame((s) => s.lastQuoteAt);
@@ -37,7 +44,15 @@ export default function MarketsPage() {
     }));
   }, [lastQuoteAt, quotes]);
 
-  const list = ASSETS.filter((a) => (a.symbol + a.name + a.sector).toLowerCase().includes(query.toLowerCase()));
+  const list = ASSETS.filter((a) => (kind === "ETF" ? a.kind === "etf" : a.kind === "stock") && (a.symbol + a.name + a.sector).toLowerCase().includes(query.toLowerCase()));
+
+  // Analyse sectorielle (recherche) : variation moyenne sur 24 h par secteur
+  const sectors = hasResearch(game, "sector_view")
+    ? [...new Set(ASSETS.filter((a) => a.kind === "stock").map((a) => a.sector))].map((sec) => {
+        const vals = ASSETS.filter((a) => a.sector === sec).map((a) => quotes[a.symbol]?.change).filter((v): v is number => typeof v === "number");
+        return { sec, avg: vals.length ? vals.reduce((x, y) => x + y, 0) / vals.length : 0, n: vals.length };
+      }).sort((a, b) => b.avg - a.avg)
+    : null;
 
   return (
     <>
@@ -50,8 +65,18 @@ export default function MarketsPage() {
               <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Rechercher une entreprise, un secteur…"
                 className="bg-transparent outline-none text-[13px] flex-1" />
             </div>
-            <span className="text-[12px] text-muted hidden sm:block">{list.length} actions</span>
+            <Segmented options={["Actions", "ETF"] as ("Actions" | "ETF")[]} value={kind} onChange={setKind} />
           </div>
+          {sectors && kind === "Actions" && (
+            <div className="px-4 py-3 border-b border-line flex gap-2 overflow-x-auto">
+              {sectors.map((x) => (
+                <button key={x.sec} onClick={() => setQuery(x.sec)} className="shrink-0 rounded-[10px] bg-slate-50 px-3 py-1.5 text-left hover:bg-slate-100">
+                  <div className="text-[11px] text-muted whitespace-nowrap">{x.sec}</div>
+                  <Delta value={x.avg} />
+                </button>
+              ))}
+            </div>
+          )}
           <div className="overflow-x-auto">
             <table className="w-full text-[13px]">
               <thead className="text-muted text-[12px]">
@@ -75,7 +100,10 @@ export default function MarketsPage() {
                         <div className="flex items-center gap-3">
                           <div className="h-8 w-8 rounded-[8px] bg-navy text-white grid place-items-center text-[10px] font-bold shrink-0">{a.symbol.slice(0, 4)}</div>
                           <div>
-                            <div className="font-semibold flex items-center gap-1.5">{a.name}{held && <span className="text-[10px] rounded bg-primary-soft text-primary px-1.5 py-0.5 font-semibold">Détenu</span>}</div>
+                            <div className="font-semibold flex items-center gap-1.5">{a.name}
+                              {held && <span className="text-[10px] rounded bg-primary-soft text-primary px-1.5 py-0.5 font-semibold">Détenu</span>}
+                              {!hasResearch(game, a.research) && <span className="inline-flex items-center gap-0.5 text-[10px] rounded bg-slate-100 text-muted px-1.5 py-0.5 font-semibold"><Lock size={9} />Recherche</span>}
+                            </div>
                             <div className="text-[11px] text-muted">{a.symbol} · {FLAG[a.country]}</div>
                           </div>
                         </div>
@@ -92,13 +120,13 @@ export default function MarketsPage() {
           </div>
         </Card>
 
-        <div className="xl:col-span-5"><div className="xl:sticky xl:top-20"><AssetPanel symbol={selected} /></div></div>
+        <div className="xl:col-span-5"><div className="xl:sticky xl:top-20"><AssetPanel symbol={selected} onSelect={setSelected} /></div></div>
       </div>
     </>
   );
 }
 
-function AssetPanel({ symbol }: { symbol: string }) {
+function AssetPanel({ symbol, onSelect }: { symbol: string; onSelect: (s: string) => void }) {
   const { game, quotes, portfolio } = useDerived();
   const buy = useGame((s) => s.buy);
   const sell = useGame((s) => s.sell);
@@ -126,6 +154,12 @@ function AssetPanel({ symbol }: { symbol: string }) {
   const positionValue = held ? held.qty * price : 0;
 
   const run = async (fn: typeof buy) => { setBusy(true); await fn(symbol, n); setBusy(false); };
+  const unlocked = hasResearch(game, asset.research);
+  const longHistory = hasResearch(game, "history_1y");
+  const ranges = (longHistory ? ["1J", "1S", "1M", "1A"] : ["1J", "1S", "1M"]) as Range[];
+  const news = useNews();
+  const related = news.items.filter((x) => x.symbols.includes(symbol)).slice(0, 3);
+  const links = neighbors(symbol);
 
   return (
     <Card>
@@ -135,13 +169,17 @@ function AssetPanel({ symbol }: { symbol: string }) {
           <div className="text-[18px] font-semibold leading-tight">{asset.name}</div>
           <div className="text-[12px] text-muted">{symbol} · {asset.sector} · {FLAG[asset.country]}</div>
         </div>
+        <AddToFolder symbols={[symbol]} label="Dossier" />
       </div>
       <div className="flex items-baseline gap-3 mt-3 mb-3">
         <div className="text-[32px] font-bold tabular">{q ? eur2(price) : "—"}</div>
         <Delta value={rangeChange} suffix={range} />
       </div>
       <div className="flex justify-between items-center mb-2">
-        <Segmented options={["1J", "1S", "1M", "1A"] as Range[]} value={range} onChange={setRange} />
+        <div className="flex items-center gap-2">
+          <Segmented options={ranges} value={range} onChange={setRange} />
+          {!longHistory && <Link href="/recherche" className="inline-flex items-center gap-1 text-[11px] text-muted hover:text-primary"><Lock size={11} />1A</Link>}
+        </div>
         {hist?.indicative && <span className="text-[11px] text-muted">Historique indicatif</span>}
       </div>
       {hist?.points?.length ? (
@@ -172,11 +210,34 @@ function AssetPanel({ symbol }: { symbol: string }) {
           <div className="flex justify-between"><span>Frais (0,1 %)</span><span>{eur2(fee)}</span></div>
           <div className="flex justify-between"><span>Liquidités disponibles</span><span>{eur(game.cash)}</span></div>
         </div>
+        {!unlocked && (
+          <p className="text-[12px] text-muted mb-2 flex items-center gap-1.5"><Lock size={12} />Achat disponible après la recherche « {RESEARCH_BY_ID[asset.research]?.name} ». <Link href="/recherche" className="text-primary font-medium">Voir →</Link></p>
+        )}
         <div className="grid grid-cols-2 gap-2">
-          <Button disabled={busy || n <= 0 || gross + fee > game.cash} onClick={() => run(buy)}>Acheter</Button>
+          <Button disabled={busy || !unlocked || n <= 0 || gross + fee > game.cash} onClick={() => run(buy)}>Acheter</Button>
           <Button variant="secondary" disabled={busy || n <= 0 || !held || n > held.qty} onClick={() => run(sell)}>Vendre</Button>
         </div>
       </div>
+
+      {links.length > 0 && (
+        <div className="mt-5">
+          <div className="text-[13px] font-semibold mb-2 flex items-center justify-between">Entreprises liées <Link href="/relations" className="text-[12px] text-primary font-medium">Relations →</Link></div>
+          <div className="flex flex-wrap gap-1.5">
+            {links.slice(0, 8).map((l) => (
+              <button key={l.role + l.symbol} onClick={() => onSelect(l.symbol)} title={l.note}
+                className="rounded-full border border-line px-2.5 py-1 text-[11px] hover:bg-slate-50">
+                <span className="text-muted">{l.role} · </span><span className="font-semibold">{ASSET_BY_SYMBOL[l.symbol]?.name ?? l.symbol}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {related.length > 0 && (
+        <div className="mt-5">
+          <div className="text-[13px] font-semibold mb-1 flex items-center justify-between">Actualités <Link href="/actualites" className="text-[12px] text-primary font-medium">Tout voir →</Link></div>
+          <NewsList items={related} compact />
+        </div>
+      )}
     </Card>
   );
 }

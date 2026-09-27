@@ -6,19 +6,23 @@ import {
   STARTING_BUILDINGS, STARTING_CASH, STARTING_POPULATION, TAX_PER_RESIDENT, TRADE_FEE_MIN, TRADE_FEE_RATE,
 } from "./config";
 import { layoutFrom, placeTile, type Plot } from "./layout";
+import { ASSET_BY_SYMBOL } from "../market/universe";
+import { FOLDER_LIMIT_BASE, RESEARCH_BY_ID, STARTING_RESEARCH } from "./research";
 
 export interface Holding { qty: number; avgCost: number }
 
 export interface Transaction {
   id: string;
   at: number;
-  kind: "buy" | "sell" | "build" | "demolish";
+  kind: "buy" | "sell" | "build" | "demolish" | "research";
   label: string;
   symbol?: string;
   qty?: number;
   price?: number;
   amount: number; // effet sur les liquidités (négatif = sortie)
 }
+
+export interface Folder { id: string; name: string; symbols: string[]; notes: string }
 
 export interface Snapshot {
   at: number;
@@ -45,6 +49,10 @@ export interface GameState {
   /** Emplacement de chaque bâtiment sur la carte (vue isométrique). */
   plots: Plot[];
   holdings: Record<string, Holding>;
+  /** Recherches acquises. */
+  research: string[];
+  /** Dossiers d'analyse du joueur. */
+  folders: Folder[];
   transactions: Transaction[];
   history: Snapshot[];
 }
@@ -66,6 +74,8 @@ export function newGame(now: number, playerName = "Celyan", cityName = "Nova Cit
     buildings: { ...STARTING_BUILDINGS },
     plots: layoutFrom(STARTING_BUILDINGS),
     holdings: {},
+    research: [...STARTING_RESEARCH],
+    folders: [],
     transactions: [],
     history: [],
   };
@@ -242,6 +252,8 @@ export function tradeFee(amount: number): number {
 export function buy(state: GameState, symbol: string, qty: number, price: number, at: number): ActionResult {
   if (!Number.isFinite(qty) || qty <= 0) return { ok: false, error: "Quantité invalide." };
   if (!(price > 0)) return { ok: false, error: "Prix indisponible." };
+  const need = ASSET_BY_SYMBOL[symbol]?.research;
+  if (need && !hasResearch(state, need)) return { ok: false, error: `Débloquez d'abord « ${RESEARCH_BY_ID[need]?.name ?? need} » dans Recherche.` };
   const gross = round2(qty * price);
   const fee = tradeFee(gross);
   const total = gross + fee;
@@ -331,12 +343,68 @@ function removePlot(plots: Plot[], id: string): Plot[] {
 }
 
 /** Répare une sauvegarde : plan manquant ou incohérent avec les bâtiments. */
-export function normalize(state: GameState): GameState {
+export function normalize(input: GameState): GameState {
+  let state = input;
+  if (!Array.isArray(state.research)) state = { ...state, research: [...STARTING_RESEARCH] };
+  if (!Array.isArray(state.folders)) state = { ...state, folders: [] };
   const plots = Array.isArray(state.plots) ? state.plots : [];
   const counts: Record<string, number> = {};
   for (const p of plots) counts[p.id] = (counts[p.id] ?? 0) + 1;
   const same = Object.keys({ ...counts, ...state.buildings }).every((k) => (counts[k] ?? 0) === (state.buildings[k] ?? 0));
   return same && Array.isArray(state.plots) ? state : { ...state, plots: layoutFrom(state.buildings) };
+}
+
+// ─── Recherche ────────────────────────────────────────────────
+
+export const hasResearch = (state: Pick<GameState, "research">, id: string) => state.research.includes(id);
+
+export function doResearch(state: GameState, id: string, at: number): ActionResult {
+  const n = RESEARCH_BY_ID[id];
+  if (!n) return { ok: false, error: "Recherche inconnue." };
+  if (hasResearch(state, id)) return { ok: false, error: "Déjà acquis." };
+  if (n.requires && !hasResearch(state, n.requires)) return { ok: false, error: `Nécessite d'abord « ${RESEARCH_BY_ID[n.requires].name} ».` };
+  if (n.cost > state.cash) return { ok: false, error: "Liquidités insuffisantes." };
+  return {
+    ok: true,
+    state: {
+      ...state,
+      cash: state.cash - n.cost,
+      research: [...state.research, id],
+      transactions: addTx(state, { kind: "research", label: `Recherche : ${n.name}`, amount: -n.cost, at }),
+    },
+  };
+}
+
+// ─── Dossiers ─────────────────────────────────────────────────
+
+export const folderLimit = (state: Pick<GameState, "research">) => (hasResearch(state, "folders_plus") ? Infinity : FOLDER_LIMIT_BASE);
+
+export function createFolder(state: GameState, name: string, at: number, symbols: string[] = []): ActionResult {
+  const clean = name.trim().slice(0, 40);
+  if (!clean) return { ok: false, error: "Donnez un nom au dossier." };
+  if (state.folders.length >= folderLimit(state)) return { ok: false, error: "Limite atteinte : recherchez « Dossiers illimités »." };
+  const folder: Folder = { id: `f${at.toString(36)}${state.folders.length}`, name: clean, symbols: [...new Set(symbols)], notes: "" };
+  return { ok: true, state: { ...state, folders: [...state.folders, folder] } };
+}
+
+export function updateFolder(state: GameState, id: string, patch: Partial<Omit<Folder, "id">>): ActionResult {
+  if (!state.folders.some((f) => f.id === id)) return { ok: false, error: "Dossier introuvable." };
+  return {
+    ok: true,
+    state: {
+      ...state,
+      folders: state.folders.map((f) => f.id !== id ? f : {
+        ...f,
+        ...(patch.name !== undefined ? { name: patch.name.trim().slice(0, 40) || f.name } : {}),
+        ...(patch.symbols !== undefined ? { symbols: [...new Set(patch.symbols)] } : {}),
+        ...(patch.notes !== undefined ? { notes: patch.notes.slice(0, 4000) } : {}),
+      }),
+    },
+  };
+}
+
+export function deleteFolder(state: GameState, id: string): ActionResult {
+  return { ok: true, state: { ...state, folders: state.folders.filter((f) => f.id !== id) } };
 }
 
 // ─── Utilitaires ──────────────────────────────────────────────

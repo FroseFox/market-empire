@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { build, buy, catchUp, computeCity, DAY_MS, demolish, newGame, normalize, sell, tickDay } from "./engine";
+import { build, buy, catchUp, computeCity, createFolder, DAY_MS, demolish, doResearch, newGame, normalize, sell, tickDay, updateFolder } from "./engine";
 import { isRoad } from "./layout";
 import { STARTING_CASH } from "./config";
 
@@ -108,5 +108,28 @@ describe("carte", () => {
     const g = newGame(T0);
     const old = { ...g, plots: undefined } as unknown as typeof g;
     expect(normalize(old).plots.length).toBe(5);
+  });
+});
+
+describe("recherche et dossiers", () => {
+  it("les actions européennes demandent une recherche", () => {
+    const g = newGame(T0);
+    expect(buy(g, "MC", 1, 500, T0).ok).toBe(false);
+    const r = doResearch(g, "eu_stocks", T0);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.state.cash).toBe(STARTING_CASH - 15_000);
+      expect(buy(r.state, "MC", 1, 500, T0).ok).toBe(true);
+    }
+  });
+  it("respecte les prérequis", () => {
+    expect(doResearch(newGame(T0), "etf", T0).ok).toBe(false);
+  });
+  it("2 dossiers maximum au départ", () => {
+    let g = newGame(T0);
+    for (const n of ["IA", "Énergie"]) { const r = createFolder(g, n, T0); if (r.ok) g = r.state; }
+    expect(createFolder(g, "Luxe", T0).ok).toBe(false);
+    const u = updateFolder(g, g.folders[0].id, { symbols: ["NVDA", "AMD", "NVDA"] });
+    expect(u.ok && u.state.folders[0].symbols).toEqual(["NVDA", "AMD"]);
   });
 });
