@@ -1,36 +1,39 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Market Empire — prototype v0.1 (Phase 1)
 
-## Getting Started
+Jeu web de stratégie économique : investir en bourse sur de vraies actions, et utiliser ses gains pour faire grandir une ville.
 
-First, run the development server:
+## Lancer le jeu
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev        # http://localhost:3000
+npm test           # tests du moteur économique
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Sans configuration, le jeu tourne en **mode démo** : les cours sont simulés (même prix pour tout le monde, à chaque rechargement). La partie est sauvegardée dans le navigateur.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Brancher les vrais cours
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. Créer une clé gratuite sur https://finnhub.io
+2. Copier `.env.example` en `.env.local` et y mettre la clé
+3. Relancer `npm run dev` : le badge en haut passe à « Cours réels »
 
-## Learn More
+⚠️ L'offre gratuite Finnhub est réservée à un usage personnel. Avant d'ouvrir le jeu à d'autres joueurs, passer sur une offre qui autorise l'affichage public des prix.
+Les actions européennes (LVMH, Airbus…) peuvent ne pas être couvertes par l'offre gratuite : elles restent alors en cours simulés.
 
-To learn more about Next.js, take a look at the following resources:
+## Où sont les choses
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+| Fichier | Rôle |
+|---|---|
+| `src/lib/game/config.ts` | **Tous les chiffres d'équilibrage** (bâtiments, prix, durée d'un jour…) |
+| `src/lib/game/engine.ts` | Moteur économique pur : ville, patrimoine, achat/vente, construction, passage des jours |
+| `src/lib/game/insights.ts` | Alertes et objectifs |
+| `src/lib/market/` | Univers d'actions, cours simulés, fournisseur Finnhub |
+| `src/app/api/` | Routes serveur `/api/quotes` et `/api/history` (le client n'appelle jamais Finnhub directement) |
+| `supabase/schema.sql` | Schéma de la future base en ligne, avec achat/vente et construction exécutés côté serveur |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Règles de temps
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- La **bourse** suit le temps réel.
+- La **ville** avance d'un jour toutes les 60 min réelles (`DAY_LENGTH_MINUTES`). Au retour du joueur, jusqu'à 24 jours sont rattrapés.
+- Le bouton « Avancer d'un jour » (page Ville) est un outil de test du prototype.
