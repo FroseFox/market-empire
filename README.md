@@ -12,11 +12,6 @@ npm test           # tests du moteur économique
 
 Sans configuration, le jeu tourne en **mode démo** : les cours sont simulés (même prix pour tout le monde, à chaque rechargement). La partie est sauvegardée dans le navigateur.
 
-## Vrais cours en local
-
-1. Copier `.env.example` en `.env.local` et y mettre les clés
-2. `npm run data` (écrit `public/data/`), puis `npm run dev`
-
 ## Où sont les choses
 
 | Fichier | Rôle |
@@ -25,7 +20,7 @@ Sans configuration, le jeu tourne en **mode démo** : les cours sont simulés (m
 | `src/lib/game/engine.ts` | Moteur économique pur : ville, patrimoine, achat/vente, construction, passage des jours |
 | `src/lib/game/insights.ts` | Alertes et objectifs |
 | `src/lib/market/` | Univers d'actions, cours simulés, fournisseur Finnhub |
-| `scripts/build-data.mts` | Récupère les cours et l'historique avant chaque publication (clés API côté GitHub uniquement) |
+| `supabase/functions/refresh-market/` | Fonction qui récupère les cours chaque heure (clés API côté Supabase uniquement) |
 | `supabase/schema.sql` | Schéma de la future base en ligne, avec achat/vente et construction exécutés côté serveur |
 
 ## Règles de temps
@@ -36,26 +31,26 @@ Sans configuration, le jeu tourne en **mode démo** : les cours sont simulés (m
 
 ## Mettre le site en ligne gratuitement : GitHub Pages
 
-Le site est 100 % statique. GitHub Actions le reconstruit à chaque envoi sur `main`,
-et toutes les 15 minutes en semaine pour mettre à jour les cours (fichier `.github/workflows/deploy.yml`).
+Le site est 100 % statique et publié par GitHub Actions à chaque envoi sur `main` (`.github/workflows/deploy.yml`).
 
 Réglages à faire une fois, dans le dépôt GitHub :
 
 1. **Settings → Pages → Build and deployment → Source : GitHub Actions**
-2. **Settings → Secrets and variables → Actions**
-   - onglet *Secrets* → `FINNHUB_API_KEY` (cours réels) et `TWELVE_DATA_API_KEY` (vraies courbes), tous deux optionnels
-   - onglet *Variables* → `LOGO_DEV_KEY` (clé publique Logo.dev, pour les logos), optionnelle
-3. Onglet **Actions** → « Déployer sur GitHub Pages » → **Run workflow** pour la première publication.
+2. *(Optionnel)* **Settings → Secrets and variables → Actions → Variables** → `LOGO_DEV_KEY` (clé publique Logo.dev)
+3. Onglet **Actions** → « Déployer sur GitHub Pages » → **Run workflow**
 
-Le site est alors en ligne à l'adresse `https://<compte>.github.io/market-empire/`.
+Adresse : `https://<compte>.github.io/market-empire/`
 
-Sans clé, tout fonctionne avec des cours simulés.
+## Cours de bourse : Supabase
 
-## Où vivent les données de marché
+Le site lit les cours dans la base Supabase (lecture seule). Une fonction Supabase
+(`supabase/functions/refresh-market`) les met à jour **toutes les heures** (tâche `pg_cron`) :
 
-| Fichier publié | Contenu | Fréquence |
+| Table | Contenu | Fréquence |
 |---|---|---|
-| `data/quotes.json` | Derniers cours (Finnhub), convertis en euros (taux BCE) | 15 min |
-| `data/intraday.json` | Courbe du jour, construite point par point | 15 min |
-| `data/history/*.json` | Courbes 1 semaine et 1 an (Twelve Data) | 1 fois par jour |
-| `news.json` | Actualités | à la main |
+| `asset_prices` | Dernier cours (Finnhub), converti en euros (taux BCE) | 1 h |
+| `market_series` (`1h`) | Points horaires → courbes 1 jour et 1 semaine | 1 h |
+| `market_series` (`1d`) | Clôtures quotidiennes (Twelve Data) → courbes 1 mois et 1 an | 1 fois par jour |
+
+Clés à ajouter dans Supabase → **Edge Functions → Secrets** : `FINNHUB_API_KEY`, `TWELVE_DATA_API_KEY`.
+Sans clé, le jeu utilise des cours simulés.

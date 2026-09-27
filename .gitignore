@@ -45,5 +45,3 @@ web-static/dist
 # Données générées par scripts/build-data.ts
 public/data/
 
-# Données générées par scripts/build-data.mts
-public/data/

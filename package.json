@@ -8,8 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "build:web": "vite build --config web-static/vite.config.ts",
-    "data": "tsx scripts/build-data.mts"
+    "build:web": "vite build --config web-static/vite.config.ts"
   },
   "dependencies": {
     "d3-geo": "^3.1.1",

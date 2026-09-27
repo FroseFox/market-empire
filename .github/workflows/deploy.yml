@@ -1,16 +1,11 @@
-# Publie Market Empire sur GitHub Pages.
-# - À chaque envoi sur main
-# - Toutes les 15 minutes en semaine (bourse ouverte), toutes les 3 h le week-end
-# Les clés API sont des « secrets » GitHub : elles servent pendant la construction
-# et n'apparaissent jamais dans le site publié.
+# Publie Market Empire sur GitHub Pages à chaque envoi sur main.
+# Les cours ne passent pas par ici : Supabase les met à jour toutes les heures
+# et le site les lit directement.
 name: Déployer sur GitHub Pages
 
 on:
   push:
     branches: [main]
-  schedule:
-    - cron: "*/15 * * * 1-5"
-    - cron: "0 */3 * * 0,6"
   workflow_dispatch:
 
 permissions:
@@ -36,13 +31,6 @@ jobs:
 
       - name: Installer les dépendances
         run: npm ci
-
-      - name: Récupérer les cours et l'historique
-        run: npx tsx scripts/build-data.mts
-        env:
-          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
-          TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
-          SITE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
 
       - name: Construire le site
         run: npm run build

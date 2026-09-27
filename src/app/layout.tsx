@@ -13,14 +13,14 @@ export const metadata: Metadata = {
 
 // GitHub Pages ne permet pas d'en-têtes HTTP personnalisés : la politique de sécurité
 // passe par une balise <meta>. Le site ne charge que ses propres fichiers
-// (+ les logos Logo.dev), et ne contacte aucun autre serveur.
+// (+ les logos Logo.dev) et ne contacte que la base Supabase des cours.
 const CSP = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline'",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https://img.logo.dev",
   "font-src 'self'",
-  "connect-src 'self'",
+  "connect-src 'self' https://elpkixotuarcymalehjs.supabase.co",
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
