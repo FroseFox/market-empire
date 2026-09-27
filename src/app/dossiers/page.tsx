@@ -8,6 +8,7 @@ import { ASSETS, ASSET_BY_SYMBOL } from "@/lib/market/universe";
 import { useNews } from "@/lib/news";
 import { Button, Card, Delta, Empty, PageHeader } from "@/components/ui";
 import NewsList from "@/components/NewsList";
+import CompanyLogo from "@/components/CompanyLogo";
 import { eur2, num } from "@/lib/format";
 
 export default function FoldersPage() {
@@ -118,7 +119,7 @@ function FolderDetail({ id }: { id: string }) {
                 const a = ASSET_BY_SYMBOL[s]; const q = quotes[s]; const h = game.holdings[s];
                 return (
                   <tr key={s} className="border-b border-line/70">
-                    <td className="py-2.5"><div className="font-semibold">{a?.name ?? s}</div><div className="text-[11px] text-muted">{s}</div></td>
+                    <td className="py-2.5"><div className="flex items-center gap-2.5"><CompanyLogo symbol={s} size={28} /><div><div className="font-semibold">{a?.name ?? s}</div><div className="text-[11px] text-muted">{s}</div></div></div></td>
                     <td className="text-muted hidden sm:table-cell">{a?.sector}</td>
                     <td className="text-right tabular whitespace-nowrap">{q ? eur2(q.price) : "—"}</td>
                     <td className="text-right">{q ? <Delta value={q.change} /> : "—"}</td>

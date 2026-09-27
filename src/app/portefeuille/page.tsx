@@ -4,6 +4,7 @@ import { History, PieChart, TrendingUp, Wallet } from "lucide-react";
 import { useDerived } from "@/store/game";
 import { ASSET_BY_SYMBOL } from "@/lib/market/universe";
 import { Card, Delta, Empty, PageHeader, StatCard } from "@/components/ui";
+import CompanyLogo from "@/components/CompanyLogo";
 import { eur, eur2, num, pctPlain, signedEur, tone } from "@/lib/format";
 
 const PALETTE = ["#2563EB", "#10B981", "#F59E0B", "#6366F1", "#0EA5E9", "#EC4899", "#64748B"];
@@ -45,7 +46,7 @@ export default function PortfolioPage() {
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.sym} className="border-b border-line/70">
-                    <td className="py-2.5"><div className="font-semibold">{ASSET_BY_SYMBOL[r.sym]?.name ?? r.sym}</div><div className="text-[11px] text-muted">{r.sym}</div></td>
+                    <td className="py-2.5"><div className="flex items-center gap-2.5"><CompanyLogo symbol={r.sym} size={30} /><div><div className="font-semibold">{ASSET_BY_SYMBOL[r.sym]?.name ?? r.sym}</div><div className="text-[11px] text-muted">{r.sym}</div></div></div></td>
                     <td className="text-right tabular">{num(r.h.qty)}</td>
                     <td className="text-right tabular hidden sm:table-cell">{eur2(r.h.avgCost)}</td>
                     <td className="text-right tabular">{eur2(r.price)}<div><Delta value={r.day} /></div></td>

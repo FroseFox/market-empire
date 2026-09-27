@@ -10,6 +10,7 @@ import { RESEARCH_BY_ID } from "@/lib/game/research";
 import { neighbors } from "@/lib/market/relations";
 import { useNews } from "@/lib/news";
 import AddToFolder from "@/components/AddToFolder";
+import CompanyLogo from "@/components/CompanyLogo";
 import NewsList from "@/components/NewsList";
 import { fetchHistory } from "@/lib/market/client";
 import { Button, Card, Delta, PageHeader, Segmented } from "@/components/ui";
@@ -98,7 +99,7 @@ export default function MarketsPage() {
                       className={`border-b border-line/70 cursor-pointer transition-colors ${selected === a.symbol ? "bg-primary-soft/60" : "hover:bg-slate-50"}`}>
                       <td className="px-4 py-2.5">
                         <div className="flex items-center gap-3">
-                          <div className="h-8 w-8 rounded-[8px] bg-navy text-white grid place-items-center text-[10px] font-bold shrink-0">{a.symbol.slice(0, 4)}</div>
+                          <CompanyLogo symbol={a.symbol} size={32} />
                           <div>
                             <div className="font-semibold flex items-center gap-1.5">{a.name}
                               {held && <span className="text-[10px] rounded bg-primary-soft text-primary px-1.5 py-0.5 font-semibold">Détenu</span>}
@@ -164,7 +165,7 @@ function AssetPanel({ symbol, onSelect }: { symbol: string; onSelect: (s: string
   return (
     <Card>
       <div className="flex items-start gap-3 mb-1">
-        <div className="h-11 w-11 rounded-[10px] bg-navy text-white grid place-items-center text-[11px] font-bold">{symbol.slice(0, 4)}</div>
+        <CompanyLogo symbol={symbol} size={44} />
         <div className="flex-1">
           <div className="text-[18px] font-semibold leading-tight">{asset.name}</div>
           <div className="text-[12px] text-muted">{symbol} · {asset.sector} · {FLAG[asset.country]}</div>

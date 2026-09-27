@@ -37,3 +37,14 @@ Les actions européennes (LVMH, Airbus…) peuvent ne pas être couvertes par l'
 - La **bourse** suit le temps réel.
 - La **ville** avance d'un jour toutes les 60 min réelles (`DAY_LENGTH_MINUTES`). Au retour du joueur, jusqu'à 24 jours sont rattrapés.
 - Le bouton « Avancer d'un jour » (page Ville) est un outil de test du prototype.
+
+## Mettre le site en ligne gratuitement (sans rien installer)
+
+Tout se fait depuis le navigateur.
+
+1. **GitHub** : créer un dépôt vide (ex. `market-empire`) et y envoyer ce code.
+2. **Vercel** (offre Hobby, gratuite, usage personnel non commercial) : « Add New → Project », importer le dépôt GitHub. Vercel détecte Next.js tout seul.
+3. **Variables d'environnement** (Vercel → Settings → Environment Variables) :
+   - `FINNHUB_API_KEY` : clé gratuite sur finnhub.io, pour les vrais cours
+   - `NEXT_PUBLIC_LOGO_DEV_KEY` : clé publique sur logo.dev, pour les logos des entreprises
+4. Chaque modification poussée sur GitHub redéploie le site automatiquement.
