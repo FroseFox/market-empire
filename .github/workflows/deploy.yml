@@ -1,0 +1,68 @@
+# Publie Market Empire sur GitHub Pages.
+# - À chaque envoi sur main
+# - Toutes les 15 minutes en semaine (bourse ouverte), toutes les 3 h le week-end
+# Les clés API sont des « secrets » GitHub : elles servent pendant la construction
+# et n'apparaissent jamais dans le site publié.
+name: Déployer sur GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "*/15 * * * 1-5"
+    - cron: "0 */3 * * 0,6"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Installer les dépendances
+        run: npm ci
+
+      - name: Récupérer les cours et l'historique
+        run: npx tsx scripts/build-data.mts
+        env:
+          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+          TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
+          SITE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
+
+      - name: Construire le site
+        run: npm run build
+        env:
+          NEXT_PUBLIC_BASE_PATH: /${{ github.event.repository.name }}
+          NEXT_PUBLIC_LOGO_DEV_KEY: ${{ vars.LOGO_DEV_KEY }}
+
+      - name: Autoriser les dossiers commençant par _
+        run: touch out/.nojekyll
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: out
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

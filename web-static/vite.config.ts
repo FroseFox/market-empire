@@ -18,6 +18,8 @@ export default defineConfig({
   },
   define: {
     "process.env.NEXT_PUBLIC_STATIC": JSON.stringify("1"),
+    "process.env.NEXT_PUBLIC_BASE_PATH": JSON.stringify(""),
+    "process.env.NEXT_PUBLIC_LOGO_DEV_KEY": JSON.stringify(""),
     "process.env.NODE_ENV": JSON.stringify("production"),
   },
   build: { outDir: r("./dist"), emptyOutDir: true },

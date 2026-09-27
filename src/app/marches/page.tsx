@@ -184,7 +184,7 @@ function AssetPanel({ symbol, onSelect }: { symbol: string; onSelect: (s: string
           <Segmented options={ranges} value={range} onChange={setRange} />
           {!longHistory && <Link href="/recherche" className="inline-flex items-center gap-1 text-[11px] text-muted hover:text-primary"><Lock size={11} />1A</Link>}
         </div>
-        {hist?.source === "simulé" && dataMode !== "simulé" && <span className="text-[11px] text-muted" title="Ajoutez une clé Twelve Data pour les vraies courbes">Courbe simulée</span>}
+        {hist?.source === "simulé" && dataMode !== "simulé" && <span className="text-[11px] text-muted" title="Historique réel indisponible pour cette action ou cette période">Courbe simulée</span>}
       </div>
       {hist?.points?.length ? (
         <WealthChart data={hist.points.map((p) => ({ x: p.t, y: p.p }))} color={rangeChange >= 0 ? "#10B981" : "#EF4444"} height={200} money2 xFormat={fmtTime(range)} />

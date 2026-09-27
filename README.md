@@ -12,14 +12,10 @@ npm test           # tests du moteur économique
 
 Sans configuration, le jeu tourne en **mode démo** : les cours sont simulés (même prix pour tout le monde, à chaque rechargement). La partie est sauvegardée dans le navigateur.
 
-## Brancher les vrais cours
+## Vrais cours en local
 
-1. Créer une clé gratuite sur https://finnhub.io
-2. Copier `.env.example` en `.env.local` et y mettre la clé
-3. Relancer `npm run dev` : le badge en haut passe à « Cours réels »
-
-⚠️ L'offre gratuite Finnhub est réservée à un usage personnel. Avant d'ouvrir le jeu à d'autres joueurs, passer sur une offre qui autorise l'affichage public des prix.
-Les actions européennes (LVMH, Airbus…) peuvent ne pas être couvertes par l'offre gratuite : elles restent alors en cours simulés.
+1. Copier `.env.example` en `.env.local` et y mettre les clés
+2. `npm run data` (écrit `public/data/`), puis `npm run dev`
 
 ## Où sont les choses
 
@@ -29,7 +25,7 @@ Les actions européennes (LVMH, Airbus…) peuvent ne pas être couvertes par l'
 | `src/lib/game/engine.ts` | Moteur économique pur : ville, patrimoine, achat/vente, construction, passage des jours |
 | `src/lib/game/insights.ts` | Alertes et objectifs |
 | `src/lib/market/` | Univers d'actions, cours simulés, fournisseur Finnhub |
-| `src/app/api/` | Routes serveur `/api/quotes` et `/api/history` (le client n'appelle jamais Finnhub directement) |
+| `scripts/build-data.mts` | Récupère les cours et l'historique avant chaque publication (clés API côté GitHub uniquement) |
 | `supabase/schema.sql` | Schéma de la future base en ligne, avec achat/vente et construction exécutés côté serveur |
 
 ## Règles de temps
@@ -38,13 +34,28 @@ Les actions européennes (LVMH, Airbus…) peuvent ne pas être couvertes par l'
 - La **ville** avance d'un jour toutes les 60 min réelles (`DAY_LENGTH_MINUTES`). Au retour du joueur, jusqu'à 24 jours sont rattrapés.
 - Le bouton « Avancer d'un jour » (page Ville) est un outil de test du prototype.
 
-## Mettre le site en ligne gratuitement (sans rien installer)
+## Mettre le site en ligne gratuitement : GitHub Pages
 
-Tout se fait depuis le navigateur.
+Le site est 100 % statique. GitHub Actions le reconstruit à chaque envoi sur `main`,
+et toutes les 15 minutes en semaine pour mettre à jour les cours (fichier `.github/workflows/deploy.yml`).
 
-1. **GitHub** : créer un dépôt vide (ex. `market-empire`) et y envoyer ce code.
-2. **Vercel** (offre Hobby, gratuite, usage personnel non commercial) : « Add New → Project », importer le dépôt GitHub. Vercel détecte Next.js tout seul.
-3. **Variables d'environnement** (Vercel → Settings → Environment Variables) :
-   - `FINNHUB_API_KEY` : clé gratuite sur finnhub.io, pour les vrais cours
-   - `LOGO_DEV_KEY` : clé sur logo.dev, pour les logos des entreprises (reste privée, côté serveur)
-4. Chaque modification poussée sur GitHub redéploie le site automatiquement.
+Réglages à faire une fois, dans le dépôt GitHub :
+
+1. **Settings → Pages → Build and deployment → Source : GitHub Actions**
+2. **Settings → Secrets and variables → Actions**
+   - onglet *Secrets* → `FINNHUB_API_KEY` (cours réels) et `TWELVE_DATA_API_KEY` (vraies courbes), tous deux optionnels
+   - onglet *Variables* → `LOGO_DEV_KEY` (clé publique Logo.dev, pour les logos), optionnelle
+3. Onglet **Actions** → « Déployer sur GitHub Pages » → **Run workflow** pour la première publication.
+
+Le site est alors en ligne à l'adresse `https://<compte>.github.io/market-empire/`.
+
+Sans clé, tout fonctionne avec des cours simulés.
+
+## Où vivent les données de marché
+
+| Fichier publié | Contenu | Fréquence |
+|---|---|---|
+| `data/quotes.json` | Derniers cours (Finnhub), convertis en euros (taux BCE) | 15 min |
+| `data/intraday.json` | Courbe du jour, construite point par point | 15 min |
+| `data/history/*.json` | Courbes 1 semaine et 1 an (Twelve Data) | 1 fois par jour |
+| `news.json` | Actualités | à la main |

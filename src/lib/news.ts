@@ -4,7 +4,7 @@
 // - Page Claude : base de la page (collection « news », lecture seule pour les joueurs).
 // Le jeu ne publie jamais le contenu des articles, seulement un titre et le lien.
 import { useSyncExternalStore } from "react";
-import { STATIC_MODE } from "@/lib/market/client";
+import { BASE_PATH, STATIC_MODE } from "@/lib/market/client";
 
 export interface NewsItem {
   id: string;
@@ -37,7 +37,7 @@ async function start() {
   started = true;
   if (!STATIC_MODE) {
     try {
-      const r = await fetch("/news.json", { cache: "no-cache" });
+      const r = await fetch(`${BASE_PATH}/news.json`, { cache: "no-cache" });
       const j = (await r.json()) as { items?: Partial<NewsItem>[] };
       const items = (j.items ?? []).filter(valid).sort((a, b) => b.publishedAt.localeCompare(a.publishedAt));
       emit({ status: "ready", items });

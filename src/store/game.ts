@@ -16,8 +16,8 @@ interface Store {
   cloud: "local" | "syncing" | "saved" | "error";
   quotes: Record<string, QuoteView>;
   dataMode: string;
-  /** Le serveur sait fournir les logos (clé Logo.dev configurée). */
-  logos: boolean;
+  /** Heure de mise à jour des cours publiés. */
+  quotesAt: number;
   lastQuoteAt: number;
   toast: { text: string; kind: "ok" | "error" } | null;
 
@@ -55,7 +55,7 @@ export const useGame = create<Store>()(
       cloud: "local",
       quotes: {},
       dataMode: "simulé",
-      logos: false,
+      quotesAt: 0,
       lastQuoteAt: 0,
       toast: null,
 

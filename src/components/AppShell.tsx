@@ -62,7 +62,7 @@ function useHeartbeat(enabled: boolean) {
     const pull = async () => {
       try {
         const j = await fetchQuotes();
-        if (alive) { setQuotes(j.quotes, j.mode); useGame.setState({ logos: !!j.logos }); }
+        if (alive) { setQuotes(j.quotes, j.mode); useGame.setState({ quotesAt: j.updatedAt }); }
       } catch { /* hors ligne : on garde les derniers cours */ }
       const days = sync();
       if (days > 0 && alive) notify(days === 1 ? "Un nouveau jour s'est écoulé dans votre ville" : `${days} jours se sont écoulés dans votre ville`);
@@ -115,6 +115,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const cash = useGame((s) => s.game.cash);
   const name = useGame((s) => s.game.playerName);
   const mode = useGame((s) => s.dataMode);
+  const quotesAt = useGame((s) => s.quotesAt);
   const toast = useGame((s) => s.toast);
 
   const isActive = (href: string) => (href === "/" ? path === "/" : path.startsWith(href));
@@ -146,9 +147,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           {hydrated && <NextDay />}
           <div className="ml-auto flex items-center gap-3">
             <span className={`hidden sm:inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium ${mode === "simulé" ? "bg-warning-soft text-amber-700" : "bg-success-soft text-emerald-700"}`}
-              title={mode === "simulé" ? "Aucune clé API : les cours sont simulés" : "Cours réels (Finnhub)"}>
+              title={mode === "simulé" ? "Cours simulés : aucune source de cours configurée" : `Cours réels, mis à jour le ${new Date(quotesAt).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}`}>
               <span className={`h-1.5 w-1.5 rounded-full ${mode === "simulé" ? "bg-warning" : "bg-success"}`} />
-              {mode === "simulé" ? "Cours simulés" : "Cours réels"}
+              {mode === "simulé" ? "Cours simulés" : "Cours différés"}
             </span>
             {STATIC_MODE && hydrated && <CloudBadge status={cloud} />}
             <div className="hidden sm:flex items-center gap-2.5 pl-3 border-l border-line">
