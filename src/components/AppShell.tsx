@@ -6,6 +6,7 @@ import {
   BarChart3, Building2, FlaskConical, Folder, Globe2, LineChart, Network, Newspaper, Wallet, Plus, Clock,
 } from "lucide-react";
 import { useGame } from "@/store/game";
+import { fetchQuotes } from "@/lib/market/client";
 import { DAY_MS } from "@/lib/game/engine";
 import { eur } from "@/lib/format";
 
@@ -58,8 +59,7 @@ function useHeartbeat(enabled: boolean) {
     let alive = true;
     const pull = async () => {
       try {
-        const r = await fetch("/api/quotes", { cache: "no-store" });
-        const j = await r.json();
+        const j = await fetchQuotes();
         if (alive) setQuotes(j.quotes, j.mode);
       } catch { /* hors ligne : on garde les derniers cours */ }
       const days = sync();

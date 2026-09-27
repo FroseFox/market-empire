@@ -5,6 +5,7 @@ import { useDerived, useGame } from "@/store/game";
 import { ASSETS, ASSET_BY_SYMBOL } from "@/lib/market/universe";
 import { simulatedHistory, type Range } from "@/lib/market/simulate";
 import { tradeFee } from "@/lib/game/engine";
+import { fetchHistory } from "@/lib/market/client";
 import { Button, Card, Delta, PageHeader, Segmented } from "@/components/ui";
 import { Sparkline, WealthChart } from "@/components/charts";
 import { eur, eur2, num, pctPlain, signedEur } from "@/lib/format";
@@ -110,7 +111,7 @@ function AssetPanel({ symbol }: { symbol: string }) {
 
   useEffect(() => {
     let alive = true;
-    fetch(`/api/history?symbol=${symbol}&range=${range}`).then((r) => r.json()).then((j) => { if (alive) setHist(j); }).catch(() => {});
+    fetchHistory(symbol, range).then((j) => { if (alive) setHist(j); }).catch(() => {});
     return () => { alive = false; };
   }, [symbol, range]);
 

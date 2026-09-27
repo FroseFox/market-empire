@@ -3,8 +3,9 @@
 // Quand Supabase sera branché, ces actions appelleront les fonctions SQL
 // `trade` / `build` côté serveur au lieu de modifier l'état localement.
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { createJSONStorage, persist } from "zustand/middleware";
 import * as E from "@/lib/game/engine";
+import { fetchQuotes } from "@/lib/market/client";
 
 export interface QuoteView { price: number; change: number; source: string }
 
@@ -29,8 +30,7 @@ interface Store {
 
 async function fetchPrice(symbol: string): Promise<number | null> {
   try {
-    const r = await fetch(`/api/quotes?symbols=${symbol}`, { cache: "no-store" });
-    const j = await r.json();
+    const j = await fetchQuotes([symbol]);
     return j.quotes?.[0]?.price ?? null;
   } catch { return null; }
 }
@@ -104,6 +104,12 @@ export const useGame = create<Store>()(
     }),
     {
       name: "market-empire-save",
+      // Stockage tolérant : si le navigateur refuse la sauvegarde, le jeu tourne quand même.
+      storage: createJSONStorage(() => ({
+        getItem: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
+        setItem: (k, v) => { try { localStorage.setItem(k, v); } catch { /* sauvegarde indisponible */ } },
+        removeItem: (k) => { try { localStorage.removeItem(k); } catch { /* idem */ } },
+      })),
       version: 1,
       partialize: (s) => ({ game: s.game, quotes: s.quotes }),
     },

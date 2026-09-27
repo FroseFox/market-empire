@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Briefcase, Building2, Factory, FastForward, Home, Landmark, Lock, RotateCcw, Smile, Store, Users, Wheat, Zap,
 } from "lucide-react";
@@ -71,12 +71,27 @@ export default function CityPage() {
               <li>Les surplus sont exportés à 70 % du prix.</li>
               <li>Entretien : {MAINTENANCE_RATE * 100} % du coût par jour. Démolition : {DEMOLISH_REFUND * 100} % remboursés.</li>
             </ul>
-            <button onClick={() => { if (confirm("Recommencer une nouvelle partie ? Toute la progression sera perdue.")) reset(); }}
-              className="mt-4 text-[12px] text-danger inline-flex items-center gap-1 hover:underline"><RotateCcw size={13} />Recommencer la partie</button>
+            <ConfirmButton onConfirm={reset} confirmLabel="Confirmer : tout effacer"
+              className="mt-4 text-[12px] text-danger inline-flex items-center gap-1 hover:underline"><RotateCcw size={13} />Recommencer la partie</ConfirmButton>
           </Card>
         </div>
       </div>
     </>
+  );
+}
+
+/** Bouton à deux clics (les boîtes de dialogue du navigateur ne sont pas toujours disponibles). */
+function ConfirmButton({ onConfirm, confirmLabel, className, children }: { onConfirm: () => void; confirmLabel: string; className: string; children: React.ReactNode }) {
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    if (!armed) return;
+    const id = setTimeout(() => setArmed(false), 4000);
+    return () => clearTimeout(id);
+  }, [armed]);
+  return (
+    <button className={className} onClick={() => { if (armed) { setArmed(false); onConfirm(); } else setArmed(true); }}>
+      {armed ? confirmLabel : children}
+    </button>
   );
 }
 
@@ -163,8 +178,8 @@ function Owned() {
               </div>
               <div className="text-right text-[12px] text-muted hidden sm:block">Entretien<br /><span className="text-ink tabular">{eur(b.cost * MAINTENANCE_RATE * n)}/j</span></div>
               {b.buildable !== false && (
-                <Button variant="secondary" className="!px-3 !py-1.5 !text-danger"
-                  onClick={() => { if (confirm(`Démolir 1 × ${b.name} ? Remboursement : ${eur(b.cost * DEMOLISH_REFUND)}`)) demolish(b.id); }}>Démolir</Button>
+                <ConfirmButton onConfirm={() => demolish(b.id)} confirmLabel={`Confirmer (+${eur(b.cost * DEMOLISH_REFUND)})`}
+                  className="rounded-[10px] px-3 py-1.5 text-[13px] font-semibold border border-line bg-card text-danger hover:bg-slate-50">Démolir</ConfirmButton>
               )}
             </li>
           );
