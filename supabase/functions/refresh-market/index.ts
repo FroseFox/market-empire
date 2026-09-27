@@ -3,8 +3,8 @@
 // travaille que si les cours ont plus de 50 minutes, donc impossible d'épuiser les quotas.
 //
 // Secrets à définir dans Supabase (Edge Functions → Secrets) :
-//   FINNHUB_API_KEY      cours en temps quasi réel
-//   TWELVE_DATA_API_KEY  historique quotidien (1 mois / 1 an), rafraîchi une fois par jour
+//   FINNHUB_API_KEY      cours des actions américaines
+//   TWELVE_DATA_API_KEY  cours européens + historique quotidien (1 mois / 1 an)
 // SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY sont fournis automatiquement.
 
 const URL_ = Deno.env.get("SUPABASE_URL")!;
@@ -12,7 +12,8 @@ const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const FINNHUB = Deno.env.get("FINNHUB_API_KEY") ?? "";
 const TWELVE = Deno.env.get("TWELVE_DATA_API_KEY") ?? "";
 const MIN_GAP_MS = 50 * 60_000;
-const HISTORY_BATCH = 7; // offre gratuite Twelve Data : 8 requêtes / minute
+const HISTORY_BATCH = 4; // offre gratuite Twelve Data : 8 requêtes / minute (partagées avec les cours européens)
+const TD_GAP_MS = 7_600;
 
 const db = (path: string, init: RequestInit = {}) =>
   fetch(`${URL_}/rest/v1/${path}`, {
@@ -41,8 +42,8 @@ Deno.serve(async () => {
   const now = Date.now();
   const report: Record<string, unknown> = {};
 
-  const assets = (await (await db("assets?select=symbol,provider_symbol,history_updated_at&active=eq.true")).json()) as
-    { symbol: string; provider_symbol: string; history_updated_at: string | null }[];
+  const assets = (await (await db("assets?select=symbol,provider_symbol,us_symbol,us_factor,history_updated_at&active=eq.true")).json()) as
+    { symbol: string; provider_symbol: string; us_symbol: string | null; us_factor: number | null; history_updated_at: string | null }[];
 
   // ─── Garde-fou : pas plus d'une mise à jour toutes les 50 minutes ───
   const last = (await (await db("asset_prices?select=updated_at&order=updated_at.desc&limit=1")).json()) as { updated_at: string }[];
@@ -61,15 +62,36 @@ Deno.serve(async () => {
     const prevPrice = new Map(prev.map((p) => [p.symbol, Number(p.price)]));
     const prices: Record<string, unknown>[] = [], points: Record<string, unknown>[] = [];
     const hour = new Date(Math.floor(now / 3_600_000) * 3_600_000).toISOString();
+    const add = (symbol: string, price: number, change: number, source: string) => {
+      prices.push({ symbol, price, change_1d: change, source, updated_at: new Date(now).toISOString() });
+      // Un point par heure, seulement si le cours a bougé (marché ouvert)
+      if (prevPrice.get(symbol) !== price) points.push({ symbol, interval: "1h", t: hour, price });
+    };
+    const missing: typeof assets = [];
     for (const a of assets) {
       const q = await getJson<{ c?: number; dp?: number }>(`https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(a.provider_symbol)}&token=${FINNHUB}`);
-      if (q?.c && q.c > 0) {
-        const price = round4(q.c * (quoteCurrency(a.provider_symbol) === "USD" ? fx : 1));
-        prices.push({ symbol: a.symbol, price, change_1d: (q.dp ?? 0) / 100, source: "finnhub", updated_at: new Date(now).toISOString() });
-        // Un point par heure, seulement si le cours a bougé (marché ouvert)
-        if (prevPrice.get(a.symbol) !== price) points.push({ symbol: a.symbol, interval: "1h", t: hour, price });
-      }
+      if (q?.c && q.c > 0) add(a.symbol, round4(q.c * (quoteCurrency(a.provider_symbol) === "USD" ? fx : 1)), (q.dp ?? 0) / 100, "finnhub");
+      else missing.push(a);
       await sleep(1100); // offre gratuite : 60 requêtes / minute
+    }
+    // Actions européennes : leur cotation américaine (action ou ADR) × facteur, en euros
+    const stillMissing: typeof assets = [];
+    for (const a of missing) {
+      const q = a.us_symbol ? await getJson<{ c?: number; dp?: number }>(`https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(a.us_symbol)}&token=${FINNHUB}`) : null;
+      if (q?.c && q.c > 0) add(a.symbol, round4(q.c * Number(a.us_factor ?? 1) * fx), (q.dp ?? 0) / 100, "finnhub-us");
+      else stillMissing.push(a);
+      if (a.us_symbol) await sleep(1100);
+    }
+    report.europe = `${missing.length - stillMissing.length}/${missing.length}`;
+    // Dernier recours : Twelve Data (selon l'offre, les bourses européennes peuvent être exclues)
+    if (TWELVE) {
+      for (const a of stillMissing) {
+        const q = await getJson<{ close?: string; percent_change?: string; currency?: string; code?: number }>(
+          `https://api.twelvedata.com/quote?${twelveSymbol(a.provider_symbol)}&apikey=${TWELVE}`);
+        const close = Number(q?.close);
+        if (close > 0) add(a.symbol, round4(close * ((q?.currency ?? quoteCurrency(a.provider_symbol)) === "USD" ? fx : 1)), Number(q?.percent_change ?? 0) / 100, "twelvedata");
+        await sleep(TD_GAP_MS);
+      }
     }
     if (prices.length) await db("asset_prices", { method: "POST", headers: { Prefer: "resolution=merge-duplicates" }, body: JSON.stringify(prices) });
     if (points.length) await db("market_series", { method: "POST", headers: { Prefer: "resolution=merge-duplicates" }, body: JSON.stringify(points) });
@@ -85,16 +107,19 @@ Deno.serve(async () => {
       .slice(0, HISTORY_BATCH);
     let ok = 0;
     for (const a of stale) {
+      const sym = a.us_symbol ? `symbol=${encodeURIComponent(a.us_symbol)}` : twelveSymbol(a.provider_symbol);
       const j = await getJson<{ status?: string; meta?: { currency?: string }; values?: { datetime: string; close: string }[] }>(
-        `https://api.twelvedata.com/time_series?${twelveSymbol(a.provider_symbol)}&interval=1day&outputsize=260&timezone=UTC&apikey=${TWELVE}`, 15_000);
+        `https://api.twelvedata.com/time_series?${sym}&interval=1day&outputsize=260&timezone=UTC&apikey=${TWELVE}`, 15_000);
       if (j?.status === "ok" && j.values?.length) {
-        const rate = (j.meta?.currency ?? quoteCurrency(a.provider_symbol)) === "USD" ? fx : 1;
+        const cur = j.meta?.currency ?? (a.us_symbol ? "USD" : quoteCurrency(a.provider_symbol));
+        const rate = (cur === "USD" ? fx : 1) * (a.us_symbol ? Number(a.us_factor ?? 1) : 1);
         const rows = j.values
           .map((v) => ({ symbol: a.symbol, interval: "1d", t: `${v.datetime.slice(0, 10)}T00:00:00Z`, price: round4(Number(v.close) * rate) }))
           .filter((r) => r.price > 0);
         await db("market_series", { method: "POST", headers: { Prefer: "resolution=merge-duplicates" }, body: JSON.stringify(rows) });
         ok++;
       }
+      await sleep(TD_GAP_MS);
       // Marqué même en cas d'échec : on réessaiera demain plutôt que chaque heure
       await db(`assets?symbol=eq.${encodeURIComponent(a.symbol)}`, { method: "PATCH", body: JSON.stringify({ history_updated_at: new Date(now).toISOString() }) });
     }
