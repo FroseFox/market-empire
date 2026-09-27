@@ -5,6 +5,7 @@ import {
   EXPORT_RATIO, FOOD_PER_RESIDENT, MAINTENANCE_RATE, MAX_CATCHUP_DAYS, RESOURCE_PRICES,
   STARTING_BUILDINGS, STARTING_CASH, STARTING_POPULATION, TAX_PER_RESIDENT, TRADE_FEE_MIN, TRADE_FEE_RATE,
 } from "./config";
+import { layoutFrom, placeTile, type Plot } from "./layout";
 
 export interface Holding { qty: number; avgCost: number }
 
@@ -41,6 +42,8 @@ export interface GameState {
   cash: number;
   population: number;
   buildings: Record<string, number>;
+  /** Emplacement de chaque bâtiment sur la carte (vue isométrique). */
+  plots: Plot[];
   holdings: Record<string, Holding>;
   transactions: Transaction[];
   history: Snapshot[];
@@ -61,6 +64,7 @@ export function newGame(now: number, playerName = "Celyan", cityName = "Nova Cit
     cash: STARTING_CASH,
     population: STARTING_POPULATION,
     buildings: { ...STARTING_BUILDINGS },
+    plots: layoutFrom(STARTING_BUILDINGS),
     holdings: {},
     transactions: [],
     history: [],
@@ -289,6 +293,7 @@ export function build(state: GameState, buildingId: string, at: number): ActionR
       ...state,
       cash: state.cash - b.cost,
       buildings: { ...state.buildings, [b.id]: (state.buildings[b.id] ?? 0) + 1 },
+      plots: addPlot(state.plots, b.id),
       transactions: addTx(state, { kind: "build", label: `Construction : ${b.name}`, amount: -b.cost, at }),
     },
   };
@@ -307,9 +312,31 @@ export function demolish(state: GameState, buildingId: string, at: number): Acti
       ...state,
       cash: state.cash + refund,
       buildings,
+      plots: removePlot(state.plots, b.id),
       transactions: addTx(state, { kind: "demolish", label: `Démolition : ${b.name}`, amount: refund, at }),
     },
   };
+}
+
+// ─── Carte ────────────────────────────────────────────────────
+
+function addPlot(plots: Plot[], id: string): Plot[] {
+  const t = placeTile(plots, id);
+  return t ? [...plots, { id, ...t }] : plots;
+}
+
+function removePlot(plots: Plot[], id: string): Plot[] {
+  const i = plots.map((p) => p.id).lastIndexOf(id);
+  return i < 0 ? plots : [...plots.slice(0, i), ...plots.slice(i + 1)];
+}
+
+/** Répare une sauvegarde : plan manquant ou incohérent avec les bâtiments. */
+export function normalize(state: GameState): GameState {
+  const plots = Array.isArray(state.plots) ? state.plots : [];
+  const counts: Record<string, number> = {};
+  for (const p of plots) counts[p.id] = (counts[p.id] ?? 0) + 1;
+  const same = Object.keys({ ...counts, ...state.buildings }).every((k) => (counts[k] ?? 0) === (state.buildings[k] ?? 0));
+  return same && Array.isArray(state.plots) ? state : { ...state, plots: layoutFrom(state.buildings) };
 }
 
 // ─── Utilitaires ──────────────────────────────────────────────

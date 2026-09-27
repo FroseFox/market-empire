@@ -7,6 +7,7 @@ import {
 import { useDerived } from "@/store/game";
 import { Card, Delta, PageHeader, Progress, Segmented, StatCard } from "@/components/ui";
 import { IncomeBars, WealthChart } from "@/components/charts";
+import IsoCity from "@/components/IsoCity";
 import { computeAlerts, computeObjectives, type AlertLevel } from "@/lib/game/insights";
 import { compactEur, eur, num, pctPlain, signedEur, tone } from "@/lib/format";
 import { DAY_LENGTH_MINUTES } from "@/lib/game/config";
@@ -92,6 +93,7 @@ export default function EconomyPage() {
 
         {/* Ville */}
         <Card title="Ville" icon={Building2} action={{ label: "Voir la ville", href: "/ville" }} className="xl:col-span-3">
+          <div className="mb-4"><IsoCity plots={game.plots} height={130} compact /></div>
           <ul className="space-y-3 text-[13px]">
             <CityLine label="Population" value={num(game.population)} sub={`${num(city.housing)} logements`} />
             <CityLine label="Emplois" value={num(city.jobs)} sub={`${num(city.employed)} occupés`} />

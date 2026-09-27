@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { build, buy, catchUp, computeCity, DAY_MS, demolish, newGame, sell, tickDay } from "./engine";
+import { build, buy, catchUp, computeCity, DAY_MS, demolish, newGame, normalize, sell, tickDay } from "./engine";
+import { isRoad } from "./layout";
 import { STARTING_CASH } from "./config";
 
 const T0 = Date.UTC(2026, 8, 27, 12);
@@ -88,5 +89,24 @@ describe("temps", () => {
     expect(state.lastTick).toBe(T0 + 3 * DAY_MS);
     const far = catchUp(g, T0 + 1000 * DAY_MS, {});
     expect(far.days).toBe(24);
+  });
+});
+
+describe("carte", () => {
+  it("chaque bâtiment a une place, jamais sur une route ni en double", () => {
+    let g = newGame(T0);
+    g = { ...g, cash: 10_000_000 };
+    for (const id of ["house_s", "house_s", "shop", "factory_s", "farm_s", "power_s"]) { const r = build(g, id, T0); if (r.ok) g = r.state; }
+    const total = Object.values(g.buildings).reduce((a, b) => a + b, 0);
+    expect(g.plots.length).toBe(total);
+    expect(new Set(g.plots.map((p) => `${p.x},${p.y}`)).size).toBe(total);
+    expect(g.plots.some((p) => isRoad(p.x, p.y))).toBe(false);
+    const d = demolish(g, "shop", T0);
+    if (d.ok) expect(d.state.plots.filter((p) => p.id === "shop").length).toBe(1);
+  });
+  it("répare une ancienne sauvegarde sans plan", () => {
+    const g = newGame(T0);
+    const old = { ...g, plots: undefined } as unknown as typeof g;
+    expect(normalize(old).plots.length).toBe(5);
   });
 });

@@ -11,6 +11,9 @@ export interface QuoteView { price: number; change: number; source: string }
 
 interface Store {
   game: E.GameState;
+  /** Dernière modification de la partie (pour choisir la sauvegarde la plus récente). */
+  savedAt: number;
+  cloud: "local" | "syncing" | "saved" | "error";
   quotes: Record<string, QuoteView>;
   dataMode: string;
   lastQuoteAt: number;
@@ -39,6 +42,8 @@ export const useGame = create<Store>()(
   persist(
     (set, get) => ({
       game: E.newGame(Date.now()),
+      savedAt: 0,
+      cloud: "local",
       quotes: {},
       dataMode: "simulé",
       lastQuoteAt: 0,
@@ -110,11 +115,20 @@ export const useGame = create<Store>()(
         setItem: (k, v) => { try { localStorage.setItem(k, v); } catch { /* sauvegarde indisponible */ } },
         removeItem: (k) => { try { localStorage.removeItem(k); } catch { /* idem */ } },
       })),
-      version: 1,
-      partialize: (s) => ({ game: s.game, quotes: s.quotes }),
+      version: 2,
+      migrate: (persisted) => {
+        const p = persisted as { game?: E.GameState; quotes?: Record<string, QuoteView> };
+        return { ...p, game: p.game ? E.normalize(p.game) : E.newGame(Date.now()) } as Store;
+      },
+      partialize: (s) => ({ game: s.game, quotes: s.quotes, savedAt: s.savedAt }),
     },
   ),
 );
+
+// Horodate chaque changement de partie
+useGame.subscribe((s, prev) => {
+  if (s.game !== prev.game && s.savedAt === prev.savedAt) useGame.setState({ savedAt: Date.now() });
+});
 
 /** Valeurs dérivées utilisées par toutes les pages. */
 export function useDerived() {

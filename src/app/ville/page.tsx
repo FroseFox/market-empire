@@ -7,6 +7,7 @@ import type { LucideIcon } from "lucide-react";
 import { useDerived, useGame } from "@/store/game";
 import { BUILDINGS, BUILDING_BY_ID, CATEGORY_LABELS, DEMOLISH_REFUND, EXPORT_RATIO, MAINTENANCE_RATE, RESOURCE_PRICES, type BuildingType, type Category } from "@/lib/game/config";
 import { Button, Card, PageHeader, Progress, Segmented } from "@/components/ui";
+import IsoCity from "@/components/IsoCity";
 import { compactEur, eur, num, pctPlain, signedEur, tone } from "@/lib/format";
 
 const CAT_ICON: Record<Category, LucideIcon> = {
@@ -24,7 +25,6 @@ export default function CityPage() {
   const skipDay = useGame((s) => s.skipDay);
   const reset = useGame((s) => s.reset);
 
-  const tiles = Object.entries(game.buildings).flatMap(([id, n]) => Array.from({ length: n }, (_, i) => ({ id, key: `${id}-${i}` })));
 
   return (
     <>
@@ -45,6 +45,10 @@ export default function CityPage() {
         </div>
       </div>
 
+      <Card title="Vue de la ville" icon={Building2} className="mb-4" extra={<span className="text-[12px] text-muted">{game.plots.length} bâtiments · survolez pour identifier</span>}>
+        <IsoCity plots={game.plots} height={460} />
+      </Card>
+
       <div className="grid gap-4 grid-cols-1 xl:grid-cols-12">
         <div className="xl:col-span-8">
           <div className="mb-3"><Segmented options={["Construire", "Mes bâtiments"] as Tab[]} value={tab} onChange={setTab} /></div>
@@ -52,17 +56,6 @@ export default function CityPage() {
         </div>
 
         <div className="xl:col-span-4 space-y-4">
-          <Card title="Plan de la ville" icon={Building2}>
-            <div className="grid grid-cols-8 gap-1.5">
-              {tiles.map((t) => {
-                const b = BUILDING_BY_ID[t.id];
-                const Icon = CAT_ICON[b.category];
-                return <div key={t.key} title={b.name} className={`aspect-square rounded-[6px] grid place-items-center ${CAT_TINT[b.category]}`}><Icon size={14} /></div>;
-              })}
-              {Array.from({ length: Math.max(0, 32 - tiles.length) }, (_, i) => <div key={i} className="aspect-square rounded-[6px] border border-dashed border-slate-200" />)}
-            </div>
-            <p className="text-[11px] text-muted mt-3">Aperçu simplifié. La vue isométrique arrive en phase 3.</p>
-          </Card>
           <Card title="Comment ça marche" icon={Landmark}>
             <ul className="text-[12px] text-muted space-y-1.5 list-disc pl-4">
               <li>60 % des habitants cherchent un emploi.</li>

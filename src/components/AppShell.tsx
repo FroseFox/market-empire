@@ -3,10 +3,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
-  BarChart3, Building2, FlaskConical, Folder, Globe2, LineChart, Network, Newspaper, Wallet, Plus, Clock,
+  BarChart3, Building2, Cloud, CloudOff, FlaskConical, Folder, Globe2, LineChart, Network, Newspaper, Wallet, Plus, Clock,
 } from "lucide-react";
 import { useGame } from "@/store/game";
-import { fetchQuotes } from "@/lib/market/client";
+import { fetchQuotes, STATIC_MODE } from "@/lib/market/client";
+import { startCloudSync } from "@/lib/cloud";
 import { DAY_MS } from "@/lib/game/engine";
 import { eur } from "@/lib/format";
 
@@ -85,10 +86,28 @@ function NextDay() {
   );
 }
 
+const CLOUD_LABEL = {
+  saved: { text: "Sauvegardé en ligne", cls: "text-emerald-700", icon: Cloud },
+  syncing: { text: "Enregistrement…", cls: "text-muted", icon: Cloud },
+  local: { text: "Sauvegarde sur cet appareil", cls: "text-muted", icon: CloudOff },
+  error: { text: "Sauvegarde en échec, nouvel essai au prochain changement", cls: "text-danger", icon: CloudOff },
+} as const;
+
+function CloudBadge({ status }: { status: keyof typeof CLOUD_LABEL }) {
+  const c = CLOUD_LABEL[status];
+  return (
+    <span className={`hidden md:inline-flex items-center gap-1.5 text-[11px] font-medium ${c.cls}`} title={c.text}>
+      <c.icon size={14} />{status === "error" ? "Sauvegarde en échec" : c.text}
+    </span>
+  );
+}
+
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const path = usePathname();
   const hydrated = useHydrated();
   useHeartbeat(hydrated);
+  useEffect(() => { if (hydrated && STATIC_MODE) startCloudSync(); }, [hydrated]);
+  const cloud = useGame((s) => s.cloud);
   const cash = useGame((s) => s.game.cash);
   const name = useGame((s) => s.game.playerName);
   const mode = useGame((s) => s.dataMode);
@@ -127,6 +146,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               <span className={`h-1.5 w-1.5 rounded-full ${mode === "simulé" ? "bg-warning" : "bg-success"}`} />
               {mode === "simulé" ? "Cours simulés" : "Cours réels"}
             </span>
+            {STATIC_MODE && hydrated && <CloudBadge status={cloud} />}
             <div className="hidden sm:flex items-center gap-2.5 pl-3 border-l border-line">
               <div className="h-8 w-8 rounded-full bg-primary text-white grid place-items-center text-[13px] font-semibold">{hydrated ? name[0] : ""}</div>
               <div className="leading-tight"><div className="text-[13px] font-semibold">{hydrated ? name : ""}</div><div className="text-[11px] text-muted">Investisseur</div></div>
