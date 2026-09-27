@@ -4,7 +4,7 @@ import Link from "next/link";
 import {
   AlertTriangle, BarChart3, Building2, CheckCircle2, Coins, Globe2, Info, Landmark, Target, TrendingUp, Zap, Wheat, Sparkles,
 } from "lucide-react";
-import { useDerived } from "@/store/game";
+import { useDerived, useGame } from "@/store/game";
 import { Card, Delta, PageHeader, Progress, Segmented, StatCard } from "@/components/ui";
 import { IncomeBars, WealthChart } from "@/components/charts";
 import IsoCity from "@/components/IsoCity";
@@ -48,6 +48,7 @@ export default function EconomyPage() {
   return (
     <>
       <PageHeader icon={BarChart3} title="Économie" subtitle={`Vue d'ensemble de votre empire · ${game.cityName}`} />
+      {!game.tutorialDone && <Welcome />}
 
       {/* Chiffres clés */}
       <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 mb-4">
@@ -201,5 +202,42 @@ function Resource({ icon: Icon, label, prod, use }: { icon: typeof Zap; label: s
       <div className="text-[12px] flex justify-between mb-2"><span className="text-muted">Cons.</span><span className="tabular">{num(use)}</span></div>
       <div className={`font-bold tabular ${tone(bal)}`}>{bal >= 0 ? "+" : "−"}{num(Math.abs(bal))}</div>
     </div>
+  );
+}
+
+/** Guide de démarrage : 3 étapes, chacune cochée quand le joueur l'a faite. */
+function Welcome() {
+  const game = useGame((s) => s.game);
+  const close = useGame((s) => s.closeTutorial);
+  const steps = [
+    { done: Object.keys(game.holdings).length > 0 || game.transactions.some((t) => t.kind === "buy"), title: "Investissez en bourse", text: "Achetez une première action dans Marchés. Les cours suivent la vraie bourse.", href: "/marches", cta: "Ouvrir les Marchés" },
+    { done: game.transactions.some((t) => t.kind === "build"), title: "Agrandissez votre ville", text: "Construisez des logements et des emplois : la ville rapporte chaque jour.", href: "/ville", cta: "Aller à la Ville" },
+    { done: game.transactions.some((t) => t.kind === "research"), title: "Débloquez une recherche", text: "L'arbre de compétences ouvre de nouveaux marchés et outils d'analyse.", href: "/recherche", cta: "Voir la Recherche" },
+  ];
+  const count = steps.filter((s) => s.done).length;
+  return (
+    <section className="card p-5 mb-4 appear border-primary/30" aria-label="Guide de démarrage">
+      <div className="flex items-start gap-3 mb-4">
+        <div className="flex-1">
+          <h2 className="text-[18px] font-semibold">Bienvenue dans Market Empire</h2>
+          <p className="text-[13px] text-muted">100 000 € et une petite ville. Trois gestes pour bien démarrer · {count} / 3</p>
+        </div>
+        <button onClick={close} className="text-[12px] text-muted hover:text-ink font-medium">{count === 3 ? "Terminer" : "Masquer"}</button>
+      </div>
+      <ol className="grid gap-3 grid-cols-1 md:grid-cols-3">
+        {steps.map((s, i) => (
+          <li key={s.title} className={`rounded-[12px] border p-4 ${s.done ? "border-success/40 bg-success-soft/50" : "border-line"}`}>
+            <div className="flex items-center gap-2 mb-1">
+              <span className={`h-6 w-6 rounded-full grid place-items-center text-[12px] font-bold ${s.done ? "bg-success text-white" : "bg-primary-soft text-primary"}`}>
+                {s.done ? <CheckCircle2 size={14} /> : i + 1}
+              </span>
+              <span className="font-semibold text-[14px]">{s.title}</span>
+            </div>
+            <p className="text-[12px] text-muted mb-3">{s.text}</p>
+            {!s.done && <Link href={s.href} className="text-[12px] font-semibold text-primary hover:underline">{s.cta} →</Link>}
+          </li>
+        ))}
+      </ol>
+    </section>
   );
 }

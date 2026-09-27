@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import {
-  Briefcase, Building2, Factory, FastForward, Home, Landmark, Lock, RotateCcw, Smile, Store, Users, Wheat, Zap,
+  Briefcase, Building2, Pencil, Factory, FastForward, Home, Landmark, Lock, RotateCcw, Smile, Store, Users, Wheat, Zap,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useDerived, useGame } from "@/store/game";
@@ -29,6 +29,7 @@ export default function CityPage() {
   return (
     <>
       <PageHeader icon={Building2} title={game.cityName} subtitle={`Gestion de votre cité · jour ${game.day}`}>
+        <RenameCity />
         <Button variant="secondary" onClick={skipDay} title="Outil de test du prototype" className="inline-flex items-center gap-1.5"><FastForward size={15} />Avancer d&apos;un jour</Button>
       </PageHeader>
 
@@ -70,6 +71,26 @@ export default function CityPage() {
         </div>
       </div>
     </>
+  );
+}
+
+/** Renommer sa ville (le nom apparaît sur la carte du monde et au classement). */
+function RenameCity() {
+  const cityName = useGame((s) => s.game.cityName);
+  const renameCity = useGame((s) => s.renameCity);
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(cityName);
+  if (!editing) {
+    return <Button variant="secondary" onClick={() => { setValue(cityName); setEditing(true); }} className="inline-flex items-center gap-1.5"><Pencil size={14} />Renommer</Button>;
+  }
+  return (
+    <form className="flex items-center gap-2" onSubmit={(e) => { e.preventDefault(); if (renameCity(value)) setEditing(false); }}>
+      <label htmlFor="city-name" className="sr-only">Nom de la ville</label>
+      <input id="city-name" autoFocus value={value} maxLength={32} onChange={(e) => setValue(e.target.value)}
+        className="w-48 rounded-[10px] border border-line px-3 py-2 text-[13px] outline-none focus:border-primary" />
+      <Button type="submit">Valider</Button>
+      <Button type="button" variant="secondary" onClick={() => setEditing(false)}>Annuler</Button>
+    </form>
   );
 }
 

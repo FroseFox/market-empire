@@ -53,6 +53,8 @@ export interface GameState {
   research: string[];
   /** Dossiers d'analyse du joueur. */
   folders: Folder[];
+  /** Guide de démarrage fermé par le joueur. */
+  tutorialDone?: boolean;
   transactions: Transaction[];
   history: Snapshot[];
 }
@@ -375,6 +377,14 @@ export function doResearch(state: GameState, id: string, at: number): ActionResu
       transactions: addTx(state, { kind: "research", label: `Recherche : ${n.name}`, amount: -n.cost, at }),
     },
   };
+}
+
+// ─── Profil ───────────────────────────────────────────────────
+
+export function renameCity(state: GameState, name: string): ActionResult {
+  const clean = name.replace(/\s+/g, " ").trim().slice(0, 32);
+  if (clean.length < 2) return { ok: false, error: "Le nom doit faire au moins 2 caractères." };
+  return { ok: true, state: { ...state, cityName: clean } };
 }
 
 // ─── Dossiers ─────────────────────────────────────────────────

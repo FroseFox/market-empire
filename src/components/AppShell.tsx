@@ -8,15 +8,16 @@ import {
 import { useGame } from "@/store/game";
 import { fetchQuotes, STATIC_MODE } from "@/lib/market/client";
 import { startCloudSync } from "@/lib/cloud";
+import { startWorldSync } from "@/lib/world/players";
 import { DAY_MS } from "@/lib/game/engine";
 import { eur } from "@/lib/format";
 
-const NAV = [
+const NAV: { href: string; label: string; icon: typeof BarChart3; soon?: boolean }[] = [
   { href: "/", label: "Économie", icon: BarChart3 },
   { href: "/marches", label: "Marchés", icon: LineChart },
   { href: "/portefeuille", label: "Portefeuille", icon: Wallet },
   { href: "/ville", label: "Ville", icon: Building2 },
-  { href: "/monde", label: "Monde", icon: Globe2, soon: true },
+  { href: "/monde", label: "Monde", icon: Globe2 },
   { href: "/actualites", label: "Actualités", icon: Newspaper },
   { href: "/relations", label: "Relations", icon: Network },
   { href: "/dossiers", label: "Dossiers", icon: Folder },
@@ -106,7 +107,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const path = usePathname();
   const hydrated = useHydrated();
   useHeartbeat(hydrated);
-  useEffect(() => { if (hydrated && STATIC_MODE) startCloudSync(); }, [hydrated]);
+  useEffect(() => { if (hydrated && STATIC_MODE) { startCloudSync(); startWorldSync(); } }, [hydrated]);
   const cloud = useGame((s) => s.cloud);
   const cash = useGame((s) => s.game.cash);
   const name = useGame((s) => s.game.playerName);

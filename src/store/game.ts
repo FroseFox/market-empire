@@ -30,6 +30,8 @@ interface Store {
   createFolder: (name: string, symbols?: string[]) => string | null;
   updateFolder: (id: string, patch: Partial<Omit<E.Folder, "id">>) => void;
   deleteFolder: (id: string) => void;
+  renameCity: (name: string) => boolean;
+  closeTutorial: () => void;
   skipDay: () => void;
   reset: () => void;
   notify: (text: string, kind?: "ok" | "error") => void;
@@ -121,6 +123,14 @@ export const useGame = create<Store>()(
         const r = E.deleteFolder(get().game, id);
         if (r.ok) set({ game: r.state });
       },
+      renameCity: (name) => {
+        const r = E.renameCity(get().game, name);
+        if (!r.ok) { get().notify(r.error, "error"); return false; }
+        set({ game: r.state });
+        get().notify("Ville renommée");
+        return true;
+      },
+      closeTutorial: () => set({ game: { ...get().game, tutorialDone: true } }),
       // Outil de test : avance d'un jour de ville.
       skipDay: () => {
         const g = get().game;
