@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { build, buy, catchUp, computeCity, createFolder, DAY_MS, demolish, doResearch, newGame, normalize, sell, tickDay, updateFolder } from "./engine";
+import { build, buy, moveBuilding, catchUp, computeCity, createFolder, DAY_MS, demolish, doResearch, newGame, normalize, sell, tickDay, updateFolder } from "./engine";
 import { isRoad } from "./layout";
 import { STARTING_CASH } from "./config";
 
@@ -136,5 +136,24 @@ describe("recherche et dossiers", () => {
     expect(createFolder(g, "Luxe", T0).ok).toBe(false);
     const u = updateFolder(g, g.folders[0].id, { symbols: ["NVDA", "AMD", "NVDA"] });
     expect(u.ok && u.state.folders[0].symbols).toEqual(["NVDA", "AMD"]);
+  });
+});
+
+describe("placement libre", () => {
+  it("construire sur un carreau choisi, refuser route et doublon, déplacer", () => {
+    let g = newGame(T0);
+    expect(build(g, "shop", T0, { x: 4, y: 5 }).ok).toBe(false); // route
+    const taken = g.plots[0];
+    expect(build(g, "shop", T0, { x: taken.x, y: taken.y }).ok).toBe(false); // occupé
+    const r = build(g, "shop", T0, { x: 13, y: 13 });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    g = r.state;
+    expect(g.plots.some((p) => p.id === "shop" && p.x === 13 && p.y === 13)).toBe(true);
+    const m = moveBuilding(g, { x: 13, y: 13 }, { x: 13, y: 14 });
+    expect(m.ok && m.state.plots.some((p) => p.x === 13 && p.y === 14)).toBe(true);
+    expect(moveBuilding(g, { x: 13, y: 13 }, { x: 12, y: 12 }).ok).toBe(false); // route (12 % 4 == 0)
+    const d = demolish(g, "shop", T0, { x: 13, y: 13 });
+    expect(d.ok && d.state.plots.some((p) => p.x === 13 && p.y === 13)).toBe(false);
   });
 });

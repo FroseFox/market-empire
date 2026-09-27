@@ -9,49 +9,69 @@ import { hasResearch } from "@/lib/game/engine";
 import { Card, Delta, PageHeader } from "@/components/ui";
 import AddToFolder from "@/components/AddToFolder";
 
-const ROLE_STYLE: Record<Neighbor["role"], { color: string; label: string; angle: [number, number] }> = {
-  fournisseur: { color: "#2563EB", label: "Fournisseurs", angle: [150, 210] },
-  client: { color: "#10B981", label: "Clients", angle: [-30, 30] },
-  concurrent: { color: "#F59E0B", label: "Concurrents", angle: [55, 125] },
-  partenaire: { color: "#8B5CF6", label: "Partenaires", angle: [235, 305] },
+const ROLE_STYLE: Record<Neighbor["role"], { color: string; label: string }> = {
+  fournisseur: { color: "#2563EB", label: "Fournisseurs" },
+  client: { color: "#10B981", label: "Clients" },
+  concurrent: { color: "#F59E0B", label: "Concurrents" },
+  partenaire: { color: "#8B5CF6", label: "Partenaires" },
 };
-const W = 660, H = 460, CX = W / 2, CY = H / 2;
+
+// Disposition sans chevauchement : fournisseurs en colonne à gauche, clients à droite,
+// partenaires en rangée au-dessus, concurrents en rangée en dessous.
+const NODE_W = 128, NODE_H = 44, GAP_Y = 56, GAP_X = 142, SIDE = 260, DEEP = 175;
 
 interface GNode { symbol: string; x: number; y: number; level: 0 | 1 | 2; role?: Neighbor["role"] }
 interface GEdge { a: GNode; b: GNode; role: Neighbor["role"] }
 
+function column(n: number, cy: number) { return Array.from({ length: n }, (_, i) => cy + (i - (n - 1) / 2) * GAP_Y); }
+function rows(n: number) {
+  const perRow = 4, out: { dx: number; row: number }[] = [];
+  for (let i = 0; i < n; i++) {
+    const row = Math.floor(i / perRow), inRow = Math.min(perRow, n - row * perRow);
+    out.push({ dx: ((i % perRow) - (inRow - 1) / 2) * GAP_X, row });
+  }
+  return out;
+}
+
 function buildGraph(center: string, deep: boolean) {
-  const nodes: GNode[] = [{ symbol: center, x: CX, y: CY, level: 0 }];
+  const c: GNode = { symbol: center, x: 0, y: 0, level: 0 };
+  const nodes: GNode[] = [c];
   const edges: GEdge[] = [];
   const list = neighbors(center);
   const seen = new Set([center]);
-  (Object.keys(ROLE_STYLE) as Neighbor["role"][]).forEach((role) => {
-    const group = list.filter((n) => n.role === role && !seen.has(n.symbol));
-    const [a0, a1] = ROLE_STYLE[role].angle;
-    group.forEach((n, i) => {
-      seen.add(n.symbol);
-      const ang = ((group.length === 1 ? (a0 + a1) / 2 : a0 + ((a1 - a0) * i) / (group.length - 1)) * Math.PI) / 180;
-      const r = deep && (role === "fournisseur" || role === "client") ? 120 : 165;
-      const node: GNode = { symbol: n.symbol, x: CX + Math.cos(ang) * r * 1.3, y: CY + Math.sin(ang) * r, level: 1, role };
-      nodes.push(node);
-      edges.push({ a: nodes[0], b: node, role });
-    });
-  });
+  const group = (role: Neighbor["role"]) => list.filter((n) => n.role === role && !seen.has(n.symbol) && (seen.add(n.symbol), true));
+  const sup = group("fournisseur"), cli = group("client"), par = group("partenaire"), com = group("concurrent");
+
+  const add = (symbol: string, x: number, y: number, level: 1 | 2, role: Neighbor["role"], from: GNode) => {
+    const node: GNode = { symbol, x, y, level, role };
+    nodes.push(node); edges.push({ a: from, b: node, role }); return node;
+  };
+  const colHalf = (Math.max(sup.length, cli.length, 1) - 1) / 2 * GAP_Y;
+  const supNodes = column(sup.length, 0).map((y, i) => add(sup[i].symbol, -SIDE, y, 1, "fournisseur", c));
+  const cliNodes = column(cli.length, 0).map((y, i) => add(cli[i].symbol, SIDE, y, 1, "client", c));
+  rows(par.length).forEach((r, i) => add(par[i].symbol, r.dx, -(colHalf + 90 + r.row * GAP_Y), 1, "partenaire", c));
+  rows(com.length).forEach((r, i) => add(com[i].symbol, r.dx, colHalf + 90 + r.row * GAP_Y, 1, "concurrent", c));
+
   if (deep) {
-    // Second niveau : fournisseurs des fournisseurs, clients des clients
-    for (const n1 of nodes.filter((n) => n.level === 1 && (n.role === "fournisseur" || n.role === "client"))) {
-      const next = neighbors(n1.symbol).filter((m) => m.role === n1.role && !seen.has(m.symbol));
-      next.forEach((m, i) => {
-        seen.add(m.symbol);
-        const dir = n1.role === "fournisseur" ? -1 : 1;
-        const node: GNode = { symbol: m.symbol, x: n1.x + dir * 125, y: n1.y + (i - (next.length - 1) / 2) * 50, level: 2, role: n1.role };
-        nodes.push(node);
-        edges.push({ a: n1, b: node, role: n1.role! });
-      });
+    // Second niveau : fournisseurs des fournisseurs (à gauche), clients des clients (à droite)
+    for (const [list1, role, dir] of [[supNodes, "fournisseur", -1], [cliNodes, "client", 1]] as const) {
+      let cursorY = -Infinity;
+      for (const n1 of list1) {
+        const next = neighbors(n1.symbol).filter((m) => m.role === role && !seen.has(m.symbol));
+        column(next.length, n1.y).forEach((y, i) => {
+          seen.add(next[i].symbol);
+          const yy = Math.max(y, cursorY + GAP_Y); cursorY = yy;
+          add(next[i].symbol, dir * (SIDE + DEEP), yy, 2, role, n1);
+        });
+      }
     }
   }
-  for (const n of nodes) { n.x = Math.max(60, Math.min(W - 60, n.x)); n.y = Math.max(26, Math.min(H - 26, n.y)); }
-  return { nodes, edges, list };
+  const xs = nodes.map((n) => n.x), ys = nodes.map((n) => n.y);
+  const pad = 16;
+  const box = { x: Math.min(...xs, -SIDE) - NODE_W / 2 - pad, y: Math.min(...ys) - NODE_H / 2 - pad, w: 0, h: 0 };
+  box.w = Math.max(...xs, SIDE) + NODE_W / 2 + pad - box.x;
+  box.h = Math.max(...ys) + NODE_H / 2 + pad - box.y;
+  return { nodes, edges, list, box };
 }
 
 export default function RelationsPage() {
@@ -59,7 +79,7 @@ export default function RelationsPage() {
   const [center, setCenter] = useState("NVDA");
   const [query, setQuery] = useState("");
   const deep = hasResearch(game, "supply_chain");
-  const { nodes, edges, list } = useMemo(() => buildGraph(center, deep), [center, deep]);
+  const { nodes, edges, list, box } = useMemo(() => buildGraph(center, deep), [center, deep]);
   const asset = ASSET_BY_SYMBOL[center];
   const choices = ASSETS.filter((a) => a.kind === "stock" && (a.symbol + a.name).toLowerCase().includes(query.toLowerCase()));
 
@@ -94,21 +114,21 @@ export default function RelationsPage() {
             {!deep && <Link href="/recherche" className="ml-auto text-[12px] text-primary font-medium hover:underline">Voir les chaînes complètes →</Link>}
           </div>
           <div className="overflow-x-auto">
-            <svg viewBox={`0 0 ${W} ${H}`} className="w-full min-w-[520px] h-auto" role="img" aria-label={`Relations de ${asset.name}`}>
+            <svg viewBox={`${box.x} ${box.y} ${box.w} ${box.h}`} className="w-full min-w-[560px] h-auto max-h-[640px]" role="img" aria-label={`Relations de ${asset.name}`}>
               {edges.map((e, i) => (
-                <line key={i} x1={e.a.x} y1={e.a.y} x2={e.b.x} y2={e.b.y} stroke={ROLE_STYLE[e.role].color} strokeWidth={e.b.level === 2 ? 1.2 : 2} strokeOpacity={e.b.level === 2 ? 0.45 : 0.7}
+                <path key={i} d={`M${e.a.x},${e.a.y} C${(e.a.x + e.b.x) / 2},${e.a.y} ${(e.a.x + e.b.x) / 2},${e.b.y} ${e.b.x},${e.b.y}`} fill="none" stroke={ROLE_STYLE[e.role].color} strokeWidth={e.b.level === 2 ? 1.2 : 2} strokeOpacity={e.b.level === 2 ? 0.45 : 0.7}
                   strokeDasharray={e.role === "concurrent" ? "5 4" : undefined} />
               ))}
               {nodes.map((n) => {
                 const q = quotes[n.symbol];
-                const w = n.level === 0 ? 132 : n.level === 1 ? 116 : 104, h = n.level === 0 ? 56 : n.level === 1 ? 44 : 40;
+                const w = n.level === 0 ? 150 : NODE_W, h = n.level === 0 ? 56 : NODE_H;
                 const stroke = n.level === 0 ? "#0F172A" : ROLE_STYLE[n.role!].color;
                 return (
                   <g key={n.symbol} transform={`translate(${n.x - w / 2},${n.y - h / 2})`} className="cursor-pointer" onClick={() => setCenter(n.symbol)} role="button" tabIndex={0}
                     onKeyDown={(e) => { if (e.key === "Enter") setCenter(n.symbol); }}>
                     <rect width={w} height={h} rx={10} fill={n.level === 0 ? "#0F172A" : "#FFFFFF"} stroke={stroke} strokeWidth={n.level === 0 ? 0 : 1.5} opacity={n.level === 2 ? 0.9 : 1} />
                     <text x={w / 2} y={n.level === 0 ? 23 : 18} textAnchor="middle" fontSize={n.level === 0 ? 15 : 13} fontWeight={700} fill={n.level === 0 ? "#FFFFFF" : "#0F172A"} fontFamily="Montserrat, sans-serif">
-                      {ASSET_BY_SYMBOL[n.symbol]?.name ?? n.symbol}
+                      {shortName(ASSET_BY_SYMBOL[n.symbol]?.name ?? n.symbol, n.level === 0 ? 17 : 15)}
                     </text>
                     {q && (
                       <text x={w / 2} y={n.level === 0 ? 42 : 34} textAnchor="middle" fontSize={11} fontWeight={600} fontFamily="Montserrat, sans-serif"
@@ -155,3 +175,5 @@ export default function RelationsPage() {
     </>
   );
 }
+
+function shortName(name: string, max: number) { return name.length > max ? `${name.slice(0, max - 1)}…` : name; }

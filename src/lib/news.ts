@@ -1,7 +1,7 @@
 "use client";
 // Actualités réelles : titre, source, lien et entreprises concernées.
-// Elles sont rassemblées par Claude (recherche web) et stockées dans la base
-// de la page publiée (collection « news », lecture seule pour les joueurs).
+// - Site hébergé : fichier public/news.json (mis à jour dans le dépôt GitHub).
+// - Page Claude : base de la page (collection « news », lecture seule pour les joueurs).
 // Le jeu ne publie jamais le contenu des articles, seulement un titre et le lien.
 import { useSyncExternalStore } from "react";
 import { STATIC_MODE } from "@/lib/market/client";
@@ -19,7 +19,7 @@ export interface NewsItem {
 }
 
 type State = { status: "loading" | "ready" | "unavailable"; items: NewsItem[] };
-let state: State = { status: STATIC_MODE ? "loading" : "unavailable", items: [] };
+let state: State = { status: "loading", items: [] };
 const listeners = new Set<() => void>();
 let started = false;
 
@@ -29,9 +29,23 @@ interface Snap { docs: { id: string; data(): Record<string, unknown> | undefined
 interface Query { orderBy(f: string, d?: "asc" | "desc"): Query; limit(n: number): Query; onSnapshot(n: (s: Snap) => void, e?: (err: unknown) => void): () => void }
 interface Db { collection(path: string): Query }
 
+const valid = (n: Partial<NewsItem>): n is NewsItem =>
+  typeof n.title === "string" && typeof n.url === "string" && /^https:\/\//.test(n.url) && Array.isArray(n.symbols) && typeof n.publishedAt === "string";
+
 async function start() {
-  if (started || !STATIC_MODE) return;
+  if (started) return;
   started = true;
+  if (!STATIC_MODE) {
+    try {
+      const r = await fetch("/news.json", { cache: "no-cache" });
+      const j = (await r.json()) as { items?: Partial<NewsItem>[] };
+      const items = (j.items ?? []).filter(valid).sort((a, b) => b.publishedAt.localeCompare(a.publishedAt));
+      emit({ status: "ready", items });
+    } catch {
+      emit({ status: "unavailable", items: [] });
+    }
+    return;
+  }
   const w = window as unknown as { claude?: { use(n: string): Promise<unknown> } };
   let rt = w.claude;
   if (!rt) { await new Promise((r) => setTimeout(r, 1500)); rt = w.claude; }
@@ -40,8 +54,7 @@ async function start() {
   db.collection("news").orderBy("publishedAt", "desc").limit(200).onSnapshot(
     (snap) => emit({
       status: "ready",
-      items: snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<NewsItem, "id">) }))
-        .filter((n) => typeof n.title === "string" && typeof n.url === "string" && /^https:\/\//.test(n.url)),
+      items: snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<NewsItem, "id">) })).filter(valid),
     }),
     () => emit({ status: "unavailable", items: state.items }),
   );

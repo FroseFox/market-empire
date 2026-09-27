@@ -6,6 +6,7 @@
 import { useState } from "react";
 import { ASSET_BY_SYMBOL } from "@/lib/market/universe";
 import { STATIC_MODE } from "@/lib/market/client";
+import { useGame } from "@/store/game";
 
 const SECTOR_TINT: Record<string, [string, string]> = {
   "Technologie": ["#1E3A8A", "#2563EB"],
@@ -27,7 +28,8 @@ const SECTOR_TINT: Record<string, [string, string]> = {
 export default function CompanyLogo({ symbol, size = 32 }: { symbol: string; size?: number }) {
   const asset = ASSET_BY_SYMBOL[symbol];
   const [failed, setFailed] = useState(false);
-  const useImage = !STATIC_MODE && !failed && asset?.kind === "stock";
+  const logos = useGame((s) => s.logos);
+  const useImage = logos && !STATIC_MODE && !failed && asset?.kind === "stock";
   const radius = Math.round(size * 0.26);
 
   if (useImage) {

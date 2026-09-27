@@ -16,6 +16,8 @@ interface Store {
   cloud: "local" | "syncing" | "saved" | "error";
   quotes: Record<string, QuoteView>;
   dataMode: string;
+  /** Le serveur sait fournir les logos (clé Logo.dev configurée). */
+  logos: boolean;
   lastQuoteAt: number;
   toast: { text: string; kind: "ok" | "error" } | null;
 
@@ -24,8 +26,9 @@ interface Store {
   sync: () => number;
   buy: (symbol: string, qty: number) => Promise<boolean>;
   sell: (symbol: string, qty: number) => Promise<boolean>;
-  build: (id: string) => boolean;
-  demolish: (id: string) => boolean;
+  build: (id: string, tile?: { x: number; y: number }) => boolean;
+  demolish: (id: string, tile?: { x: number; y: number }) => boolean;
+  moveBuilding: (from: { x: number; y: number }, to: { x: number; y: number }) => boolean;
   research: (id: string) => boolean;
   createFolder: (name: string, symbols?: string[]) => string | null;
   updateFolder: (id: string, patch: Partial<Omit<E.Folder, "id">>) => void;
@@ -52,6 +55,7 @@ export const useGame = create<Store>()(
       cloud: "local",
       quotes: {},
       dataMode: "simulé",
+      logos: false,
       lastQuoteAt: 0,
       toast: null,
 
@@ -89,17 +93,24 @@ export const useGame = create<Store>()(
         get().notify(`Vente de ${qty} ${symbol} à ${price.toLocaleString("fr-FR")} €`);
         return true;
       },
-      build: (id) => {
-        const r = E.build(get().game, id, Date.now());
+      build: (id, tile) => {
+        const r = E.build(get().game, id, Date.now(), tile);
         if (!r.ok) { get().notify(r.error, "error"); return false; }
         set({ game: r.state });
         get().notify("Construction terminée");
         return true;
       },
-      demolish: (id) => {
-        const r = E.demolish(get().game, id, Date.now());
+      demolish: (id, tile) => {
+        const r = E.demolish(get().game, id, Date.now(), tile);
         if (!r.ok) { get().notify(r.error, "error"); return false; }
         set({ game: r.state });
+        return true;
+      },
+      moveBuilding: (from, to) => {
+        const r = E.moveBuilding(get().game, from, to);
+        if (!r.ok) { get().notify(r.error, "error"); return false; }
+        set({ game: r.state });
+        get().notify("Bâtiment déplacé");
         return true;
       },
       research: (id) => {

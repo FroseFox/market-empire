@@ -3,7 +3,9 @@
 // Tout est calculé à partir de `plots` : aucune image externe.
 import { useEffect, useRef, useState } from "react";
 import { BUILDING_BY_ID } from "@/lib/game/config";
-import { isRoad, MAP_SIZE, type Plot } from "@/lib/game/layout";
+import { isBuildable, isRoad, MAP_SIZE, type Plot } from "@/lib/game/layout";
+
+export type CityMode = { kind: "place"; id: string } | { kind: "move"; id: string; from: { x: number; y: number } };
 
 const TW = 64, TH = 32; // taille d'un carreau à l'échelle 1
 
@@ -43,7 +45,15 @@ function hash(x: number, y: number) {
   return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
 }
 
-export default function IsoCity({ plots, height = 440, compact = false }: { plots: Plot[]; height?: number; compact?: boolean }) {
+export default function IsoCity({ plots, height = 440, compact = false, mode = null, selected = null, onTileClick }: {
+  plots: Plot[]; height?: number; compact?: boolean;
+  /** Mode placement / déplacement : aperçu du bâtiment sous la souris. */
+  mode?: CityMode | null;
+  /** Carreau sélectionné (entouré). */
+  selected?: { x: number; y: number } | null;
+  /** Clic sur un carreau (sans glisser). */
+  onTileClick?: (x: number, y: number) => void;
+}) {
   const wrap = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const births = useRef<Map<string, number>>(new Map());
@@ -51,6 +61,18 @@ export default function IsoCity({ plots, height = 440, compact = false }: { plot
   const hoverRef = useRef<{ x: number; y: number } | null>(null);
   const view = useRef({ zoom: 1, px: 0, py: 0 });
   const redraw = useRef<() => void>(() => {});
+  const modeRef = useRef<CityMode | null>(null);
+  const selectedRef = useRef<{ x: number; y: number } | null>(null);
+  const clickRef = useRef<typeof onTileClick>(undefined);
+  const interactive = !!onTileClick;
+
+  // Les props qui changent souvent passent par des refs : pas besoin de tout redessiner la scène
+  useEffect(() => {
+    modeRef.current = mode;
+    selectedRef.current = selected;
+    clickRef.current = onTileClick;
+    redraw.current();
+  });
 
   function onZoom(kind: ZoomKind) {
     const v = view.current;
@@ -78,11 +100,11 @@ export default function IsoCity({ plots, height = 440, compact = false }: { plot
       if (!seen.current.has(k)) { seen.current.add(k); births.current.set(k, nowMs); }
     }
 
-    // Zone visible : autour des bâtiments, au moins 8×8 carreaux
+    // Zone visible : autour des bâtiments (plus large en mode construction, pour avoir de la place)
     const xs = plots.map((p) => p.x), ys = plots.map((p) => p.y);
-    const pad = 1;
-    let x0 = Math.min(...xs, MAP_SIZE / 2 - 3) - pad, x1 = Math.max(...xs, MAP_SIZE / 2 + 3) + pad;
-    let y0 = Math.min(...ys, MAP_SIZE / 2 - 3) - pad, y1 = Math.max(...ys, MAP_SIZE / 2 + 3) + pad;
+    const pad = interactive ? 3 : 1, span = interactive ? 6 : 3;
+    let x0 = Math.min(...xs, MAP_SIZE / 2 - span) - pad, x1 = Math.max(...xs, MAP_SIZE / 2 + span) + pad;
+    let y0 = Math.min(...ys, MAP_SIZE / 2 - span) - pad, y1 = Math.max(...ys, MAP_SIZE / 2 + span) + pad;
     x0 = Math.max(0, x0); y0 = Math.max(0, y0); x1 = Math.min(MAP_SIZE - 1, x1); y1 = Math.min(MAP_SIZE - 1, y1);
 
     const byTile = new Map(plots.map((p) => [`${p.x},${p.y}`, p]));
@@ -378,8 +400,22 @@ export default function IsoCity({ plots, height = 440, compact = false }: { plot
               poly([iso(x + 0.04, y + 0.04), iso(x + 0.96, y + 0.04), iso(x + 0.96, y + 0.96), iso(x + 0.04, y + 0.96)], C.sidewalk);
             }
           }
-          if (hoverRef.current && hoverRef.current.x === x && hoverRef.current.y === y) poly(q, "rgba(37,99,235,.28)");
+          const m = modeRef.current, hv = hoverRef.current;
+          const free = isBuildable(x, y) && !byTile.has(`${x},${y}`);
+          if (m && free) poly(q, "rgba(16,185,129,.10)");
+          if (hv && hv.x === x && hv.y === y) {
+            if (m) poly(q, free || (m.kind === "move" && m.from.x === x && m.from.y === y) ? "rgba(16,185,129,.45)" : "rgba(239,68,68,.35)");
+            else if (byTile.has(`${x},${y}`)) poly(q, "rgba(37,99,235,.22)");
+          }
         }
+      }
+
+      // Carreau sélectionné / bâtiment en cours de déplacement
+      const sel = modeRef.current?.kind === "move" ? modeRef.current.from : selectedRef.current;
+      if (sel) {
+        const q: Pt[] = [iso(sel.x, sel.y), iso(sel.x + 1, sel.y), iso(sel.x + 1, sel.y + 1), iso(sel.x, sel.y + 1)];
+        g!.beginPath(); g!.moveTo(q[0][0], q[0][1]); q.slice(1).forEach((pt) => g!.lineTo(pt[0], pt[1])); g!.closePath();
+        g!.lineWidth = 2.5 * scale; g!.strokeStyle = modeRef.current?.kind === "move" ? "#F59E0B" : "#2563EB"; g!.stroke();
       }
 
       // Objets triés par profondeur
@@ -392,7 +428,12 @@ export default function IsoCity({ plots, height = 440, compact = false }: { plot
             const b = births.current.get(keyOf(p));
             const grow = b === undefined || reduce ? 1 : Math.min(1, (t - b) / 700);
             const eased = 1 - Math.pow(1 - grow, 3);
-            items.push({ depth: x + y + 0.5, draw: (_g, tt) => building(p, tt, eased) });
+            const moving = modeRef.current?.kind === "move" && modeRef.current.from.x === x && modeRef.current.from.y === y;
+            items.push({ depth: x + y + 0.5, draw: (_g, tt) => {
+              if (moving) g!.globalAlpha = 0.3;
+              building(p, tt, eased);
+              g!.globalAlpha = 1;
+            } });
           } else if (hash(x, y) < 0.35) {
             const n = hash(y, x) < 0.5 ? 1 : 2;
             for (let i = 0; i < n; i++) {
@@ -417,19 +458,37 @@ export default function IsoCity({ plots, height = 440, compact = false }: { plot
           else block(cx - l / 2, cy - w / 2, cx + l / 2, cy + w / 2, 0, 5, car.color, car.color, "rgba(15,23,42,.35)");
         } });
       }
+      // Aperçu du bâtiment à placer
+      const m = modeRef.current, hv = hoverRef.current;
+      if (m && hv && isBuildable(hv.x, hv.y) && !byTile.has(`${hv.x},${hv.y}`)) {
+        items.push({ depth: hv.x + hv.y + 0.5, draw: (_g, tt) => {
+          g!.globalAlpha = 0.6;
+          building({ id: m.id, x: hv.x, y: hv.y }, tt, 1);
+          g!.globalAlpha = 1;
+        } });
+      }
       items.sort((a, b) => a.depth - b.depth);
       for (const it of items) it.draw(g!, t);
     }
 
-    let raf = 0;
+    // Animation seulement quand la vue est visible à l'écran et l'onglet actif
+    let raf = 0, onScreen = true;
     const loop = (t: number) => { frame(t); raf = requestAnimationFrame(loop); };
+    const run = () => {
+      cancelAnimationFrame(raf); raf = 0;
+      if (reduce || !onScreen || document.hidden) { frame(performance.now()); return; }
+      raf = requestAnimationFrame(loop);
+    };
     layout();
-    if (reduce) frame(performance.now()); else raf = requestAnimationFrame(loop);
+    run();
+    const io = new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; run(); });
+    io.observe(box);
+    document.addEventListener("visibilitychange", run);
 
-    const ro = new ResizeObserver(() => { layout(); if (reduce) frame(performance.now()); });
+    const ro = new ResizeObserver(() => { layout(); if (!raf) frame(performance.now()); });
     ro.observe(box);
 
-    redraw.current = () => { applyView(); if (reduce) frame(performance.now()); };
+    redraw.current = () => { applyView(); if (!raf) frame(performance.now()); };
 
     // Survol (identifier un bâtiment) et glisser (déplacer la vue)
     let drag: { x: number; y: number; px: number; py: number; moved: boolean } | null = null;
@@ -437,7 +496,20 @@ export default function IsoCity({ plots, height = 440, compact = false }: { plot
       drag = { x: e.clientX, y: e.clientY, px: view.current.px, py: view.current.py, moved: false };
       cv.setPointerCapture(e.pointerId);
     };
-    const onUp = (e: PointerEvent) => { drag = null; if (cv.hasPointerCapture(e.pointerId)) cv.releasePointerCapture(e.pointerId); };
+    const tileAt = (e: PointerEvent, r: DOMRect) => {
+      const mx = e.clientX - r.left - ox, my = e.clientY - r.top - oy;
+      const a = mx / (TW / 2 * scale), b = my / (TH / 2 * scale);
+      return { tx: Math.floor((a + b) / 2), ty: Math.floor((b - a) / 2) };
+    };
+    const onUp = (e: PointerEvent) => {
+      const wasClick = drag && !drag.moved;
+      drag = null;
+      if (cv.hasPointerCapture(e.pointerId)) cv.releasePointerCapture(e.pointerId);
+      if (wasClick && clickRef.current) {
+        const { tx, ty } = tileAt(e, cv.getBoundingClientRect());
+        if (tx >= x0 && tx <= x1 && ty >= y0 && ty <= y1) clickRef.current(tx, ty);
+      }
+    };
     const onMove = (e: PointerEvent) => {
       const r = cv.getBoundingClientRect();
       if (drag) {
@@ -449,30 +521,29 @@ export default function IsoCity({ plots, height = 440, compact = false }: { plot
           return;
         }
       }
-      const mx = e.clientX - r.left - ox, my = e.clientY - r.top - oy;
-      const a = mx / (TW / 2 * scale), b = my / (TH / 2 * scale);
-      const tx = Math.floor((a + b) / 2), ty = Math.floor((b - a) / 2);
+      const { tx, ty } = tileAt(e, r);
       const p = byTile.get(`${tx},${ty}`);
-      hoverRef.current = p ? { x: tx, y: ty } : null;
-      setTip(p ? { left: e.clientX - r.left, top: e.clientY - r.top, text: BUILDING_BY_ID[p.id]?.name ?? p.id } : null);
-      if (reduce) frame(performance.now());
+      hoverRef.current = { x: tx, y: ty };
+      setTip(p && !modeRef.current ? { left: e.clientX - r.left, top: e.clientY - r.top, text: BUILDING_BY_ID[p.id]?.name ?? p.id } : null);
+      if (!raf) frame(performance.now());
     };
-    const onLeave = () => { hoverRef.current = null; setTip(null); if (reduce) frame(performance.now()); };
+    const onLeave = () => { hoverRef.current = null; setTip(null); if (!raf) frame(performance.now()); };
     if (!compact) {
       cv.addEventListener("pointerdown", onDown); cv.addEventListener("pointerup", onUp);
       cv.addEventListener("pointermove", onMove); cv.addEventListener("pointerleave", onLeave);
     }
 
     return () => {
-      cancelAnimationFrame(raf); ro.disconnect();
+      cancelAnimationFrame(raf); ro.disconnect(); io.disconnect();
+      document.removeEventListener("visibilitychange", run);
       cv.removeEventListener("pointermove", onMove); cv.removeEventListener("pointerleave", onLeave);
       cv.removeEventListener("pointerdown", onDown); cv.removeEventListener("pointerup", onUp);
     };
-  }, [plots, height, compact]);
+  }, [plots, height, compact, interactive]);
 
   return (
     <div ref={wrap} className="relative w-full rounded-[12px] overflow-hidden" style={{ height, background: "linear-gradient(180deg,#EAF2FB 0%,#F5F7FA 100%)" }}>
-      <canvas ref={canvas} role="img" className={compact ? "" : "cursor-grab active:cursor-grabbing touch-none"} aria-label={`Vue isométrique de la ville : ${plots.length} bâtiments`} />
+      <canvas ref={canvas} role="img" className={compact ? "" : `${mode ? "cursor-crosshair" : interactive ? "cursor-pointer" : "cursor-grab"} active:cursor-grabbing touch-none`} aria-label={`Vue isométrique de la ville : ${plots.length} bâtiments`} />
       {!compact && (
         <div className="absolute right-3 top-3 z-10 flex flex-col overflow-hidden rounded-[10px] border border-line bg-card shadow-sm">
           {ZOOM_BUTTONS.map((b) => (

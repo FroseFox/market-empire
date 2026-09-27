@@ -1,5 +1,5 @@
 "use client";
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { compactEur, eur, eur2 } from "@/lib/format";
 
 const axis = { fontSize: 11, fill: "#64748b" };
@@ -61,5 +61,25 @@ export function Sparkline({ points, up }: { points: number[]; up: boolean }) {
     <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} aria-hidden>
       <path d={d} fill="none" stroke={up ? "#10B981" : "#EF4444"} strokeWidth="1.6" strokeLinejoin="round" />
     </svg>
+  );
+}
+
+/** Camembert (anneau) avec la valeur totale au centre. */
+export function Donut({ data, total, height = 220 }: { data: { name: string; value: number; color: string }[]; total: string; height?: number }) {
+  return (
+    <div className="relative" style={{ height }}>
+      <ResponsiveContainer width="100%" height="100%">
+        <PieChart>
+          <Pie data={data} dataKey="value" nameKey="name" innerRadius="62%" outerRadius="92%" paddingAngle={data.length > 1 ? 2 : 0}
+            stroke="#FFFFFF" strokeWidth={2} isAnimationActive={false}>
+            {data.map((d) => <Cell key={d.name} fill={d.color} />)}
+          </Pie>
+          <Tooltip formatter={(v, n) => [eur(Number(v)), String(n)]} contentStyle={{ borderRadius: 10, border: "1px solid #e7ebf1", fontSize: 12 }} />
+        </PieChart>
+      </ResponsiveContainer>
+      <div className="pointer-events-none absolute inset-0 grid place-items-center text-center">
+        <div><div className="text-[11px] text-muted">Total</div><div className="text-[17px] font-bold tabular">{total}</div></div>
+      </div>
+    </div>
   );
 }

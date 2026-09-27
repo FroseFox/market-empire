@@ -60,7 +60,7 @@ export default function NewsPage() {
           )}
           <Card className="!py-1">
             {news.status === "loading" ? <Empty>Chargement des actualités…</Empty>
-              : news.status === "unavailable" ? <Empty>Les actualités s&apos;affichent dans la version en ligne du jeu.</Empty>
+              : news.status === "unavailable" ? <Empty>Impossible de charger les actualités pour l&apos;instant. Réessayez dans un moment.</Empty>
               : items.length === 0 ? <Empty>Aucune actualité pour ce filtre.</Empty>
               : <NewsList items={items} onSymbol={(s) => setFilter(`s:${s}`)} />}
           </Card>

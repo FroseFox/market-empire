@@ -62,14 +62,17 @@ function useHeartbeat(enabled: boolean) {
     const pull = async () => {
       try {
         const j = await fetchQuotes();
-        if (alive) setQuotes(j.quotes, j.mode);
+        if (alive) { setQuotes(j.quotes, j.mode); useGame.setState({ logos: !!j.logos }); }
       } catch { /* hors ligne : on garde les derniers cours */ }
       const days = sync();
       if (days > 0 && alive) notify(days === 1 ? "Un nouveau jour s'est écoulé dans votre ville" : `${days} jours se sont écoulés dans votre ville`);
     };
     pull();
-    const id = setInterval(pull, 30_000);
-    return () => { alive = false; clearInterval(id); };
+    // Pas de requête quand l'onglet est caché ; mise à jour immédiate au retour
+    const id = setInterval(() => { if (!document.hidden) pull(); }, 30_000);
+    const onVisible = () => { if (!document.hidden) pull(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { alive = false; clearInterval(id); document.removeEventListener("visibilitychange", onVisible); };
   }, [enabled, setQuotes, sync, notify]);
 }
 

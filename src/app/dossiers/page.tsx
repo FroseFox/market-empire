@@ -4,11 +4,12 @@ import Link from "next/link";
 import { Folder as FolderIcon, Plus, Trash2, X } from "lucide-react";
 import { useDerived, useGame } from "@/store/game";
 import { folderLimit } from "@/lib/game/engine";
-import { ASSETS, ASSET_BY_SYMBOL } from "@/lib/market/universe";
+import { ASSET_BY_SYMBOL } from "@/lib/market/universe";
 import { useNews } from "@/lib/news";
 import { Button, Card, Delta, Empty, PageHeader } from "@/components/ui";
 import NewsList from "@/components/NewsList";
 import CompanyLogo from "@/components/CompanyLogo";
+import AssetPicker from "@/components/AssetPicker";
 import { eur2, num } from "@/lib/format";
 
 export default function FoldersPage() {
@@ -93,7 +94,7 @@ function FolderDetail({ id }: { id: string }) {
   const [notes, setNotes] = useState(f.notes);
   const [title, setTitle] = useState(f.name);
   const [armed, setArmed] = useState(false);
-  const available = ASSETS.filter((a) => !f.symbols.includes(a.symbol));
+  const [picking, setPicking] = useState(false);
 
   return (
     <Card>
@@ -136,14 +137,12 @@ function FolderDetail({ id }: { id: string }) {
       )}
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
-        <label htmlFor="add-symbol" className="text-[13px] font-medium">Ajouter</label>
-        <select id="add-symbol" value="" onChange={(e) => e.target.value && updateFolder(f.id, { symbols: [...f.symbols, e.target.value] })}
-          className="rounded-[8px] border border-line px-2.5 py-1.5 text-[13px] outline-none focus:border-primary bg-card">
-          <option value="">Choisir une entreprise…</option>
-          {available.map((a) => <option key={a.symbol} value={a.symbol}>{a.name} ({a.symbol})</option>)}
-        </select>
+        <Button onClick={() => setPicking(true)} className="inline-flex items-center gap-1.5"><Plus size={15} />Ajouter une action</Button>
         <Link href="/relations" className="text-[12px] text-primary font-medium hover:underline">Trouver des entreprises liées →</Link>
       </div>
+
+      {picking && <AssetPicker selected={f.symbols} title={`Ajouter à « ${f.name} »`} onClose={() => setPicking(false)}
+        onAdd={(sym) => updateFolder(f.id, { symbols: [...f.symbols, sym] })} />}
 
       <div className="mt-5">
         <label htmlFor="folder-notes" className="text-[13px] font-medium block mb-1.5">Notes</label>

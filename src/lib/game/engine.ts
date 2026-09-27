@@ -5,7 +5,7 @@ import {
   EXPORT_RATIO, FOOD_PER_RESIDENT, MAINTENANCE_RATE, MAX_CATCHUP_DAYS, RESOURCE_PRICES,
   STARTING_BUILDINGS, STARTING_CASH, STARTING_POPULATION, TAX_PER_RESIDENT, TRADE_FEE_MIN, TRADE_FEE_RATE,
 } from "./config";
-import { layoutFrom, placeTile, type Plot } from "./layout";
+import { isBuildable, layoutFrom, placeTile, type Plot } from "./layout";
 import { ASSET_BY_SYMBOL } from "../market/universe";
 import { FOLDER_LIMIT_BASE, RESEARCH_BY_ID, STARTING_RESEARCH } from "./research";
 
@@ -296,25 +296,30 @@ export function sell(state: GameState, symbol: string, qty: number, price: numbe
   };
 }
 
-export function build(state: GameState, buildingId: string, at: number): ActionResult {
+/** Construit un bâtiment ; `tile` choisi par le joueur, sinon placement automatique. */
+export function build(state: GameState, buildingId: string, at: number, tile?: { x: number; y: number }): ActionResult {
   const b = BUILDING_BY_ID[buildingId];
   if (!b || b.buildable === false) return { ok: false, error: "Bâtiment inconnu." };
   if (b.unlockPop && state.population < b.unlockPop) return { ok: false, error: `Débloqué à ${b.unlockPop} habitants.` };
   if (b.cost > state.cash) return { ok: false, error: "Liquidités insuffisantes." };
+  if (tile && !isTileFree(state, tile.x, tile.y)) return { ok: false, error: "Emplacement occupé ou sur une route." };
+  const plots = tile ? [...state.plots, { id: b.id, x: tile.x, y: tile.y }] : addPlot(state.plots, b.id);
   return {
     ok: true,
     state: {
       ...state,
       cash: state.cash - b.cost,
       buildings: { ...state.buildings, [b.id]: (state.buildings[b.id] ?? 0) + 1 },
-      plots: addPlot(state.plots, b.id),
+      plots,
       transactions: addTx(state, { kind: "build", label: `Construction : ${b.name}`, amount: -b.cost, at }),
     },
   };
 }
 
-export function demolish(state: GameState, buildingId: string, at: number): ActionResult {
+/** Démolit un bâtiment ; `tile` précise lequel, sinon le dernier construit de ce type. */
+export function demolish(state: GameState, buildingId: string, at: number, tile?: { x: number; y: number }): ActionResult {
   const b = BUILDING_BY_ID[buildingId];
+  if (tile && !state.plots.some((p) => p.id === buildingId && p.x === tile.x && p.y === tile.y)) return { ok: false, error: "Aucun bâtiment de ce type ici." };
   const count = state.buildings[buildingId] ?? 0;
   if (!b || b.buildable === false || count <= 0) return { ok: false, error: "Rien à démolir." };
   const refund = b.cost * DEMOLISH_REFUND;
@@ -326,13 +331,26 @@ export function demolish(state: GameState, buildingId: string, at: number): Acti
       ...state,
       cash: state.cash + refund,
       buildings,
-      plots: removePlot(state.plots, b.id),
+      plots: tile ? state.plots.filter((p) => !(p.x === tile.x && p.y === tile.y)) : removePlot(state.plots, b.id),
       transactions: addTx(state, { kind: "demolish", label: `Démolition : ${b.name}`, amount: refund, at }),
     },
   };
 }
 
 // ─── Carte ────────────────────────────────────────────────────
+
+export function isTileFree(state: Pick<GameState, "plots">, x: number, y: number) {
+  return isBuildable(x, y) && !state.plots.some((p) => p.x === x && p.y === y);
+}
+
+/** Déplace un bâtiment (gratuit). */
+export function moveBuilding(state: GameState, from: { x: number; y: number }, to: { x: number; y: number }): ActionResult {
+  const plot = state.plots.find((p) => p.x === from.x && p.y === from.y);
+  if (!plot) return { ok: false, error: "Aucun bâtiment à déplacer ici." };
+  if (from.x === to.x && from.y === to.y) return { ok: true, state };
+  if (!isTileFree(state, to.x, to.y)) return { ok: false, error: "Emplacement occupé ou sur une route." };
+  return { ok: true, state: { ...state, plots: state.plots.map((p) => p === plot ? { ...p, x: to.x, y: to.y } : p) } };
+}
 
 function addPlot(plots: Plot[], id: string): Plot[] {
   const t = placeTile(plots, id);

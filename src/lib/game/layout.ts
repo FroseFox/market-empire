@@ -10,6 +10,10 @@ const CENTER = MAP_SIZE / 2;
 
 export const isRoad = (x: number, y: number) => x % 4 === 0 || y % 4 === 0;
 
+/** Un carreau peut recevoir un bâtiment : dans la carte, hors route. */
+export const isBuildable = (x: number, y: number) =>
+  Number.isInteger(x) && Number.isInteger(y) && x >= 1 && y >= 1 && x < MAP_SIZE - 1 && y < MAP_SIZE - 1 && !isRoad(x, y);
+
 type Zone = "center" | "industry" | "farm";
 function zoneOf(cat: Category): Zone {
   if (cat === "industry" || cat === "energy") return "industry";

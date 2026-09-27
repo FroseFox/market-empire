@@ -36,14 +36,16 @@ export default function MarketsPage() {
 
   // Mini-courbes 1J (même moteur que le serveur, recalées sur le dernier prix)
   const lastQuoteAt = useGame((s) => s.lastQuoteAt);
+  const dataMode = useGame((s) => s.dataMode);
+  const showSparks = dataMode === "simulé"; // en mode réel, pas de fausse mini-courbe
   const sparks = useMemo(() => {
-    if (!lastQuoteAt) return {} as Record<string, number[]>;
+    if (!lastQuoteAt || !showSparks) return {} as Record<string, number[]>;
     return Object.fromEntries(ASSETS.map((a) => {
       const pts = simulatedHistory(a.symbol, "1J", lastQuoteAt).filter((_, i) => i % 3 === 0).map((p) => p.p);
       const k = quotes[a.symbol] ? quotes[a.symbol].price / pts[pts.length - 1] : 1;
       return [a.symbol, pts.map((p) => p * k)];
     }));
-  }, [lastQuoteAt, quotes]);
+  }, [lastQuoteAt, quotes, showSparks]);
 
   const list = ASSETS.filter((a) => (kind === "ETF" ? a.kind === "etf" : a.kind === "stock") && (a.symbol + a.name + a.sector).toLowerCase().includes(query.toLowerCase()));
 
@@ -84,7 +86,7 @@ export default function MarketsPage() {
                 <tr className="border-b border-line">
                   <th className="text-left font-medium px-4 py-2.5">Nom</th>
                   <th className="text-left font-medium px-2 hidden md:table-cell">Secteur</th>
-                  <th className="px-2 hidden sm:table-cell" />
+                  {showSparks && <th className="px-2 hidden sm:table-cell" />}
                   <th className="text-right font-medium px-2">Prix</th>
                   <th className="text-right font-medium px-4 whitespace-nowrap">Var. 1J</th>
                 </tr>
@@ -110,7 +112,7 @@ export default function MarketsPage() {
                         </div>
                       </td>
                       <td className="px-2 text-muted hidden md:table-cell">{a.sector}</td>
-                      <td className="px-2 hidden sm:table-cell"><Sparkline points={sp} up={(q?.change ?? 0) >= 0} /></td>
+                      {showSparks && <td className="px-2 hidden sm:table-cell"><Sparkline points={sp} up={(q?.change ?? 0) >= 0} /></td>}
                       <td className="px-2 text-right font-semibold tabular whitespace-nowrap">{q ? eur2(q.price) : "—"}</td>
                       <td className="px-4 text-right">{q ? <Delta value={q.change} /> : "—"}</td>
                     </tr>
@@ -129,12 +131,13 @@ export default function MarketsPage() {
 
 function AssetPanel({ symbol, onSelect }: { symbol: string; onSelect: (s: string) => void }) {
   const { game, quotes, portfolio } = useDerived();
+  const dataMode = useGame((s) => s.dataMode);
   const buy = useGame((s) => s.buy);
   const sell = useGame((s) => s.sell);
   const asset = ASSET_BY_SYMBOL[symbol];
   const q = quotes[symbol];
   const [range, setRange] = useState<Range>("1M");
-  const [hist, setHist] = useState<{ points: { t: number; p: number }[]; indicative: boolean } | null>(null);
+  const [hist, setHist] = useState<{ points: { t: number; p: number }[]; source: "réel" | "simulé" } | null>(null);
   const [qty, setQty] = useState("1");
   const [busy, setBusy] = useState(false);
 
@@ -181,7 +184,7 @@ function AssetPanel({ symbol, onSelect }: { symbol: string; onSelect: (s: string
           <Segmented options={ranges} value={range} onChange={setRange} />
           {!longHistory && <Link href="/recherche" className="inline-flex items-center gap-1 text-[11px] text-muted hover:text-primary"><Lock size={11} />1A</Link>}
         </div>
-        {hist?.indicative && <span className="text-[11px] text-muted">Historique indicatif</span>}
+        {hist?.source === "simulé" && dataMode !== "simulé" && <span className="text-[11px] text-muted" title="Ajoutez une clé Twelve Data pour les vraies courbes">Courbe simulée</span>}
       </div>
       {hist?.points?.length ? (
         <WealthChart data={hist.points.map((p) => ({ x: p.t, y: p.p }))} color={rangeChange >= 0 ? "#10B981" : "#EF4444"} height={200} money2 xFormat={fmtTime(range)} />

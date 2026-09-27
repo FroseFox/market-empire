@@ -5,6 +5,7 @@ import { useDerived } from "@/store/game";
 import { ASSET_BY_SYMBOL } from "@/lib/market/universe";
 import { Card, Delta, Empty, PageHeader, StatCard } from "@/components/ui";
 import CompanyLogo from "@/components/CompanyLogo";
+import { Donut } from "@/components/charts";
 import { eur, eur2, num, pctPlain, signedEur, tone } from "@/lib/format";
 
 const PALETTE = ["#2563EB", "#10B981", "#F59E0B", "#6366F1", "#0EA5E9", "#EC4899", "#64748B"];
@@ -17,6 +18,13 @@ export default function PortfolioPage() {
     return { sym, h, price, value, pnl: value - h.qty * h.avgCost, day: quotes[sym]?.change ?? 0 };
   }).sort((a, b) => b.value - a.value);
   const pnl = portfolio - portfolioCost;
+  // Camembert : les 6 plus grosses lignes, le reste regroupé
+  const top = rows.slice(0, 6);
+  const rest = rows.slice(6).reduce((a, r) => a + r.value, 0);
+  const slices = [
+    ...top.map((r, i) => ({ name: r.sym, label: ASSET_BY_SYMBOL[r.sym]?.name ?? r.sym, value: r.value, color: PALETTE[i % PALETTE.length] })),
+    ...(rest > 0 ? [{ name: "Autres", label: "Autres", value: rest, color: "#CBD5E1" }] : []),
+  ];
   const dayPnl = rows.reduce((a, r) => a + r.value - r.value / (1 + r.day), 0);
 
   return (
@@ -62,18 +70,17 @@ export default function PortfolioPage() {
         <Card title="Répartition" icon={PieChart} className="xl:col-span-4">
           {rows.length === 0 ? <Empty>—</Empty> : (
             <>
-              <div className="flex h-3 rounded-full overflow-hidden mb-4">
-                {rows.map((r, i) => <div key={r.sym} style={{ width: `${(r.value / portfolio) * 100}%`, background: PALETTE[i % PALETTE.length] }} />)}
-              </div>
-              <ul className="space-y-2 text-[13px]">
-                {rows.map((r, i) => (
-                  <li key={r.sym} className="flex items-center gap-2">
-                    <span className="h-2.5 w-2.5 rounded-full" style={{ background: PALETTE[i % PALETTE.length] }} />
-                    <span className="flex-1">{r.sym}</span>
-                    <span className={`tabular ${r.value / portfolio >= 0.3 && rows.length > 1 ? "text-warning font-semibold" : "text-muted"}`}>{pctPlain(r.value / portfolio)}</span>
+              <Donut total={eur(portfolio)} data={slices} />
+              <ul className="space-y-2 text-[13px] mt-4">
+                {slices.map((sl) => (
+                  <li key={sl.name} className="flex items-center gap-2">
+                    <span className="h-2.5 w-2.5 rounded-full" style={{ background: sl.color }} />
+                    <span className="flex-1 truncate">{sl.label}</span>
+                    <span className={`tabular ${sl.value / portfolio >= 0.3 && rows.length > 1 && sl.name !== "Autres" ? "text-warning font-semibold" : "text-muted"}`}>{pctPlain(sl.value / portfolio)}</span>
                   </li>
                 ))}
               </ul>
+              {rows.some((r) => r.value / portfolio >= 0.3) && rows.length > 1 && <p className="text-[11px] text-warning mt-2">Une ligne dépasse 30 % : attention à la concentration.</p>}
             </>
           )}
         </Card>

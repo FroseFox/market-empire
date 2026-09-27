@@ -7,7 +7,7 @@ import { STATIC_MODE } from "@/lib/market/client";
 import { getRuntime } from "@/lib/runtime";
 import { useGame } from "@/store/game";
 import * as E from "@/lib/game/engine";
-import { pickRegion } from "./map";
+import { pickCountry, PLAYABLE } from "./countries";
 
 export interface PublicPlayer {
   id: string;
@@ -16,7 +16,7 @@ export interface PublicPlayer {
   population: number;
   perf: number;        // performance du portefeuille depuis l'achat (fraction)
   day: number;
-  region: number;
+  country: string;     // code ISO numérique du pays (territoire)
   updatedAt: number;
   name: string;        // résolu à l'affichage, jamais stocké
   color: string;
@@ -29,7 +29,7 @@ const listeners = new Set<() => void>();
 const emit = (s: State) => { state = s; listeners.forEach((l) => l()); };
 let started = false;
 
-function profileFromGame(region: number) {
+function profileFromGame(country: string) {
   const s = useGame.getState();
   const prices = Object.fromEntries(Object.entries(s.quotes).map(([k, q]) => [k, q.price]));
   const city = E.computeCity(s.game);
@@ -41,7 +41,7 @@ function profileFromGame(region: number) {
     population: Math.round(s.game.population),
     perf: cost > 0 ? Math.round((pv / cost - 1) * 10_000) / 10_000 : 0,
     day: s.game.day,
-    region,
+    country,
   };
 }
 
@@ -72,7 +72,7 @@ async function start() {
         population: Number(x.population) || 0,
         perf: Number(x.perf) || 0,
         day: Number(x.day) || 1,
-        region: Number.isInteger(x.region) ? (x.region as number) : -1,
+        country: typeof x.country === "string" && PLAYABLE[x.country] ? x.country : "",
         updatedAt: Number(x.updatedAt) || 0,
       };
     });
@@ -81,22 +81,22 @@ async function start() {
 
   // Publication de mon profil : à l'arrivée, puis quand la partie change (regroupé)
   const ref = db.doc(`players/${uid}`);
-  let region = -1;
+  let country = "";
   try {
     const mine = await ref.get();
-    const r = mine.exists ? mine.data()?.region : undefined;
-    if (Number.isInteger(r)) region = r as number;
+    const c = mine.exists ? mine.data()?.country : undefined;
+    if (typeof c === "string" && PLAYABLE[c]) country = c;
   } catch { /* on réessaiera */ }
-  if (region < 0) {
+  if (!country) {
     const all = await db.collection("players").get().catch(() => ({ docs: [] }));
-    const taken = all.docs.map((d) => d.data()?.region).filter((v): v is number => Number.isInteger(v));
-    region = pickRegion(uid, taken) ?? 0;
+    const taken = all.docs.map((d) => d.data()?.country).filter((v): v is string => typeof v === "string");
+    country = pickCountry(uid, taken) ?? "250";
   }
 
   let last = "", writing = false, timer: ReturnType<typeof setTimeout> | null = null;
   const publish = async () => {
     if (writing) { schedule(); return; }
-    const body = profileFromGame(region);
+    const body = profileFromGame(country);
     const key = JSON.stringify(body);
     if (key === last) return;
     writing = true;
