@@ -7,6 +7,7 @@ import { Card, Delta, Empty, PageHeader, StatCard } from "@/components/ui";
 import CompanyLogo from "@/components/CompanyLogo";
 import { Donut } from "@/components/charts";
 import { eur, eur2, pctPlain, signedEur, tone, qtyFmt } from "@/lib/format";
+import PriceStatus from "@/components/PriceStatus";
 
 const PALETTE = ["#2563EB", "#10B981", "#F59E0B", "#6366F1", "#0EA5E9", "#EC4899", "#64748B"];
 
@@ -54,7 +55,7 @@ export default function PortfolioPage() {
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.sym} className="border-b border-line/70">
-                    <td className="py-2.5"><div className="flex items-center gap-2.5"><CompanyLogo symbol={r.sym} size={30} /><div><div className="font-semibold">{ASSET_BY_SYMBOL[r.sym]?.name ?? r.sym}</div><div className="text-[11px] text-muted">{r.sym}</div></div></div></td>
+                    <td className="py-2.5"><div className="flex items-center gap-2.5"><CompanyLogo symbol={r.sym} size={30} /><div><div className="font-semibold">{ASSET_BY_SYMBOL[r.sym]?.name ?? r.sym}</div><div className="text-[11px] text-muted flex items-center gap-1.5">{r.sym}<PriceStatus symbol={r.sym} /></div></div></div></td>
                     <td className="text-right tabular">{qtyFmt(r.h.qty)}</td>
                     <td className="text-right tabular hidden sm:table-cell">{eur2(r.h.avgCost)}</td>
                     <td className="text-right tabular">{eur2(r.price)}<div><Delta value={r.day} /></div></td>

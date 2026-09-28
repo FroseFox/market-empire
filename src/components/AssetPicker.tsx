@@ -7,6 +7,7 @@ import { ASSETS, KIND_LABEL, regionOf } from "@/lib/market/universe";
 import { useGame } from "@/store/game";
 import CompanyLogo from "@/components/CompanyLogo";
 import { Delta } from "@/components/ui";
+import PriceStatus from "@/components/PriceStatus";
 
 const norm = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 
@@ -65,7 +66,7 @@ export default function AssetPicker({ selected, onAdd, onClose, title = "Ajouter
                   <CompanyLogo symbol={a.symbol} size={34} />
                   <span className="flex-1 min-w-0">
                     <span className="block font-semibold text-[14px] truncate">{a.name}</span>
-                    <span className="block text-[11px] text-muted">{a.symbol} · {a.sector}</span>
+                    <span className="flex items-center gap-1.5 text-[11px] text-muted">{a.symbol} · {a.sector}<PriceStatus symbol={a.symbol} /></span>
                   </span>
                   {qt && <Delta value={qt.change} />}
                   {inFolder

@@ -9,6 +9,9 @@ import { useGame } from "@/store/game";
 import { fetchQuotes, STATIC_MODE } from "@/lib/market/client";
 import { startCloudSync } from "@/lib/cloud";
 import { startWorldSync } from "@/lib/world/players";
+import { initAuth, useAuth } from "@/lib/auth";
+import { startOnline } from "@/lib/online";
+import AccountMenu from "@/components/AccountMenu";
 import { DAY_MS } from "@/lib/game/engine";
 import { eur } from "@/lib/format";
 
@@ -51,26 +54,35 @@ function useHydrated() {
   return ok;
 }
 
-/** Récupère les cours toutes les 30 s et fait avancer la ville. */
+/** Les cours ne changent qu'une fois par heure : on les relit toutes les 10 min
+ *  (et au retour sur l'onglet). La ville, elle, avance en local sans réseau. */
+const QUOTES_EVERY = 10 * 60_000;
 function useHeartbeat(enabled: boolean) {
   const setQuotes = useGame((s) => s.setQuotes);
   const sync = useGame((s) => s.sync);
   const notify = useGame((s) => s.notify);
   useEffect(() => {
     if (!enabled) return;
-    let alive = true;
+    let alive = true, lastPull = 0;
     const pull = async () => {
+      lastPull = Date.now();
       try {
         const j = await fetchQuotes();
         if (alive) { setQuotes(j.quotes, j.mode); useGame.setState({ quotesAt: j.updatedAt }); }
       } catch { /* hors ligne : on garde les derniers cours */ }
+    };
+    const tick = () => {
       const days = sync();
       if (days > 0 && alive) notify(days === 1 ? "Un nouveau jour s'est écoulé dans votre ville" : `${days} jours se sont écoulés dans votre ville`);
     };
-    pull();
-    // Pas de requête quand l'onglet est caché ; mise à jour immédiate au retour
-    const id = setInterval(() => { if (!document.hidden) pull(); }, 30_000);
-    const onVisible = () => { if (!document.hidden) pull(); };
+    pull(); tick();
+    // Pas de requête quand l'onglet est caché
+    const id = setInterval(() => {
+      if (document.hidden) return;
+      tick();
+      if (Date.now() - lastPull >= QUOTES_EVERY) pull();
+    }, 30_000);
+    const onVisible = () => { if (!document.hidden) { tick(); if (Date.now() - lastPull >= QUOTES_EVERY) pull(); } };
     document.addEventListener("visibilitychange", onVisible);
     return () => { alive = false; clearInterval(id); document.removeEventListener("visibilitychange", onVisible); };
   }, [enabled, setQuotes, sync, notify]);
@@ -110,7 +122,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const path = usePathname();
   const hydrated = useHydrated();
   useHeartbeat(hydrated);
-  useEffect(() => { if (hydrated && STATIC_MODE) { startCloudSync(); startWorldSync(); } }, [hydrated]);
+  useEffect(() => {
+    if (!hydrated) return;
+    if (STATIC_MODE) { startCloudSync(); startWorldSync(); return; }
+    initAuth().then(startOnline);
+  }, [hydrated]);
+  const authError = useAuth((s) => s.error);
+  const notify = useGame((s) => s.notify);
+  useEffect(() => { if (authError) { notify(`Connexion Discord : ${authError}`, "error"); useAuth.setState({ error: null }); } }, [authError, notify]);
+  const authStatus = useAuth((s) => s.status);
   const cloud = useGame((s) => s.cloud);
   const cash = useGame((s) => s.game.cash);
   const name = useGame((s) => s.game.playerName);
@@ -147,15 +167,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           {hydrated && <NextDay />}
           <div className="ml-auto flex items-center gap-3">
             <span className={`hidden sm:inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium ${mode === "simulé" ? "bg-warning-soft text-amber-700" : "bg-success-soft text-emerald-700"}`}
-              title={mode === "simulé" ? "Cours simulés : aucune source de cours configurée" : `Cours réels, mis à jour le ${new Date(quotesAt).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}`}>
+              title={mode === "simulé" ? "Cours simulés : aucune source de cours configurée" : `Cours réels, rafraîchis une fois par heure. Dernière mise à jour : ${new Date(quotesAt).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}`}>
               <span className={`h-1.5 w-1.5 rounded-full ${mode === "simulé" ? "bg-warning" : "bg-success"}`} />
-              {mode === "simulé" ? "Cours simulés" : "Cours différés"}
+              {mode === "simulé" ? "Cours simulés" : "Cours réels · 1 h"}
             </span>
-            {STATIC_MODE && hydrated && <CloudBadge status={cloud} />}
-            <div className="hidden sm:flex items-center gap-2.5 pl-3 border-l border-line">
-              <div className="h-8 w-8 rounded-full bg-primary text-white grid place-items-center text-[13px] font-semibold">{hydrated ? name[0] : ""}</div>
-              <div className="leading-tight"><div className="text-[13px] font-semibold">{hydrated ? name : ""}</div><div className="text-[11px] text-muted">Investisseur</div></div>
-            </div>
+            {hydrated && (STATIC_MODE || authStatus === "in") && <CloudBadge status={cloud} />}
+            {STATIC_MODE ? (
+              <div className="hidden sm:flex items-center gap-2.5 pl-3 border-l border-line">
+                <div className="h-8 w-8 rounded-full bg-primary text-white grid place-items-center text-[13px] font-semibold">{hydrated ? name[0] : ""}</div>
+                <div className="leading-tight"><div className="text-[13px] font-semibold">{hydrated ? name : ""}</div><div className="text-[11px] text-muted">Investisseur</div></div>
+              </div>
+            ) : hydrated && <AccountMenu />}
             <Link href="/ville" className="flex items-center gap-2 rounded-[12px] bg-success-soft px-3 py-1.5">
               <div className="leading-tight text-right">
                 <div className="text-[14px] font-bold text-emerald-700 tabular">{hydrated ? eur(cash) : "—"}</div>

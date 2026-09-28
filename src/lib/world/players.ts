@@ -1,9 +1,10 @@
 "use client";
 // Profils publics des joueurs : ce que les autres voient sur la carte et au classement.
-// Chaque joueur n'écrit que son propre document players/<id> (règle d'accès de la page).
-// On ne stocke jamais de nom de personne : il est résolu à l'affichage.
+// - Page claude.ai : chaque joueur n'écrit que son document players/<id> ; le nom est résolu à l'affichage.
+// - Site publié : table Supabase « players » (lecture publique), remplie par les joueurs connectés avec Discord.
 import { useSyncExternalStore } from "react";
-import { STATIC_MODE } from "@/lib/market/client";
+import { rest, STATIC_MODE } from "@/lib/market/client";
+import { useAuth } from "@/lib/auth";
 import { getRuntime } from "@/lib/runtime";
 import { useGame } from "@/store/game";
 import * as E from "@/lib/game/engine";
@@ -18,13 +19,14 @@ export interface PublicPlayer {
   day: number;
   country: string;     // code ISO numérique du pays (territoire)
   updatedAt: number;
-  name: string;        // résolu à l'affichage, jamais stocké
+  name: string;        // page claude.ai : résolu à l'affichage ; site : pseudo Discord
+  avatar?: string | null;
   color: string;
   isMe: boolean;
 }
 
 type State = { status: "loading" | "ready" | "offline"; players: PublicPlayer[]; me: string | null };
-let state: State = { status: STATIC_MODE ? "loading" : "offline", players: [], me: null };
+let state: State = { status: "loading", players: [], me: null };
 const listeners = new Set<() => void>();
 const emit = (s: State) => { state = s; listeners.forEach((l) => l()); };
 let started = false;
@@ -45,8 +47,28 @@ function profileFromGame(country: string) {
   };
 }
 
+type Row = { id: string; name: string; avatar: string | null; country: string | null; city_name: string; net_worth: number; population: number; perf: number; day: number; updated_at: string };
+
+/** Site publié : classement lu dans Supabase (mis en cache 5 min, seulement quand la page Monde est ouverte). */
+async function loadOnline() {
+  const rows = await rest<Row[]>("players?select=id,name,avatar,country,city_name,net_worth,population,perf,day,updated_at&order=net_worth.desc&limit=300");
+  if (!rows) { emit({ status: "offline", players: [], me: null }); return; }
+  const me = useAuth.getState().user?.id ?? null;
+  emit({
+    status: "ready", me,
+    players: rows.filter((r) => r.country && PLAYABLE[r.country]).map((r) => ({
+      id: r.id, cityName: r.city_name, netWorth: Number(r.net_worth) || 0, population: r.population, perf: Number(r.perf) || 0,
+      day: r.day, country: r.country!, updatedAt: Date.parse(r.updated_at) || 0, name: r.name, avatar: r.avatar,
+      color: r.id === me ? "#2563EB" : "#64748B", isMe: r.id === me,
+    })),
+  });
+}
+
+let lastLoad = 0;
 async function start() {
-  if (started || !STATIC_MODE) return;
+  // Site publié : au plus une lecture toutes les 5 minutes (la liste est aussi mise en cache)
+  if (!STATIC_MODE) { if (Date.now() - lastLoad > 5 * 60_000) { lastLoad = Date.now(); loadOnline(); } return; }
+  if (started) return;
   started = true;
   const rt = await getRuntime();
   if (!rt) { emit({ status: "offline", players: [], me: null }); return; }
@@ -116,5 +138,5 @@ export function useWorld(): State {
   );
 }
 
-/** Lance la publication du profil dès l'ouverture du jeu (pas seulement sur la page Monde). */
-export function startWorldSync() { start(); }
+/** Lance la publication du profil dès l'ouverture du jeu (page claude.ai). */
+export function startWorldSync() { if (STATIC_MODE) start(); }

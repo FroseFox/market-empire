@@ -3,9 +3,13 @@ import { useMemo, useState } from "react";
 import { Crown, Globe2, MapPin, Trophy, Users } from "lucide-react";
 import { useDerived } from "@/store/game";
 import { useWorld, type PublicPlayer } from "@/lib/world/players";
+import { useAuth } from "@/lib/auth";
+import { useOnline } from "@/lib/online";
+import { STATIC_MODE } from "@/lib/market/client";
 import { HUBS, PLAYABLE, pickCountry } from "@/lib/world/countries";
 import WorldMap, { countryName } from "@/components/WorldMap";
 import { Card, Delta, Empty, PageHeader, Segmented } from "@/components/ui";
+import DiscordButton from "@/components/DiscordButton";
 import { compactEur, eur, num } from "@/lib/format";
 
 type Tab = "Carte" | "Classement";
@@ -17,15 +21,24 @@ export default function WorldPage() {
   const [tab, setTab] = useState<Tab>("Carte");
   const [sort, setSort] = useState<Sort>("Patrimoine");
 
-  // Hors ligne (site sans base de joueurs) : on se place soi-même sur la carte
-  const players: PublicPlayer[] = useMemo(() => {
-    if (world.status === "ready") return world.players.filter((p) => p.country);
-    return [{
-      id: "local", cityName: game.cityName, netWorth, population: game.population, perf: portfolioCost ? portfolio / portfolioCost - 1 : 0,
-      day: game.day, country: pickCountry(game.playerName || "local", []) ?? "250", updatedAt: game.lastTick, name: game.playerName, color: "#2563EB", isMe: true,
-    }];
-  }, [world, game, netWorth, portfolio, portfolioCost]);
+  const auth = useAuth();
+  const onlineCountry = useOnline((s) => s.country);
 
+  // Joueurs publiés + moi (chiffres en direct). Sans compte, on se place quand même sur la carte.
+  const players: PublicPlayer[] = useMemo(() => {
+    const myId = auth.user?.id;
+    const others = world.status === "ready" ? world.players.filter((p) => p.country && p.id !== myId && !p.isMe) : [];
+    const listed = world.status === "ready" && myId ? world.players.find((p) => p.id === myId) : undefined;
+    const taken = others.map((p) => p.country);
+    const country = listed?.country ?? onlineCountry ?? pickCountry(auth.user?.id ?? game.playerName ?? "local", taken) ?? "250";
+    const me: PublicPlayer = {
+      id: listed?.id ?? "local", cityName: game.cityName, netWorth, population: game.population, perf: portfolioCost ? portfolio / portfolioCost - 1 : 0,
+      day: game.day, country, updatedAt: game.lastTick, name: auth.user?.name ?? game.playerName, avatar: auth.user?.avatar, color: "#2563EB", isMe: true,
+    };
+    return [...others, me];
+  }, [world, game, netWorth, portfolio, portfolioCost, auth.user, onlineCountry]);
+
+  const owners = useMemo(() => players.map((p) => ({ country: p.country, cityName: p.cityName, isMe: p.isMe, population: p.population, name: p.name })), [players]);
   const byCountry = useMemo(() => new Map(players.map((p) => [p.country, p])), [players]);
   const mine = players.find((p) => p.isMe);
   const [selected, setSelected] = useState<string | null>(null);
@@ -51,13 +64,14 @@ export default function WorldPage() {
       {tab === "Carte" ? (
         <div className="grid gap-4 grid-cols-1 xl:grid-cols-12 items-start">
           <Card className="xl:col-span-9 !p-3">
-            <WorldMap owners={players.map((p) => ({ country: p.country, cityName: p.cityName, isMe: p.isMe, population: p.population }))} selected={selId} onSelect={setSelected} />
+            <WorldMap owners={owners} selected={selId} onSelect={setSelected} focus={mine?.country} />
             <div className="flex flex-wrap gap-x-5 gap-y-2 mt-3 px-1 text-[12px] text-muted">
               <Legend color="#2563EB" label="Votre territoire" />
-              <Legend color="#A9B8CB" label="Autres joueurs" />
-              <Legend color="#E3E9F0" label="Pays libres" border />
-              <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rotate-45 border-[1.5px] border-slate-500 bg-white" />Places financières</span>
-              <span className="ml-auto">Glissez pour vous déplacer, + / − pour zoomer</span>
+              <Legend color="#C7D7E8" label="Autres joueurs" />
+              <Legend color="#FBFCFE" label="Pays libres" border />
+              <Legend color="#E7ECF2" label="Non jouables" />
+              <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rotate-45 rounded-[2px] bg-amber-500" />Places financières</span>
+              <span className="ml-auto">Molette ou pincement : zoom · Glisser : se déplacer · Double-clic : zoomer</span>
             </div>
           </Card>
 
@@ -88,7 +102,12 @@ export default function WorldPage() {
                 <p className="text-[11px] text-muted mt-1">Les échanges avec les places financières arrivent bientôt.</p>
               </div>
             ))}
-            {world.status === "offline" && <p className="text-[11px] text-muted mt-4 pt-3 border-t border-line">Les autres joueurs apparaîtront quand les comptes en ligne seront branchés.</p>}
+            {!STATIC_MODE && auth.status !== "in" && (
+              <div className="mt-4 pt-3 border-t border-line">
+                <p className="text-[12px] text-muted mb-2">Connectez-vous pour réserver votre pays et apparaître au classement.</p>
+                <DiscordButton small />
+              </div>
+            )}
           </Card>
         </div>
       ) : (
@@ -110,7 +129,15 @@ export default function WorldPage() {
                       <td className="py-2.5 font-bold tabular">{i < 3 ? ["🥇", "🥈", "🥉"][i] : i + 1}</td>
                       <td className="font-semibold">{p.cityName}{p.isMe && <span className="ml-2 text-[10px] rounded bg-primary text-white px-1.5 py-0.5">Vous</span>}</td>
                       <td className="text-muted hidden md:table-cell">{countryName(p.country)}</td>
-                      <td className="text-muted hidden sm:table-cell">{p.name || "—"}</td>
+                      <td className="text-muted hidden sm:table-cell">
+                        <span className="inline-flex items-center gap-2">
+                          {p.avatar
+                            // eslint-disable-next-line @next/next/no-img-element
+                            ? <img src={p.avatar} alt="" width={22} height={22} loading="lazy" className="h-[22px] w-[22px] rounded-full" />
+                            : <span className="h-[22px] w-[22px] rounded-full bg-slate-200 grid place-items-center text-[10px] font-semibold text-slate-600">{(p.name || "?")[0]}</span>}
+                          {p.name || "—"}
+                        </span>
+                      </td>
                       <td className="text-right tabular font-semibold">{eur(p.netWorth)}</td>
                       <td className="text-right tabular">{num(p.population)}</td>
                       <td className="text-right"><Delta value={p.perf} /></td>
@@ -120,7 +147,8 @@ export default function WorldPage() {
               </table>
             </div>
           )}
-          <p className="text-[11px] text-muted mt-3">Le classement ne montre que ce que chaque joueur publie : nom de ville, patrimoine, population et performance boursière.</p>
+          <p className="text-[11px] text-muted mt-3">Le classement ne montre que le pseudo Discord et ce que chaque joueur publie : nom de ville, patrimoine, population et performance boursière. Mis à jour toutes les 5 minutes.</p>
+          {!STATIC_MODE && auth.status !== "in" && <div className="mt-3"><DiscordButton small /></div>}
         </Card>
       )}
     </>

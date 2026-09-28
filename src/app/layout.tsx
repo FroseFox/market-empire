@@ -18,7 +18,7 @@ const CSP = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline'",
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob: https://img.logo.dev",
+  "img-src 'self' data: blob: https://img.logo.dev https://cdn.discordapp.com",
   "font-src 'self'",
   "connect-src 'self' https://elpkixotuarcymalehjs.supabase.co",
   "object-src 'none'",

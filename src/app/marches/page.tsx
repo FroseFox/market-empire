@@ -16,6 +16,7 @@ import { fetchHistory } from "@/lib/market/client";
 import { Button, Card, Delta, PageHeader, Segmented } from "@/components/ui";
 import { Sparkline, WealthChart } from "@/components/charts";
 import { eur, eur2, pctPlain, qtyFmt, signedEur } from "@/lib/format";
+import PriceStatus from "@/components/PriceStatus";
 
 const KINDS: AssetKind[] = ["stock", "etf", "commodity", "crypto"];
 const REGIONS: ("Toutes" | Region)[] = ["Toutes", "États-Unis", "Europe", "Asie", "Autres"];
@@ -136,7 +137,7 @@ export default function MarketsPage() {
                               {held && <span className="text-[10px] rounded bg-primary-soft text-primary px-1.5 py-0.5 font-semibold">Détenu</span>}
                               {!hasResearch(game, a.research) && <span className="inline-flex items-center gap-0.5 text-[10px] rounded bg-slate-100 text-muted px-1.5 py-0.5 font-semibold"><Lock size={9} />Recherche</span>}
                             </div>
-                            <div className="text-[11px] text-muted">{a.symbol} · {flag(a.country)}{a.kind === "crypto" ? " · 24 h/24" : ""}</div>
+                            <div className="text-[11px] text-muted flex items-center gap-1.5">{a.symbol} · {flag(a.country)}{a.kind === "crypto" ? " · 24 h/24" : ""}<PriceStatus symbol={a.symbol} /></div>
                           </div>
                         </div>
                       </td>
@@ -203,7 +204,7 @@ function AssetPanel({ symbol, onSelect }: { symbol: string; onSelect: (s: string
         <CompanyLogo symbol={symbol} size={44} />
         <div className="flex-1">
           <div className="text-[18px] font-semibold leading-tight">{asset.name}</div>
-          <div className="text-[12px] text-muted">{symbol} · {asset.sector} · {flag(asset.country)}</div>
+          <div className="text-[12px] text-muted flex flex-wrap items-center gap-1.5">{symbol} · {asset.sector} · {flag(asset.country)}<PriceStatus symbol={symbol} large /></div>
         </div>
         <AddToFolder symbols={[symbol]} label="Dossier" />
       </div>

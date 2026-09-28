@@ -1,8 +1,9 @@
 // Market Empire — mise à jour des cours (Supabase Edge Function « refresh-market »).
-// Appelée toutes les 10 minutes par pg_cron. Chaque appel ne met à jour que les
-// actifs dont le cours a plus de 50 minutes (par lots), donc chaque action est
-// rafraîchie environ une fois par heure sans dépasser les quotas gratuits.
-// Les cryptomonnaies (une seule requête pour toutes) sont rafraîchies à chaque appel.
+// Une fois par heure, pg_cron l'appelle 5 fois de suite (h:05, :07, :09, :11, :13) :
+// chaque appel met à jour un lot d'actifs dont le cours a plus de 50 minutes.
+// Résultat : TOUS les cours (actions, ETF, matières premières, cryptos) sont
+// rafraîchis une seule fois par heure, sans dépasser la limite Finnhub (60 / min)
+// ni la durée maximale d'une fonction. Un appel sans rien à faire s'arrête tout de suite.
 //
 // Secrets à définir dans Supabase (Edge Functions → Secrets) :
 //   FINNHUB_API_KEY      cours des actions et ETF cotés aux États-Unis
@@ -16,9 +17,9 @@ const FINNHUB = Deno.env.get("FINNHUB_API_KEY") ?? "";
 const TWELVE = Deno.env.get("TWELVE_DATA_API_KEY") ?? "";
 
 const QUOTE_MAX_AGE = 50 * 60_000;
-const QUOTE_BATCH = 40;          // Finnhub gratuit : 60 requêtes / minute
+const QUOTE_BATCH = 45;          // Finnhub gratuit : 60 requêtes / minute (un appel toutes les 2 min)
 const FINNHUB_GAP_MS = 1_100;
-const CRYPTO_MAX_AGE = 4 * 60_000;
+const CRYPTO_MAX_AGE = QUOTE_MAX_AGE; // cryptos aussi : une fois par heure
 const HISTORY_MAX_AGE = 20 * 3_600_000;
 const HISTORY_BATCH = 2;         // Twelve Data gratuit : 8 requêtes / minute, 800 / jour
 const TD_GAP_MS = 7_600;
@@ -55,6 +56,12 @@ Deno.serve(async () => {
   const assets = (await (await db("assets?select=symbol,provider_symbol,us_symbol,us_factor,coingecko_id,history_updated_at&active=eq.true")).json()) as AssetRow[];
   const prev = (await (await db("asset_prices?select=symbol,price,updated_at")).json()) as { symbol: string; price: number; updated_at: string }[];
   const prevBy = new Map(prev.map((p) => [p.symbol, { price: Number(p.price), at: Date.parse(p.updated_at) }]));
+
+  // Rien à faire (cours et historiques à jour) : on s'arrête sans appeler aucun fournisseur
+  const isStale = (a: AssetRow, maxAge: number) => now - (prevBy.get(a.symbol)?.at ?? 0) > maxAge;
+  const quotesDue = assets.some((a) => isStale(a, a.coingecko_id ? CRYPTO_MAX_AGE : QUOTE_MAX_AGE));
+  const historyDue = assets.some((a) => !a.history_updated_at || now - Date.parse(a.history_updated_at) > HISTORY_MAX_AGE);
+  if (!quotesDue && !historyDue) return json({ ok: true, idle: true });
 
   const prices: Record<string, unknown>[] = [], points: Record<string, unknown>[] = [];
   const add = (symbol: string, price: number, change: number, source: string) => {

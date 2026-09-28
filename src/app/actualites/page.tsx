@@ -37,7 +37,7 @@ export default function NewsPage() {
 
   return (
     <>
-      <PageHeader icon={Newspaper} title="Actualités" subtitle="De vraies actualités économiques, reliées aux entreprises. Le jeu ne vous dit jamais quoi acheter." />
+      <PageHeader icon={Newspaper} title="Actualités" subtitle="De vraies actualités économiques, mises à jour chaque heure et reliées aux entreprises. Le jeu ne vous dit jamais quoi acheter." />
       <div className="grid gap-4 grid-cols-1 xl:grid-cols-12">
         <div className="xl:col-span-8">
           <div className="flex flex-wrap gap-2 mb-3">

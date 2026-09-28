@@ -11,7 +11,7 @@ export const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
 // Valeurs publiques (faites pour le navigateur) : la base n'autorise que la lecture des cours.
 export const SUPABASE_URL = "https://elpkixotuarcymalehjs.supabase.co";
-const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVscGtpeG90dWFyY3ltYWxlaGpzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA1MjEzMDAsImV4cCI6MjEwNjA5NzMwMH0.tP0WZYp1bPW2-hEEOdzQVmTiysyh3cKs_hBq0MJWu8M";
+export const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVscGtpeG90dWFyY3ltYWxlaGpzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA1MjEzMDAsImV4cCI6MjEwNjA5NzMwMH0.tP0WZYp1bPW2-hEEOdzQVmTiysyh3cKs_hBq0MJWu8M";
 
 /** Arrondi d'un prix : au centime, ou 4 décimales sous 10 € (petites cryptos). */
 export const roundPrice = (v: number) => (Math.abs(v) < 10 ? Math.round(v * 10_000) / 10_000 : Math.round(v * 100) / 100);
@@ -25,9 +25,9 @@ function localQuote(symbol: string, now: number): ClientQuote {
   return { symbol, price, change: prev ? price / prev - 1 : 0, source: "simulé" };
 }
 
-// Petit cache mémoire : une seule requête par minute, même pour plusieurs ordres
+// Petit cache mémoire : les cours ne changent qu'une fois par heure
 const memo = new Map<string, { at: number; data: unknown }>();
-async function rest<T>(query: string, ttl = 60_000): Promise<T | null> {
+export async function rest<T>(query: string, ttl = 5 * 60_000): Promise<T | null> {
   const hit = memo.get(query);
   if (hit && Date.now() - hit.at < ttl) return hit.data as T;
   try {

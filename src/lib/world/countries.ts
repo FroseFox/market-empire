@@ -36,3 +36,11 @@ export function pickCountry(uid: string, taken: string[]): string | null {
   const free = PLAYABLE_IDS.filter((id) => !taken.includes(id));
   return free.length ? free[h % free.length] : null;
 }
+
+/** Tous les pays jouables, dans un ordre propre à chaque joueur (le serveur prend le premier libre). */
+export function countryPreference(uid: string): string[] {
+  let h = 0;
+  for (let i = 0; i < uid.length; i++) h = (h * 31 + uid.charCodeAt(i)) >>> 0;
+  const k = h % PLAYABLE_IDS.length;
+  return [...PLAYABLE_IDS.slice(k), ...PLAYABLE_IDS.slice(0, k)];
+}
