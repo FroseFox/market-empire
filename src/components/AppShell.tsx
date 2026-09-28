@@ -3,7 +3,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
-  BarChart3, Building2, Cloud, CloudOff, FlaskConical, Folder, Globe2, LineChart, Network, Newspaper, Wallet, Plus, Clock,
+  BarChart3, Building2, Cloud, CloudOff, FlaskConical, Folder, Globe2, LineChart, Network, Newspaper, Wallet, Plus, Clock, LayoutGrid, X,
 } from "lucide-react";
 import { useGame } from "@/store/game";
 import { fetchQuotes, STATIC_MODE } from "@/lib/market/client";
@@ -193,14 +193,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </main>
       </div>
 
-      {/* Navigation mobile */}
-      <nav className="lg:hidden fixed bottom-0 inset-x-0 z-30 bg-navy text-slate-400 flex justify-between gap-1 overflow-x-auto px-2 pt-2 border-t border-white/10" style={{ paddingBottom: "calc(8px + env(safe-area-inset-bottom, 0px))" }}>
-        {NAV.filter((n) => !n.soon).map(({ href, label, icon: Icon }) => (
-          <Link key={href} href={href} className={`flex flex-col items-center gap-0.5 text-[10px] px-1.5 min-w-[56px] shrink-0 ${isActive(href) ? "text-white" : ""}`}>
-            <Icon size={20} strokeWidth={1.8} />{label}
-          </Link>
-        ))}
-      </nav>
+      {/* Navigation mobile : 4 onglets principaux + « Plus » */}
+      <MobileNav isActive={isActive} mode={mode} quotesAt={quotesAt} />
 
       {toast && (
         <div role="status" className={`fixed z-40 bottom-20 lg:bottom-6 left-1/2 -translate-x-1/2 appear rounded-[12px] px-4 py-2.5 text-[13px] font-medium shadow-lg ${toast.kind === "ok" ? "bg-navy text-white" : "bg-danger text-white"}`}>
@@ -208,5 +202,56 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       )}
     </div>
+  );
+}
+
+const MOBILE_MAIN = ["/", "/marches", "/portefeuille", "/ville"];
+
+function MobileNav({ isActive, mode, quotesAt }: { isActive: (href: string) => boolean; mode: string; quotesAt: number }) {
+  const [open, setOpen] = useState(false);
+  const path = usePathname();
+  const main = NAV.filter((n) => MOBILE_MAIN.includes(n.href));
+  const more = NAV.filter((n) => !MOBILE_MAIN.includes(n.href));
+  const moreActive = more.some((n) => isActive(n.href));
+  // Fermer le panneau quand on change de page
+  const [lastPath, setLastPath] = useState(path);
+  if (path !== lastPath) { setLastPath(path); setOpen(false); }
+
+  return (
+    <>
+      {open && (
+        <div className="lg:hidden fixed inset-0 z-30 bg-navy/40 appear" onClick={() => setOpen(false)}>
+          <div className="absolute inset-x-0 bottom-0 rounded-t-[20px] bg-card px-4 pt-3 shadow-2xl" onClick={(e) => e.stopPropagation()}
+            style={{ paddingBottom: "calc(84px + env(safe-area-inset-bottom, 0px))" }}>
+            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-slate-200" />
+            <div className="grid grid-cols-3 gap-2">
+              {more.map(({ href, label, icon: Icon }) => (
+                <Link key={href} href={href}
+                  className={`flex flex-col items-center gap-1.5 rounded-[14px] py-3.5 text-[12px] font-medium ${isActive(href) ? "bg-primary text-white" : "bg-slate-50 text-ink active:bg-slate-100"}`}>
+                  <Icon size={22} strokeWidth={1.8} />{label}
+                </Link>
+              ))}
+            </div>
+            <div className={`mt-3 flex items-center gap-2 rounded-[12px] px-3 py-2 text-[12px] ${mode === "simulé" ? "bg-warning-soft text-amber-700" : "bg-success-soft text-emerald-700"}`}>
+              <span className={`h-2 w-2 rounded-full ${mode === "simulé" ? "bg-warning" : "bg-success"}`} />
+              {mode === "simulé" ? "Cours simulés" : `Cours réels · mis à jour à ${new Date(quotesAt).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}`}
+            </div>
+          </div>
+        </div>
+      )}
+      <nav className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-navy text-slate-400 grid grid-cols-5 px-1 pt-2 border-t border-white/10"
+        style={{ paddingBottom: "calc(8px + env(safe-area-inset-bottom, 0px))" }}>
+        {main.map(({ href, label, icon: Icon }) => (
+          <Link key={href} href={href} className={`flex flex-col items-center gap-0.5 text-[10px] py-0.5 ${isActive(href) && !open ? "text-white" : ""}`}>
+            <Icon size={21} strokeWidth={1.8} />{label}
+          </Link>
+        ))}
+        <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open}
+          className={`flex flex-col items-center gap-0.5 text-[10px] py-0.5 ${open || moreActive ? "text-white" : ""}`}>
+          {open ? <X size={21} strokeWidth={1.8} /> : <LayoutGrid size={21} strokeWidth={1.8} />}
+          {open ? "Fermer" : moreActive ? more.find((n) => isActive(n.href))!.label : "Plus"}
+        </button>
+      </nav>
+    </>
   );
 }

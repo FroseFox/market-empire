@@ -5,7 +5,8 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useGame } from "@/store/game";
-import { BRANCH_COLOR, RESEARCH, RESEARCH_BY_ID, type ResearchNode } from "@/lib/game/research";
+import { BRANCH_COLOR, RESEARCH, RESEARCH_BY_ID, type Branch, type ResearchNode } from "@/lib/game/research";
+import { useMedia } from "@/lib/useMedia";
 import { Button, Card, PageHeader } from "@/components/ui";
 import { compactEur, eur } from "@/lib/format";
 
@@ -44,10 +45,50 @@ export default function ResearchPage() {
     return () => ro.disconnect();
   }, []);
 
+  // Téléphone : liste par branche au lieu de l'arbre (trop large pour l'écran)
+  const phone = useMedia("(max-width: 639px)");
+  const detail = useRef<HTMLDivElement>(null);
+  const pick = (id: string) => { setSelected(id); if (phone) setTimeout(() => detail.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50); };
+  const branches = (Object.keys(BRANCH_COLOR) as Branch[]).filter((b) => b !== "Racine");
+
   return (
     <>
       <PageHeader icon={FlaskConical} title="Recherche" subtitle={`Arbre de compétences · ${owned} / ${RESEARCH.length} débloquées`} />
       <div className="grid gap-4 grid-cols-1 xl:grid-cols-12">
+        {phone ? (
+          <Card className="!p-0 overflow-hidden">
+            {branches.map((b) => (
+              <div key={b} className="border-b border-line last:border-b-0">
+                <div className="px-4 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: BRANCH_COLOR[b] }}>{b}</div>
+                <ul>
+                  {RESEARCH.filter((n) => n.branch === b).map((n) => {
+                    const st = status(n), Icon = ICONS[n.id] ?? FlaskConical, color = BRANCH_COLOR[n.branch];
+                    return (
+                      <li key={n.id}>
+                        <button type="button" onClick={() => pick(n.id)}
+                          className={`w-full flex items-center gap-3 px-4 py-2.5 text-left ${n.id === selected ? "bg-primary-soft/60" : "active:bg-slate-50"}`}>
+                          <span className="h-10 w-10 rounded-full grid place-items-center shrink-0"
+                            style={{ background: st === "done" ? color : st === "open" ? "#FFFFFF" : "#F1F5F9", border: `2.5px solid ${st === "locked" ? "#CBD5E1" : color}` }}>
+                            <Icon size={18} color={st === "done" ? "#FFFFFF" : st === "open" ? color : "#94A3B8"} />
+                          </span>
+                          <span className="flex-1 min-w-0">
+                            <span className={`block text-[14px] font-semibold ${st === "locked" ? "text-muted" : ""}`}>{n.name}</span>
+                            <span className="block text-[11px] text-muted truncate">
+                              {n.requires.filter((r) => r !== "hq").length ? `Après : ${n.requires.filter((r) => r !== "hq").map((r) => RESEARCH_BY_ID[r].name).join(", ")}` : "Accessible dès le départ"}
+                            </span>
+                          </span>
+                          <span className={`text-[12px] tabular font-semibold shrink-0 ${st === "done" ? "text-success" : st === "open" ? "text-primary" : "text-muted"}`}>
+                            {st === "done" ? <Check size={16} /> : st === "locked" ? <span className="inline-flex items-center gap-1"><Lock size={12} />{compactEur(n.cost)}</span> : n.cost === 0 ? "Gratuite" : compactEur(n.cost)}
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ))}
+          </Card>
+        ) : (
         <Card className="xl:col-span-9 !p-0 overflow-hidden">
           <div ref={frame} className="overflow-x-auto">
             <div className="mx-auto" style={{ width: WIDTH * scale, height: HEIGHT * scale }}>
@@ -123,9 +164,10 @@ export default function ResearchPage() {
             <span className="ml-auto">Pointillés : prérequis manquants</span>
           </div>
         </Card>
+        )}
 
         {/* Détail de la compétence choisie */}
-        <div className="xl:col-span-3">
+        <div ref={detail} className="xl:col-span-3 scroll-mt-20">
           <Card className="xl:sticky xl:top-20">
             <div className="flex items-center gap-3 mb-3">
               {(() => { const Icon = ICONS[sel.id] ?? FlaskConical; return (

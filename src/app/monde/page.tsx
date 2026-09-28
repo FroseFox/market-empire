@@ -55,9 +55,9 @@ export default function WorldPage() {
         <Segmented options={["Carte", "Classement"] as Tab[]} value={tab} onChange={setTab} />
       </PageHeader>
 
-      <div className="grid gap-4 grid-cols-1 sm:grid-cols-3 mb-4">
+      <div className="grid gap-2 sm:gap-4 grid-cols-3 mb-4">
         <Stat icon={MapPin} label="Votre territoire" value={mine ? countryName(mine.country) : "—"} sub={game.cityName} />
-        <Stat icon={Trophy} label="Votre rang (patrimoine)" value={myRank ? `${myRank}ᵉ` : "—"} sub={`sur ${num(players.length)} joueur${players.length > 1 ? "s" : ""}`} />
+        <Stat icon={Trophy} label="Votre rang" value={myRank ? `${myRank}ᵉ` : "—"} sub={`sur ${num(players.length)} joueur${players.length > 1 ? "s" : ""}`} />
         <Stat icon={Users} label="Monde" value={`${num(players.length)} joueur${players.length > 1 ? "s" : ""}`} sub={`${Object.keys(PLAYABLE).length} pays jouables · ${HUBS.length} places financières`} />
       </div>
 
@@ -71,7 +71,7 @@ export default function WorldPage() {
               <Legend color="#FBFCFE" label="Pays libres" border />
               <Legend color="#E7ECF2" label="Non jouables" />
               <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rotate-45 rounded-[2px] bg-amber-500" />Places financières</span>
-              <span className="ml-auto">Molette ou pincement : zoom · Glisser : se déplacer · Double-clic : zoomer</span>
+              <span className="ml-auto hidden sm:inline">Molette ou pincement : zoom · Glisser : se déplacer · Double-clic : zoomer</span>
             </div>
           </Card>
 
@@ -157,9 +157,9 @@ export default function WorldPage() {
 
 function Stat({ icon: Icon, label, value, sub }: { icon: typeof Globe2; label: string; value: string; sub: string }) {
   return (
-    <div className="card p-4 flex items-center gap-3 appear">
-      <span className="h-10 w-10 rounded-full bg-primary-soft text-primary grid place-items-center shrink-0"><Icon size={18} /></span>
-      <div className="min-w-0"><div className="text-[12px] text-muted">{label}</div><div className="text-[18px] font-bold truncate">{value}</div><div className="text-[11px] text-muted truncate">{sub}</div></div>
+    <div className="card p-3 sm:p-4 flex items-center gap-3 appear min-w-0">
+      <span className="hidden sm:grid h-10 w-10 rounded-full bg-primary-soft text-primary place-items-center shrink-0"><Icon size={18} /></span>
+      <div className="min-w-0"><div className="text-[11px] sm:text-[12px] text-muted truncate">{label}</div><div className="text-[15px] sm:text-[18px] font-bold truncate">{value}</div><div className="text-[10px] sm:text-[11px] text-muted truncate">{sub}</div></div>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Network, Search } from "lucide-react";
 import { useDerived } from "@/store/game";
@@ -81,6 +81,17 @@ export default function RelationsPage() {
   const deep = hasResearch(game, "supply_chain");
   const { nodes, edges, list, box } = useMemo(() => buildGraph(center, deep), [center, deep]);
   const asset = ASSET_BY_SYMBOL[center];
+  // Sur téléphone, le graphe défile à l'horizontale : on le centre sur l'entreprise choisie
+  const scroller = useRef<HTMLDivElement>(null);
+  const graphCard = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = scroller.current;
+    if (el && el.scrollWidth > el.clientWidth) el.scrollLeft = (el.scrollWidth * -box.x) / box.w - el.clientWidth / 2;
+  }, [center, box]);
+  const pick = (sym: string) => {
+    setCenter(sym);
+    if (window.matchMedia("(max-width: 1279px)").matches) graphCard.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
   const choices = ASSETS.filter((a) => a.kind === "stock" && (a.symbol + a.name).toLowerCase().includes(query.toLowerCase()));
 
   return (
@@ -94,10 +105,10 @@ export default function RelationsPage() {
               <input id="rel-search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Chercher une entreprise" className="bg-transparent outline-none text-[13px] flex-1 min-w-0" />
             </div>
           </div>
-          <ul className="max-h-[520px] overflow-y-auto py-1">
+          <ul className="max-h-[220px] xl:max-h-[520px] overflow-y-auto py-1">
             {choices.map((a) => (
               <li key={a.symbol}>
-                <button onClick={() => setCenter(a.symbol)} className={`w-full text-left px-4 py-2 text-[13px] flex items-center justify-between gap-2 ${a.symbol === center ? "bg-primary-soft text-primary font-semibold" : "hover:bg-slate-50"}`}>
+                <button onClick={() => pick(a.symbol)} className={`w-full text-left px-4 py-2 text-[13px] flex items-center justify-between gap-2 ${a.symbol === center ? "bg-primary-soft text-primary font-semibold" : "hover:bg-slate-50"}`}>
                   <span>{a.name}</span>
                   <span className="text-[11px] text-muted">{neighbors(a.symbol).length}</span>
                 </button>
@@ -106,14 +117,15 @@ export default function RelationsPage() {
           </ul>
         </Card>
 
-        <Card className="xl:col-span-6">
+        <div ref={graphCard} className="xl:col-span-6 scroll-mt-20">
+        <Card>
           <div className="flex flex-wrap items-center gap-3 mb-3">
             {(Object.keys(ROLE_STYLE) as Neighbor["role"][]).map((r) => (
               <span key={r} className="inline-flex items-center gap-1.5 text-[12px] text-muted"><span className="h-2.5 w-2.5 rounded-full" style={{ background: ROLE_STYLE[r].color }} />{ROLE_STYLE[r].label}</span>
             ))}
             {!deep && <Link href="/recherche" className="ml-auto text-[12px] text-primary font-medium hover:underline">Voir les chaînes complètes →</Link>}
           </div>
-          <div className="overflow-x-auto">
+          <div ref={scroller} className="overflow-x-auto">
             <svg viewBox={`${box.x} ${box.y} ${box.w} ${box.h}`} className="w-full min-w-[560px] h-auto max-h-[640px]" role="img" aria-label={`Relations de ${asset.name}`}>
               {edges.map((e, i) => (
                 <path key={i} d={`M${e.a.x},${e.a.y} C${(e.a.x + e.b.x) / 2},${e.a.y} ${(e.a.x + e.b.x) / 2},${e.b.y} ${e.b.x},${e.b.y}`} fill="none" stroke={ROLE_STYLE[e.role].color} strokeWidth={e.b.level === 2 ? 1.2 : 2} strokeOpacity={e.b.level === 2 ? 0.45 : 0.7}
@@ -141,8 +153,9 @@ export default function RelationsPage() {
               })}
             </svg>
           </div>
-          <p className="text-[11px] text-muted mt-2">Cliquez sur une entreprise pour la placer au centre. Variation sur 24 h.</p>
+          <p className="text-[11px] text-muted mt-2">Touchez une entreprise pour la placer au centre. Variation sur 24 h.<span className="sm:hidden"> Faites glisser le schéma sur les côtés.</span></p>
         </Card>
+        </div>
 
         <Card title={asset.name} className="xl:col-span-3" extra={<AddToFolder symbols={[center]} label="Dossier" />}>
           <div className="flex items-center gap-2 text-[12px] text-muted mb-4">{asset.sector} · {center} {quotes[center] && <Delta value={quotes[center].change} />}</div>
@@ -157,7 +170,7 @@ export default function RelationsPage() {
                     <ul className="space-y-1.5">
                       {items.map((n) => (
                         <li key={role + n.symbol}>
-                          <button onClick={() => setCenter(n.symbol)} className="text-left w-full rounded-[8px] px-2 py-1.5 hover:bg-slate-50">
+                          <button onClick={() => pick(n.symbol)} className="text-left w-full rounded-[8px] px-2 py-1.5 hover:bg-slate-50">
                             <span className="block text-[13px] font-medium">{ASSET_BY_SYMBOL[n.symbol]?.name ?? n.symbol}</span>
                             <span className="block text-[11px] text-muted">{n.note}</span>
                           </button>

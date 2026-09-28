@@ -41,9 +41,21 @@ const C = {
 const MIN_K = 1, MAX_K = 12;
 
 type View = { k: number; x: number; y: number };
-const clampView = (v: View): View => {
+/** Partie de la carte visible dans le cadre (sur téléphone, le cadre est plus haut : les côtés sont rognés). */
+type Visible = { x0: number; y0: number; w: number; h: number; s: number; offX: number; offY: number };
+const FULL: Visible = { x0: 0, y0: 0, w: MAP_W, h: MAP_H, s: 1, offX: 0, offY: 0 };
+function visibleOf(el: SVGSVGElement | null): Visible {
+  const r = el?.getBoundingClientRect();
+  if (!r || !r.width || !r.height) return FULL;
+  const s = Math.max(r.width / MAP_W, r.height / MAP_H), w = r.width / s, h = r.height / s;
+  return { x0: (MAP_W - w) / 2, y0: (MAP_H - h) / 2, w, h, s, offX: (r.width - MAP_W * s) / 2, offY: (r.height - MAP_H * s) / 2 };
+}
+/** La carte couvre toujours toute la partie visible. */
+const clampView = (v: View, vis: Visible = FULL): View => {
   const k = Math.max(MIN_K, Math.min(MAX_K, v.k));
-  return { k, x: Math.min(0, Math.max(MAP_W - MAP_W * k, v.x)), y: Math.min(0, Math.max(MAP_H - MAP_H * k, v.y)) };
+  const axis = (pos: number, size: number, v0: number, vw: number) =>
+    size <= vw ? v0 + (vw - size) / 2 : Math.min(v0, Math.max(v0 + vw - size, pos));
+  return { k, x: axis(v.x, MAP_W * k, vis.x0, vis.w), y: axis(v.y, MAP_H * k, vis.y0, vis.h) };
 };
 
 /** Teinte pastel stable pour le territoire d'un autre joueur. */
@@ -92,12 +104,12 @@ export default function WorldMap({ owners, selected, onSelect, focus }: {
   const moved = useRef(false);
   const downAt = useRef({ x: 0, y: 0 });
 
-  const setView = useCallback((v: View) => { const c = clampView(v); viewRef.current = c; setViewState(c); }, []);
+  const setView = useCallback((v: View) => { const c = clampView(v, visibleOf(svg.current)); viewRef.current = c; setViewState(c); }, []);
 
   /** Transition douce vers une vue (désactivée si l'utilisateur préfère moins d'animations). */
   const animateTo = useCallback((target: View) => {
     cancelAnimationFrame(anim.current);
-    const to = clampView(target), from = viewRef.current;
+    const to = clampView(target, visibleOf(svg.current)), from = viewRef.current;
     if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) { setView(to); return; }
     const t0 = performance.now(), D = 380;
     const step = (t: number) => {
@@ -110,8 +122,8 @@ export default function WorldMap({ owners, selected, onSelect, focus }: {
 
   /** Coordonnées de la carte (0..960 × 0..470) sous un point de l'écran. */
   const toMap = (clientX: number, clientY: number) => {
-    const r = svg.current!.getBoundingClientRect();
-    return { mx: ((clientX - r.left) / r.width) * MAP_W, my: ((clientY - r.top) / r.height) * MAP_H };
+    const r = svg.current!.getBoundingClientRect(), v = visibleOf(svg.current);
+    return { mx: (clientX - r.left - v.offX) / v.s, my: (clientY - r.top - v.offY) / v.s };
   };
   const zoomAt = useCallback((factor: number, mx: number, my: number, smooth = false) => {
     const v = viewRef.current;
@@ -125,10 +137,20 @@ export default function WorldMap({ owners, selected, onSelect, focus }: {
     const s = SHAPES.find((x) => x.id === id);
     if (!s) return;
     const [[x0, y0], [x1, y1]] = s.bounds;
-    const k = Math.max(1.5, Math.min(7, 0.55 * Math.min(MAP_W / (x1 - x0 || 1), MAP_H / (y1 - y0 || 1))));
+    const vis = visibleOf(svg.current);
+    const k = Math.max(1.5, Math.min(7, 0.55 * Math.min(vis.w / (x1 - x0 || 1), vis.h / (y1 - y0 || 1))));
     const [cx, cy] = [(x0 + x1) / 2, (y0 + y1) / 2];
     animateTo({ k, x: MAP_W / 2 - cx * k, y: MAP_H / 2 - cy * k });
   }, [animateTo]);
+
+  // Taille du cadre modifiée (rotation du téléphone…) : on recale la vue
+  useEffect(() => {
+    const el = svg.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setView(viewRef.current));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [setView]);
 
   // Molette (écouteur non passif pour empêcher le défilement de la page)
   useEffect(() => {
@@ -165,9 +187,8 @@ export default function WorldMap({ owners, selected, onSelect, focus }: {
       // Petit mouvement : c'est encore un clic
       if (!moved.current && Math.abs(e.clientX - downAt.current.x) + Math.abs(e.clientY - downAt.current.y) < 5) return;
       if (!moved.current) { moved.current = true; svg.current?.setPointerCapture(e.pointerId); }
-      const r = svg.current!.getBoundingClientRect();
-      const v = viewRef.current;
-      setView({ ...v, x: v.x + (dx * MAP_W) / r.width, y: v.y + (dy * MAP_H) / r.height });
+      const s = visibleOf(svg.current).s, v = viewRef.current;
+      setView({ ...v, x: v.x + dx / s, y: v.y + dy / s });
     } else if (pts.size === 2) {
       moved.current = true;
       const [a, b] = [...pts.values()];
@@ -210,7 +231,7 @@ export default function WorldMap({ owners, selected, onSelect, focus }: {
     <div className="relative rounded-[14px] overflow-hidden select-none outline-none focus-visible:ring-2 focus-visible:ring-primary"
       style={{ background: "radial-gradient(ellipse at 50% 35%, #F4F8FC 0%, #E6EDF5 100%)" }}
       tabIndex={0} onKeyDown={onKey} aria-label="Carte du monde interactive. Flèches pour se déplacer, plus et moins pour zoomer.">
-      <svg ref={svg} viewBox={`0 0 ${MAP_W} ${MAP_H}`} className="block w-full h-auto touch-none cursor-grab active:cursor-grabbing" role="img" aria-label="Carte du monde"
+      <svg ref={svg} viewBox={`0 0 ${MAP_W} ${MAP_H}`} preserveAspectRatio="xMidYMid slice" className="block w-full h-[340px] sm:h-[420px] lg:h-auto touch-none cursor-grab active:cursor-grabbing" role="img" aria-label="Carte du monde"
         onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endPointer} onPointerCancel={endPointer}
         onPointerLeave={() => setHoverId(null)}
         onDoubleClick={(e) => { const { mx, my } = toMap(e.clientX, e.clientY); zoomAt(2, mx, my, true); }}>

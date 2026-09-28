@@ -60,8 +60,10 @@ function hash(x: number, y: number) {
   return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
 }
 
-export default function IsoCity({ plots, height = 440, compact = false, mode = null, selected = null, onTileClick }: {
+export default function IsoCity({ plots, height = 440, compact = false, mode = null, selected = null, onTileClick, initialZoom = 1 }: {
   plots: Plot[]; height?: number; compact?: boolean;
+  /** Zoom de départ (plus serré sur téléphone). */
+  initialZoom?: number;
   /** Mode placement / déplacement : aperçu du bâtiment sous la souris. */
   mode?: CityMode | null;
   /** Carreau sélectionné (entouré). */
@@ -74,7 +76,8 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
   const births = useRef<Map<string, number>>(new Map());
   const seen = useRef<Set<string> | null>(null);
   const hoverRef = useRef<{ x: number; y: number } | null>(null);
-  const view = useRef({ zoom: 1, px: 0, py: 0 });
+  const view = useRef({ zoom: initialZoom, px: 0, py: 0 });
+  const lastInitial = useRef(initialZoom);
   const redraw = useRef<() => void>(() => {});
   const modeRef = useRef<CityMode | null>(null);
   const selectedRef = useRef<{ x: number; y: number } | null>(null);
@@ -114,6 +117,7 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
     const g = cv.getContext("2d");
     if (!g) return;
     const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+    if (lastInitial.current !== initialZoom) { lastInitial.current = initialZoom; view.current = { zoom: initialZoom, px: 0, py: 0 }; }
 
     // Repère les nouveaux bâtiments pour l'animation de construction
     const nowMs = performance.now();
@@ -145,9 +149,10 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
       // Emprise écran du losange visible (+ socle + marge pour les tours)
       const spanX = ((x1 + 1 - x0) + (y1 + 1 - y0)) * TW / 2;
       const spanY = ((x1 + 1 - x0) + (y1 + 1 - y0)) * TH / 2 + SLAB + (compact ? 40 : 60);
-      const s0 = Math.min((W - 24) / spanX, (H - 16) / spanY);
+      const s0 = Math.max(0.05, Math.min((W - 24) / spanX, (H - 16) / spanY));
       const cx = ((x0 - y1 - 1) + (x1 + 1 - y0)) / 2 * TW / 2;
-      base = { scale: s0, ox: W / 2 - cx * s0, oy: H - 12 - (SLAB + (x1 + 1 + y1 + 1) * TH / 2) * s0 };
+      // Centré verticalement (sur un écran haut et étroit, la ville n'est plus collée en bas)
+      base = { scale: s0, ox: W / 2 - cx * s0, oy: Math.min(H - 12, (H + spanY * s0) / 2) - (SLAB + (x1 + 1 + y1 + 1) * TH / 2) * s0 };
       applyView();
     }
 
@@ -179,7 +184,7 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
     controls.current = {
       zoomAt: (f, sx = W / 2, sy = H / 2) => go(viewAround((goal?.zoom ?? view.current.zoom) * f, sx, sy), true),
       panBy: (dx, dy) => { const v = goal ?? view.current; go({ zoom: v.zoom, px: v.px + dx, py: v.py + dy }, true); },
-      reset: () => go({ zoom: 1, px: 0, py: 0 }, true),
+      reset: () => go({ zoom: initialZoom, px: 0, py: 0 }, true),
     };
 
     let lights: Pt[][] = [];
@@ -714,7 +719,7 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
       cv.removeEventListener("wheel", onWheel); cv.removeEventListener("dblclick", onDbl);
       controls.current = null;
     };
-  }, [plots, height, compact, interactive]);
+  }, [plots, height, compact, interactive, initialZoom]);
 
   return (
     <div ref={wrap} className="relative w-full rounded-[12px] overflow-hidden outline-none focus-visible:ring-2 focus-visible:ring-primary"

@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { LineChart, Lock, Search } from "lucide-react";
+import { LineChart, Lock, Search, X } from "lucide-react";
 import { useDerived, useGame } from "@/store/game";
 import { ASSETS, ASSET_BY_SYMBOL, KIND_LABEL, flag, fractional, regionOf, type AssetKind, type Region } from "@/lib/market/universe";
 import { simulatedHistory, type Range } from "@/lib/market/simulate";
@@ -17,7 +17,9 @@ import { Button, Card, Delta, PageHeader, Segmented } from "@/components/ui";
 import { Sparkline, WealthChart } from "@/components/charts";
 import { eur, eur2, pctPlain, qtyFmt, signedEur } from "@/lib/format";
 import PriceStatus from "@/components/PriceStatus";
+import { useMedia } from "@/lib/useMedia";
 
+const PAGE = 60;
 const KINDS: AssetKind[] = ["stock", "etf", "commodity", "crypto"];
 const REGIONS: ("Toutes" | Region)[] = ["Toutes", "États-Unis", "Europe", "Asie", "Autres"];
 const norm = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
@@ -57,6 +59,14 @@ export default function MarketsPage() {
     ? norm(`${a.symbol} ${a.name} ${a.sector} ${regionOf(a)}`).includes(n)
     : a.kind === kind && (kind !== "stock" || region === "Toutes" || regionOf(a) === region));
   const count = (k: AssetKind) => ASSETS.filter((a) => a.kind === k).length;
+  // Affichage par pages (liste longue, surtout sur téléphone)
+  const filterKey = `${kind}|${region}|${n}`;
+  const [limit, setLimit] = useState({ key: filterKey, n: PAGE });
+  const shown = list.slice(0, limit.key === filterKey ? limit.n : PAGE);
+  // Sur petit écran, la fiche s'ouvre par-dessus la liste
+  const small = useMedia("(max-width: 1279px)");
+  const [sheet, setSheet] = useState(false);
+  const open = (sym: string) => { setSelected(sym); if (small) setSheet(true); };
 
   // Analyse sectorielle (recherche) : variation moyenne sur 24 h par secteur
   const sectors = hasResearch(game, "sector_view")
@@ -80,7 +90,7 @@ export default function MarketsPage() {
           </div>
           {!n && (
             <div className="px-4 pt-3 pb-2 border-b border-line space-y-2">
-              <div role="tablist" aria-label="Catégorie" className="flex gap-1.5 overflow-x-auto">
+              <div role="tablist" aria-label="Catégorie" className="flex flex-wrap gap-1.5">
                 {KINDS.map((k) => (
                   <button key={k} role="tab" aria-selected={kind === k} onClick={() => setKind(k)}
                     className={`shrink-0 rounded-[10px] px-3 py-1.5 text-[12px] font-semibold transition-colors ${kind === k ? "bg-primary text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>
@@ -122,18 +132,18 @@ export default function MarketsPage() {
                 </tr>
               </thead>
               <tbody>
-                {list.map((a) => {
+                {shown.map((a) => {
                   const q = quotes[a.symbol];
                   const held = game.holdings[a.symbol];
                   const sp = sparks[a.symbol] ?? [];
                   return (
-                    <tr key={a.symbol} onClick={() => setSelected(a.symbol)}
+                    <tr key={a.symbol} onClick={() => open(a.symbol)}
                       className={`border-b border-line/70 cursor-pointer transition-colors ${selected === a.symbol ? "bg-primary-soft/60" : "hover:bg-slate-50"}`}>
-                      <td className="px-4 py-2.5">
-                        <div className="flex items-center gap-3">
+                      <td className="pl-3 pr-1 sm:px-4 py-2.5">
+                        <div className="flex items-center gap-2.5 sm:gap-3">
                           <CompanyLogo symbol={a.symbol} size={32} />
-                          <div>
-                            <div className="font-semibold flex items-center gap-1.5">{a.name}
+                          <div className="min-w-0">
+                            <div className="font-semibold flex flex-wrap items-center gap-x-1.5 gap-y-0.5">{a.name}
                               {held && <span className="text-[10px] rounded bg-primary-soft text-primary px-1.5 py-0.5 font-semibold">Détenu</span>}
                               {!hasResearch(game, a.research) && <span className="inline-flex items-center gap-0.5 text-[10px] rounded bg-slate-100 text-muted px-1.5 py-0.5 font-semibold"><Lock size={9} />Recherche</span>}
                             </div>
@@ -144,17 +154,40 @@ export default function MarketsPage() {
                       <td className="px-2 text-muted hidden md:table-cell">{a.sector}</td>
                       {showSparks && <td className="px-2 hidden sm:table-cell"><Sparkline points={sp} up={(q?.change ?? 0) >= 0} /></td>}
                       <td className="px-2 text-right font-semibold tabular whitespace-nowrap">{q ? eur2(q.price) : "—"}</td>
-                      <td className="px-4 text-right">{q ? <Delta value={q.change} /> : "—"}</td>
+                      <td className="pl-1 pr-3 sm:px-4 text-right whitespace-nowrap">{q ? <Delta value={q.change} /> : "—"}</td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
           </div>
+          {shown.length < list.length && (
+            <div className="p-3 border-t border-line text-center">
+              <Button variant="secondary" onClick={() => setLimit({ key: filterKey, n: shown.length + PAGE })}>
+                Afficher plus ({list.length - shown.length} restants)
+              </Button>
+            </div>
+          )}
         </Card>
 
-        <div className="xl:col-span-5"><div className="xl:sticky xl:top-20"><AssetPanel symbol={selected} onSelect={setSelected} /></div></div>
+        {!small && <div className="xl:col-span-5"><div className="xl:sticky xl:top-20"><AssetPanel symbol={selected} onSelect={setSelected} /></div></div>}
       </div>
+
+      {small && sheet && (
+        <div className="fixed inset-0 z-50 bg-navy/40 appear" onClick={() => setSheet(false)}>
+          <div className="absolute inset-x-0 bottom-0 top-10 overflow-y-auto rounded-t-[20px] bg-bg shadow-2xl sm:inset-x-auto sm:right-0 sm:top-0 sm:w-[520px] sm:rounded-none"
+            onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={ASSET_BY_SYMBOL[selected]?.name}>
+            <div className="sticky top-0 z-10 flex items-center justify-between bg-bg/95 backdrop-blur px-4 py-2.5 border-b border-line">
+              <div className="mx-auto h-1 w-10 rounded-full bg-slate-300 sm:hidden absolute left-1/2 -translate-x-1/2 top-1.5" />
+              <span className="text-[13px] font-semibold text-muted">Fiche</span>
+              <button type="button" onClick={() => setSheet(false)} aria-label="Fermer" className="p-2 -mr-2 rounded-full text-muted hover:bg-slate-100"><X size={18} /></button>
+            </div>
+            <div className="p-3" style={{ paddingBottom: "calc(16px + env(safe-area-inset-bottom, 0px))" }}>
+              <AssetPanel symbol={selected} onSelect={setSelected} />
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -200,9 +233,9 @@ function AssetPanel({ symbol, onSelect }: { symbol: string; onSelect: (s: string
 
   return (
     <Card>
-      <div className="flex items-start gap-3 mb-1">
+      <div className="flex flex-wrap items-start gap-3 mb-1">
         <CompanyLogo symbol={symbol} size={44} />
-        <div className="flex-1">
+        <div className="flex-1 min-w-[160px]">
           <div className="text-[18px] font-semibold leading-tight">{asset.name}</div>
           <div className="text-[12px] text-muted flex flex-wrap items-center gap-1.5">{symbol} · {asset.sector} · {flag(asset.country)}<PriceStatus symbol={symbol} large /></div>
         </div>

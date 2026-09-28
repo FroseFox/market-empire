@@ -36,3 +36,10 @@ body { font-family: var(--font-sans); font-size: 14px; }
 @keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 .appear { animation: rise 260ms ease-out both; }
 @media (prefers-reduced-motion: reduce) { .appear { animation: none; } }
+
+/* Téléphone : champs en 16 px, sinon Safari zoome la page quand on tape dedans */
+@media (max-width: 640px) {
+  input, select, textarea { font-size: 16px !important; }
+}
+/* Pas de surbrillance grise au toucher sur mobile */
+button, a { -webkit-tap-highlight-color: transparent; }

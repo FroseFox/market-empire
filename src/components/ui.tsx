@@ -6,15 +6,15 @@ import { pct } from "@/lib/format";
 
 export function PageHeader({ icon: Icon, title, subtitle, children }: { icon: LucideIcon; title: string; subtitle: string; children?: React.ReactNode }) {
   return (
-    <div className="flex flex-wrap items-end gap-4 mb-6">
-      <div className="flex items-center gap-3">
-        <div className="h-11 w-11 rounded-[12px] bg-primary-soft text-primary grid place-items-center"><Icon size={22} strokeWidth={1.8} /></div>
-        <div>
-          <h1 className="text-[28px] md:text-[32px] font-semibold leading-tight">{title}</h1>
-          <p className="text-muted text-[13px]">{subtitle}</p>
+    <div className="flex flex-wrap items-end gap-3 sm:gap-4 mb-4 sm:mb-6">
+      <div className="flex items-center gap-3 min-w-0">
+        <div className="hidden sm:grid h-11 w-11 shrink-0 rounded-[12px] bg-primary-soft text-primary place-items-center"><Icon size={22} strokeWidth={1.8} /></div>
+        <div className="min-w-0">
+          <h1 className="text-[24px] sm:text-[28px] md:text-[32px] font-semibold leading-tight">{title}</h1>
+          <p className="text-muted text-[12px] sm:text-[13px]">{subtitle}</p>
         </div>
       </div>
-      <div className="ml-auto flex gap-2">{children}</div>
+      {children && <div className="sm:ml-auto flex flex-wrap gap-2">{children}</div>}
     </div>
   );
 }

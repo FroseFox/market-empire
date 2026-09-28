@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
   Briefcase, Building2, Pencil, Factory, FastForward, Home, Info, Landmark, Lock, MousePointerClick, Move, RotateCcw, Smile, Store, Users, Wheat, X, Zap,
 } from "lucide-react";
@@ -8,6 +8,7 @@ import { useDerived, useGame } from "@/store/game";
 import { BUILDINGS, BUILDING_BY_ID, CATEGORY_LABELS, DEMOLISH_REFUND, EXPORT_RATIO, MAINTENANCE_RATE, RESOURCE_PRICES, type BuildingType, type Category } from "@/lib/game/config";
 import { Button, Card, PageHeader, Progress, Segmented } from "@/components/ui";
 import IsoCity, { type CityMode } from "@/components/IsoCity";
+import { useMedia } from "@/lib/useMedia";
 import { isTileFree } from "@/lib/game/engine";
 import type { Plot } from "@/lib/game/layout";
 import { compactEur, eur, num, pctPlain, signedEur, tone } from "@/lib/format";
@@ -58,6 +59,14 @@ export default function CityPage() {
   };
 
   const modeBuilding = mode ? BUILDING_BY_ID[mode.id] : null;
+  const small = useMedia("(max-width: 1279px)");
+  const phone = useMedia("(max-width: 639px)");
+  const mapRef = useRef<HTMLElement>(null);
+  // Sur téléphone, la palette est sous la carte : on remonte vers la carte après un choix
+  const showMap = () => { if (small) mapRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }); };
+  const selectedPanel = selectedPlot && !mode
+    ? <SelectedPanel plot={selectedPlot} onMove={() => setMode({ kind: "move", id: selectedPlot.id, from: { x: selectedPlot.x, y: selectedPlot.y } })} onClose={() => setSelected(null)} />
+    : null;
 
   return (
     <>
@@ -81,38 +90,39 @@ export default function CityPage() {
 
       <div className="grid gap-4 grid-cols-1 xl:grid-cols-12 items-start">
         {/* Carte */}
-        <section className="card p-3 xl:col-span-8 appear">
+        <section ref={mapRef} className="card p-3 xl:col-span-8 appear scroll-mt-20">
           <div className={`mb-3 flex flex-wrap items-center gap-3 rounded-[10px] px-3 py-2.5 text-[13px] ${mode ? "bg-primary text-white" : "bg-slate-50 text-muted"}`}>
             {mode && modeBuilding ? (
               <>
                 <MousePointerClick size={16} />
                 <span className="flex-1">
                   {mode.kind === "place"
-                    ? <><b>{modeBuilding.name}</b> · {compactEur(modeBuilding.cost)} — cliquez sur un carreau vert pour construire.</>
-                    : <>Déplacement de <b>{modeBuilding.name}</b> — cliquez sur un carreau vert.</>}
+                    ? <><b>{modeBuilding.name}</b> · {compactEur(modeBuilding.cost)} — choisissez un carreau vert pour construire.</>
+                    : <>Déplacement de <b>{modeBuilding.name}</b> — choisissez un carreau vert.</>}
                 </span>
-                <button onClick={() => setMode(null)} className="rounded-[8px] bg-white/15 px-3 py-1 font-semibold hover:bg-white/25">Annuler (Échap)</button>
+                <button onClick={() => setMode(null)} className="rounded-[8px] bg-white/15 px-3 py-1 font-semibold hover:bg-white/25">{small ? "Annuler" : "Annuler (Échap)"}</button>
               </>
             ) : (
               <>
                 <Info size={15} />
-                <span>Choisissez un bâtiment à droite, puis cliquez sur la carte pour le placer. Cliquez sur un bâtiment pour le déplacer ou le démolir. Glissez pour vous déplacer.</span>
+                <span>{small
+                  ? "Choisissez un bâtiment sous la carte, puis touchez un carreau pour le placer. Touchez un bâtiment pour le déplacer ou le démolir. Pincez pour zoomer."
+                  : "Choisissez un bâtiment à droite, puis cliquez sur la carte pour le placer. Cliquez sur un bâtiment pour le déplacer ou le démolir. Glissez pour vous déplacer."}</span>
               </>
             )}
           </div>
-          <IsoCity plots={game.plots} height={560} mode={mode} selected={selected} onTileClick={onTileClick} />
+          <IsoCity plots={game.plots} height={phone ? 420 : small ? 500 : 560} initialZoom={phone ? 1.5 : 1} mode={mode} selected={selected} onTileClick={onTileClick} />
+          {small && selectedPanel && <div className="mt-3">{selectedPanel}</div>}
         </section>
 
         {/* Panneau latéral */}
         <div className="xl:col-span-4 space-y-4">
-          {selectedPlot && !mode && (
-            <SelectedPanel plot={selectedPlot} onMove={() => setMode({ kind: "move", id: selectedPlot.id, from: { x: selectedPlot.x, y: selectedPlot.y } })} onClose={() => setSelected(null)} />
-          )}
+          {!small && selectedPanel}
           <section className="card p-4 appear">
             <div className="mb-3"><Segmented options={["Construire", "Mes bâtiments"] as Tab[]} value={tab} onChange={setTab} /></div>
             {tab === "Construire"
-              ? <Palette active={mode?.kind === "place" ? mode.id : null} onPick={(id) => { setSelected(null); setMode(mode?.kind === "place" && mode.id === id ? null : { kind: "place", id }); }} />
-              : <Owned onSelect={(t) => { setMode(null); setSelected(t); }} />}
+              ? <Palette active={mode?.kind === "place" ? mode.id : null} onPick={(id) => { setSelected(null); const off = mode?.kind === "place" && mode.id === id; setMode(off ? null : { kind: "place", id }); if (!off) showMap(); }} />
+              : <Owned onSelect={(t) => { setMode(null); setSelected(t); showMap(); }} />}
           </section>
           <Card title="Comment ça marche" icon={Landmark}>
             <ul className="text-[12px] text-muted space-y-1.5 list-disc pl-4">
