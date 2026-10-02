@@ -188,7 +188,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        <main className="flex-1 px-4 md:px-8 py-6 pb-24 lg:pb-8 max-w-[1440px] w-full mx-auto">
+        {/* La ville occupe tout l'écran (pas de marges) ; les autres pages gardent leur colonne centrée */}
+        <main className={path.startsWith("/ville") ? "flex-1 min-w-0" : "flex-1 px-4 md:px-8 py-6 pb-24 lg:pb-8 max-w-[1440px] w-full mx-auto"}>
           {hydrated ? children : <div className="text-muted py-20 text-center">Chargement de votre empire…</div>}
         </main>
       </div>
