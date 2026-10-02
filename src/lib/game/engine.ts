@@ -24,7 +24,21 @@ export interface Transaction {
   gain?: number;
 }
 
-export interface Folder { id: string; name: string; symbols: string[]; notes: string }
+export interface Folder {
+  id: string; name: string; symbols: string[]; notes: string;
+  /** Date et cours de chaque entreprise au moment de son ajout (absent des anciens dossiers). */
+  added?: Record<string, { at: number; price: number }>;
+}
+
+/** Garde les repères des entreprises encore présentes, en crée un pour les nouvelles dont le cours est connu. */
+function trackAdded(prev: Folder["added"], symbols: string[], at: number, prices: Prices): Folder["added"] {
+  const out: NonNullable<Folder["added"]> = {};
+  for (const s of symbols) {
+    if (prev?.[s]) out[s] = prev[s];
+    else if (prices[s] > 0) out[s] = { at, price: prices[s] };
+  }
+  return out;
+}
 
 export interface Snapshot {
   at: number;
@@ -482,15 +496,15 @@ export function renameCity(state: GameState, name: string): ActionResult {
 
 export const folderLimit = (state: Pick<GameState, "research">) => (hasResearch(state, "folders_plus") ? Infinity : FOLDER_LIMIT_BASE);
 
-export function createFolder(state: GameState, name: string, at: number, symbols: string[] = []): ActionResult {
+export function createFolder(state: GameState, name: string, at: number, symbols: string[] = [], prices: Prices = {}): ActionResult {
   const clean = name.trim().slice(0, 40);
   if (!clean) return { ok: false, error: "Donnez un nom au dossier." };
   if (state.folders.length >= folderLimit(state)) return { ok: false, error: "Limite atteinte : recherchez « Dossiers illimités »." };
-  const folder: Folder = { id: `f${at.toString(36)}${state.folders.length}`, name: clean, symbols: [...new Set(symbols)], notes: "" };
+  const folder: Folder = { id: `f${at.toString(36)}${state.folders.length}`, name: clean, symbols: [...new Set(symbols)], notes: "", added: trackAdded(undefined, symbols, at, prices) };
   return { ok: true, state: { ...state, folders: [...state.folders, folder] } };
 }
 
-export function updateFolder(state: GameState, id: string, patch: Partial<Omit<Folder, "id">>): ActionResult {
+export function updateFolder(state: GameState, id: string, patch: Partial<Omit<Folder, "id" | "added">>, at = 0, prices: Prices = {}): ActionResult {
   if (!state.folders.some((f) => f.id === id)) return { ok: false, error: "Dossier introuvable." };
   return {
     ok: true,
@@ -499,7 +513,7 @@ export function updateFolder(state: GameState, id: string, patch: Partial<Omit<F
       folders: state.folders.map((f) => f.id !== id ? f : {
         ...f,
         ...(patch.name !== undefined ? { name: patch.name.trim().slice(0, 40) || f.name } : {}),
-        ...(patch.symbols !== undefined ? { symbols: [...new Set(patch.symbols)] } : {}),
+        ...(patch.symbols !== undefined ? { symbols: [...new Set(patch.symbols)], added: trackAdded(f.added, patch.symbols, at, prices) } : {}),
         ...(patch.notes !== undefined ? { notes: patch.notes.slice(0, 4000) } : {}),
       }),
     },
