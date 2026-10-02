@@ -286,6 +286,21 @@ export const ASSETS: Asset[] = [
 
 export const ASSET_BY_SYMBOL: Record<string, Asset> = Object.fromEntries(ASSETS.map((x) => [x.symbol, x]));
 
+/** Grandes familles de secteurs : sert à filtrer la longue liste des actions (affichage uniquement). */
+export const FAMILIES = ["Tech", "Finance", "Consommation", "Santé", "Industrie", "Énergie et matières"] as const;
+export type Family = (typeof FAMILIES)[number];
+const FAMILY_OF_SECTOR: Record<string, Family> = {
+  "Technologie": "Tech", "Semi-conducteurs": "Tech", "Logiciels": "Tech", "Électronique": "Tech", "Jeux vidéo": "Tech", "Médias": "Tech", "Télécoms": "Tech",
+  "Banque": "Finance", "Assurance": "Finance", "Paiements": "Finance",
+  "Commerce en ligne": "Consommation", "Distribution": "Consommation", "Restauration": "Consommation", "Habillement": "Consommation",
+  "Boissons": "Consommation", "Consommation": "Consommation", "Luxe": "Consommation", "Tourisme": "Consommation",
+  "Santé": "Santé",
+  "Automobile": "Industrie", "Aéronautique": "Industrie", "Défense": "Industrie", "Industrie": "Industrie", "Transport": "Industrie", "Construction": "Industrie", "Chimie": "Industrie",
+  "Énergie": "Énergie et matières", "Mines": "Énergie et matières",
+};
+/** Famille d'une action (les secteurs inconnus tombent dans « Industrie »). */
+export const familyOf = (a: Pick<Asset, "sector">): Family => FAMILY_OF_SECTOR[a.sector] ?? "Industrie";
+
 export const KIND_LABEL: Record<AssetKind, string> = { stock: "Actions", etf: "ETF", commodity: "Matières premières", crypto: "Crypto" };
 
 /** Drapeau emoji d'un code pays (🌐 pour « mondial », 🇪🇺 pour l'Europe). */
