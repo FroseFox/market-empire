@@ -31,7 +31,7 @@ interface Store {
   moveBuilding: (from: { x: number; y: number }, to: { x: number; y: number }) => boolean;
   research: (id: string) => boolean;
   createFolder: (name: string, symbols?: string[]) => string | null;
-  updateFolder: (id: string, patch: Partial<Omit<E.Folder, "id">>) => void;
+  updateFolder: (id: string, patch: Partial<Omit<E.Folder, "id" | "added">>) => void;
   deleteFolder: (id: string) => void;
   renameCity: (name: string) => boolean;
   closeTutorial: () => void;
@@ -121,13 +121,13 @@ export const useGame = create<Store>()(
         return true;
       },
       createFolder: (name, symbols = []) => {
-        const r = E.createFolder(get().game, name, Date.now(), symbols);
+        const r = E.createFolder(get().game, name, Date.now(), symbols, get().prices());
         if (!r.ok) { get().notify(r.error, "error"); return null; }
         set({ game: r.state });
         return r.state.folders[r.state.folders.length - 1].id;
       },
       updateFolder: (id, patch) => {
-        const r = E.updateFolder(get().game, id, patch);
+        const r = E.updateFolder(get().game, id, patch, Date.now(), get().prices());
         if (r.ok) set({ game: r.state });
       },
       deleteFolder: (id) => {

@@ -40,6 +40,8 @@ export const RESEARCH: ResearchNode[] = [
   { id: "news_1", branch: "Actualités", name: "Flux d'actualités", description: "Les actualités économiques liées aux entreprises.", cost: 0, requires: ["hq"], col: 4, row: 1 },
   { id: "folders_1", branch: "Dossiers", name: "Dossiers", description: "Jusqu'à 2 dossiers d'analyse.", cost: 0, requires: ["hq"], col: 5, row: 1 },
   { id: "folders_plus", branch: "Dossiers", name: "Dossiers illimités", description: "Autant de dossiers que vous voulez.", cost: 12_000, requires: ["folders_1"], col: 5, row: 2 },
+  { id: "folder_tracking", branch: "Dossiers", name: "Suivi de thèse", description: "Chaque dossier affiche l'évolution de ses entreprises depuis le jour où vous les y avez ajoutées.", cost: 18_000, requires: ["folders_plus"], col: 5, row: 3 },
+  { id: "folder_links", branch: "Dossiers", name: "Entreprises liées au dossier", description: "Le dossier liste les fournisseurs, clients et concurrents de ses entreprises qui n'y figurent pas encore.", cost: 25_000, requires: ["folder_tracking"], col: 5, row: 4 },
   { id: "news_filters", branch: "Actualités", name: "Filtres avancés", description: "Filtrer les actualités par dossier, par thème et par pays.", cost: 8_000, requires: ["news_1", "folders_1"], col: 4.5, row: 2.6 },
   { id: "chain_news", branch: "Actualités", name: "Actualités de mes chaînes", description: "Un filtre pour les nouvelles qui touchent les fournisseurs, clients et concurrents de vos positions.", cost: 35_000, requires: ["news_filters", "supply_chain"], col: 4, row: 3.6 },
 ];

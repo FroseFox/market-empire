@@ -187,3 +187,16 @@ describe("bilan de période", () => {
   });
 });
 
+describe("dossiers : suivi depuis l'ajout", () => {
+  it("retient le cours du jour d'ajout et l'oublie au retrait", () => {
+    const ok = (r: E.ActionResult) => { if (!r.ok) throw new Error(r.error); return r.state; };
+    let g = ok(E.createFolder(E.newGame(0), "IA", 5, ["NVDA"], { NVDA: 100 }));
+    const id = g.folders[0].id;
+    g = ok(E.updateFolder(g, id, { symbols: ["NVDA", "AMD", "TSM"] }, 9, { NVDA: 150, AMD: 80 }));
+    expect(g.folders[0].added).toEqual({ NVDA: { at: 5, price: 100 }, AMD: { at: 9, price: 80 } }); // TSM : cours inconnu
+    g = ok(E.updateFolder(g, id, { notes: "x" }));
+    expect(g.folders[0].added?.NVDA.price).toBe(100);
+    g = ok(E.updateFolder(g, id, { symbols: ["AMD"] }, 12, {}));
+    expect(g.folders[0].added).toEqual({ AMD: { at: 9, price: 80 } });
+  });
+});
