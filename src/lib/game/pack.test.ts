@@ -54,6 +54,14 @@ describe("sauvegarde en ligne allégée", () => {
     console.info(`sauvegarde : ${before} → ${size(pack(g))} octets`);
   });
 
+  it("conserve le bilan de période malgré les jours écartés", () => {
+    const a = E.periodReport(g, 0, Infinity), b = E.periodReport(back, 0, Infinity);
+    const sum = (h: E.Snapshot[], k: "flow" | "fees") => h.reduce((t, x) => t + (x[k] ?? 0), 0);
+    expect(Math.abs(sum(back.history.slice(1), "flow") - sum(g.history.slice(-90).slice(1), "flow"))).toBeLessThan(50);
+    expect(Math.abs(sum(back.history.slice(1), "fees") - sum(g.history.slice(-90).slice(1), "fees"))).toBeLessThan(50);
+    expect(b.fees).toBeLessThanOrEqual(a.fees + 1);
+  });
+
   it("relit une ancienne sauvegarde complète sans la modifier", () => {
     expect(unpack(JSON.parse(JSON.stringify(g)))).toEqual(g);
   });

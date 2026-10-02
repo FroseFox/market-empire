@@ -34,7 +34,16 @@ export interface Snapshot {
   population: number;
   income: number;
   expenses: number;
+  /** Flux net de la ville réellement encaissé au passage de ce jour (absent des anciennes sauvegardes). */
+  flow?: number;
+  /** Coûts du jour écoulé : frais de courtage, recherche, pertes de démolition. */
+  fees?: number;
+  research?: number;
+  demolish?: number;
 }
+
+/** Coûts « perdus » depuis le dernier passage de jour (ils ne se retrouvent dans aucun actif). */
+export interface DayCosts { fees: number; research: number; demolish: number }
 
 export interface GameState {
   version: 1;
@@ -55,6 +64,8 @@ export interface GameState {
   folders: Folder[];
   /** Guide de démarrage fermé par le joueur. */
   tutorialDone?: boolean;
+  /** Coûts du jour en cours, versés dans l'historique au prochain passage de jour. */
+  today?: DayCosts;
   transactions: Transaction[];
   history: Snapshot[];
 }
@@ -225,8 +236,58 @@ export function tickDay(state: GameState, prices: Prices, at: number): GameState
     cash: round2(state.cash + c.net),
     population: Math.max(0, state.population + c.growth),
   };
-  next.history = [...state.history, snapshot(next, prices, at)].slice(-500);
+  delete next.today;
+  const t = state.today ?? NO_COSTS;
+  next.history = [...state.history, { ...snapshot(next, prices, at), flow: round2(c.net), ...t }].slice(-500);
   return next;
+}
+
+// ─── Bilan de période ─────────────────────────────────────────
+
+const NO_COSTS: DayCosts = { fees: 0, research: 0, demolish: 0 };
+
+function spend(state: GameState, key: keyof DayCosts, v: number): DayCosts {
+  const t = state.today ?? NO_COSTS;
+  return { ...t, [key]: round2(t[key] + v) };
+}
+
+/** Flux de ville encaissé au jour `i` ; estimé d'après la veille pour les anciennes sauvegardes. */
+export function dayFlow(history: Snapshot[], i: number): number {
+  const s = history[i];
+  if (s.flow !== undefined) return s.flow;
+  const prev = history[i - 1];
+  return prev ? prev.income - prev.expenses : 0;
+}
+
+export interface PeriodReport {
+  /** Nombre de jours de ville couverts. */
+  days: number;
+  start: number;
+  end: number;
+  /** Effet des cours (gains et pertes, latents ou réalisés) : ce qui reste une fois tout le reste expliqué. */
+  market: number;
+  /** Flux nets de la ville encaissés. */
+  city: number;
+  fees: number;
+  research: number;
+  demolish: number;
+}
+
+/** Explique la variation du patrimoine depuis le `points`-ième instantané en partant de la fin. */
+export function periodReport(state: Pick<GameState, "history" | "today">, netWorthNow: number, points: number): PeriodReport {
+  const h = state.history;
+  const from = Math.max(0, h.length - points);
+  const start = h[from]?.netWorth ?? netWorthNow;
+  const t = state.today ?? NO_COSTS;
+  let city = 0, fees = t.fees, research = t.research, demolish = t.demolish;
+  for (let i = from + 1; i < h.length; i++) {
+    city += dayFlow(h, i);
+    fees += h[i].fees ?? 0;
+    research += h[i].research ?? 0;
+    demolish += h[i].demolish ?? 0;
+  }
+  const market = netWorthNow - start - city + fees + research + demolish;
+  return { days: Math.max(0, h.length - 1 - from), start, end: netWorthNow, market: round2(market), city: round2(city), fees: round2(fees), research: round2(research), demolish: round2(demolish) };
 }
 
 /** Rattrape les jours écoulés depuis le dernier passage. */
@@ -269,6 +330,7 @@ export function buy(state: GameState, symbol: string, qty: number, price: number
       ...state,
       cash: round2(state.cash - total),
       holdings: { ...state.holdings, [symbol]: { qty: newQty, avgCost } },
+      today: spend(state, "fees", fee),
       transactions: addTx(state, { kind: "buy", label: `Achat ${qty} × ${symbol}`, symbol, qty, price, amount: -total, at }),
     },
   };
@@ -291,6 +353,7 @@ export function sell(state: GameState, symbol: string, qty: number, price: numbe
       ...state,
       cash: round2(state.cash + gross - fee),
       holdings,
+      today: spend(state, "fees", fee),
       transactions: addTx(state, { kind: "sell", label: `Vente ${qty} × ${symbol}`, symbol, qty, price, amount: gross - fee, at }),
     },
   };
@@ -323,6 +386,8 @@ export function demolish(state: GameState, buildingId: string, at: number, tile?
   const count = state.buildings[buildingId] ?? 0;
   if (!b || b.buildable === false || count <= 0) return { ok: false, error: "Rien à démolir." };
   const refund = b.cost * DEMOLISH_REFUND;
+  // Perte de patrimoine : la valeur qui sort des actifs moins le remboursement (un bâtiment offert au départ ne compte pas).
+  const loss = (count > (STARTING_BUILDINGS[b.id] ?? 0) ? b.cost : 0) - refund;
   const buildings = { ...state.buildings, [b.id]: count - 1 };
   if (buildings[b.id] === 0) delete buildings[b.id];
   return {
@@ -331,6 +396,7 @@ export function demolish(state: GameState, buildingId: string, at: number, tile?
       ...state,
       cash: state.cash + refund,
       buildings,
+      today: spend(state, "demolish", loss),
       plots: tile ? state.plots.filter((p) => !(p.x === tile.x && p.y === tile.y)) : removePlot(state.plots, b.id),
       transactions: addTx(state, { kind: "demolish", label: `Démolition : ${b.name}`, amount: refund, at }),
     },
@@ -392,6 +458,7 @@ export function doResearch(state: GameState, id: string, at: number): ActionResu
       ...state,
       cash: state.cash - n.cost,
       research: [...state.research, id],
+      today: spend(state, "research", n.cost),
       transactions: addTx(state, { kind: "research", label: `Recherche : ${n.name}`, amount: -n.cost, at }),
     },
   };

@@ -2,7 +2,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import {
-  AlertTriangle, BarChart3, Building2, CheckCircle2, Coins, Globe2, Info, Landmark, Target, TrendingUp, Zap, Wheat, Sparkles,
+  AlertTriangle, BarChart3, Building2, CheckCircle2, Coins, Globe2, Info, Landmark, Scale, Target, TrendingUp, Zap, Wheat, Sparkles,
 } from "lucide-react";
 import { useDerived, useGame } from "@/store/game";
 import { Card, Delta, PageHeader, Progress, Segmented, StatCard } from "@/components/ui";
@@ -11,8 +11,16 @@ import IsoCity from "@/components/IsoCity";
 import { computeAlerts, computeObjectives, type AlertLevel } from "@/lib/game/insights";
 import { compactEur, eur, num, pctPlain, signedEur, tone } from "@/lib/format";
 import { DAY_LENGTH_MINUTES } from "@/lib/game/config";
+import { periodReport, type Snapshot } from "@/lib/game/engine";
 
 type Period = "7 jours" | "30 jours" | "Tout";
+type Series = "Patrimoine" | "Liquidités" | "Bourse" | "Ville";
+const SERIES: Record<Series, { key: keyof Pick<Snapshot, "netWorth" | "cash" | "portfolio" | "city">; color: string }> = {
+  Patrimoine: { key: "netWorth", color: "#2563EB" },
+  Liquidités: { key: "cash", color: "#64748B" },
+  Bourse: { key: "portfolio", color: "#2563EB" },
+  Ville: { key: "city", color: "#10B981" },
+};
 
 const ALERT_STYLE: Record<AlertLevel, { icon: typeof Info; cls: string }> = {
   info: { icon: Info, cls: "bg-primary-soft text-primary" },
@@ -24,11 +32,14 @@ const ALERT_STYLE: Record<AlertLevel, { icon: typeof Info; cls: string }> = {
 export default function EconomyPage() {
   const { game, prices, city, portfolio, portfolioCost, netWorth } = useDerived();
   const [period, setPeriod] = useState<Period>("7 jours");
+  const [series, setSeries] = useState<Series>("Patrimoine");
 
   const hist = game.history;
   const n = period === "7 jours" ? 8 : period === "30 jours" ? 31 : hist.length;
   const slice = hist.slice(-n);
-  const wealthData = [...slice.map((s) => ({ x: `J${s.day}`, y: s.netWorth })), { x: "Maint.", y: netWorth }];
+  const now = { netWorth, cash: game.cash, portfolio, city: city.assetValue };
+  const wealthData = [...slice.map((s) => ({ x: `J${s.day}`, y: s[SERIES[series].key] })), { x: "Maint.", y: now[SERIES[series].key] }];
+  const report = periodReport(game, netWorth, n);
   const ref = slice[0]?.netWorth ?? netWorth;
   const wealthChange = ref ? netWorth / ref - 1 : 0;
 
@@ -69,7 +80,8 @@ export default function EconomyPage() {
       <div className="grid gap-4 grid-cols-1 xl:grid-cols-12 mb-4">
         {/* Patrimoine */}
         <Card title="Évolution du patrimoine" className="xl:col-span-5" extra={<Segmented options={["7 jours", "30 jours", "Tout"] as Period[]} value={period} onChange={setPeriod} />}>
-          <WealthChart data={wealthData} />
+          <div className="mb-3"><Segmented options={Object.keys(SERIES) as Series[]} value={series} onChange={setSeries} /></div>
+          <WealthChart data={wealthData} color={SERIES[series].color} />
           <p className="text-[11px] text-muted mt-2">1 jour de ville = {DAY_LENGTH_MINUTES} min réelles. La bourse suit le temps réel.</p>
         </Card>
 
@@ -160,6 +172,31 @@ export default function EconomyPage() {
         </Card>
       </div>
 
+      {/* Bilan : pourquoi le patrimoine a bougé */}
+      <Card title={`Bilan · ${period === "Tout" ? "depuis le début" : period}`} icon={Scale} className="mt-4"
+        extra={<Segmented options={["7 jours", "30 jours", "Tout"] as Period[]} value={period} onChange={setPeriod} />}>
+        {report.days === 0 && report.end === report.start ? (
+          <p className="text-[13px] text-muted">Le bilan se remplit dès le premier jour de ville ou la première opération.</p>
+        ) : (
+          <div className="grid gap-x-10 gap-y-2 grid-cols-1 md:grid-cols-2 text-[13px]">
+            <div className="space-y-2">
+              <BilanRow label="Patrimoine au départ" value={eur(report.start)} strong />
+              <BilanRow label="Bourse" hint="variation des cours, gains latents et réalisés" v={report.market} />
+              <BilanRow label="Ville" hint={`flux net encaissé sur ${report.days} jour${report.days > 1 ? "s" : ""}`} v={report.city} />
+            </div>
+            <div className="space-y-2">
+              <BilanRow label="Frais de courtage" v={-report.fees} />
+              <BilanRow label="Recherche" hint="investie en savoir, pas en actifs" v={-report.research} />
+              {report.demolish !== 0 && <BilanRow label="Démolitions" hint="valeur perdue" v={-report.demolish} />}
+              <BilanRow label="Patrimoine actuel" value={eur(report.end)} strong />
+            </div>
+            <p className="md:col-span-2 text-[11px] text-muted">
+              Construire ne change pas le patrimoine : l&apos;argent devient un bâtiment. Variation totale : <b className={tone(report.end - report.start)}>{signedEur(report.end - report.start)}</b>.
+            </p>
+          </div>
+        )}
+      </Card>
+
       {/* D'où vient ma richesse ? */}
       <Card title="D'où vient ma richesse ?" icon={Sparkles} className="mt-4">
         <div className="flex h-3 rounded-full overflow-hidden mb-3">
@@ -182,6 +219,15 @@ export default function EconomyPage() {
 
 function Row({ label, v }: { label: string; v: number }) {
   return <div className="flex justify-between"><span className="text-muted">{label}</span><span className={`tabular font-medium ${tone(v)}`}>{signedEur(v)}</span></div>;
+}
+
+function BilanRow({ label, hint, v, value, strong }: { label: string; hint?: string; v?: number; value?: string; strong?: boolean }) {
+  return (
+    <div className={`flex items-baseline justify-between gap-3 ${strong ? "rounded-[10px] bg-slate-50 px-3 py-2 font-semibold" : "px-3"}`}>
+      <span>{label}{hint && <span className="block text-[11px] text-muted font-normal">{hint}</span>}</span>
+      <span className={`tabular font-semibold ${v !== undefined ? tone(v) : ""}`}>{value ?? signedEur(v ?? 0)}</span>
+    </div>
+  );
 }
 
 function CityLine({ label, value, sub, bad }: { label: string; value: string; sub: string; bad?: boolean }) {
