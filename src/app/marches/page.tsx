@@ -1,9 +1,9 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { LineChart, Lock, Search, X } from "lucide-react";
+import { ChevronRight, Layers, LineChart, Lock, Search, Wallet, X } from "lucide-react";
 import { useDerived, useGame } from "@/store/game";
-import { ASSETS, ASSET_BY_SYMBOL, KIND_LABEL, flag, fractional, regionOf, type AssetKind, type Region } from "@/lib/market/universe";
+import { ASSETS, ASSET_BY_SYMBOL, FAMILIES, KIND_LABEL, familyOf, flag, fractional, regionOf, type Asset, type AssetKind, type Family, type Region } from "@/lib/market/universe";
 import { simulatedHistory, type Range } from "@/lib/market/simulate";
 import { hasResearch, tradeFee } from "@/lib/game/engine";
 import { RESEARCH_BY_ID } from "@/lib/game/research";
@@ -13,7 +13,7 @@ import AddToFolder from "@/components/AddToFolder";
 import CompanyLogo from "@/components/CompanyLogo";
 import NewsList from "@/components/NewsList";
 import { fetchHistory } from "@/lib/market/client";
-import { Button, Card, Delta, PageHeader, Segmented } from "@/components/ui";
+import { Button, Card, Delta, Empty, PageHeader, Segmented } from "@/components/ui";
 import { Sparkline, WealthChart } from "@/components/charts";
 import { eur, eur2, pctPlain, qtyFmt, signedEur } from "@/lib/format";
 import PriceStatus from "@/components/PriceStatus";
@@ -21,8 +21,14 @@ import { useMedia } from "@/lib/useMedia";
 
 const PAGE = 60;
 const KINDS: AssetKind[] = ["stock", "etf", "commodity", "crypto"];
+/** Onglet affiché : une catégorie d'actifs, ou les actifs que le joueur possède. */
+type Tab = AssetKind | "held";
 const REGIONS: ("Toutes" | Region)[] = ["Toutes", "États-Unis", "Europe", "Asie", "Autres"];
+const FAMILY_TABS: ("Tous" | Family)[] = ["Tous", ...FAMILIES];
+/** Tri de la liste : regroupée par secteur (défaut), ou à plat selon une colonne. */
+type Sort = "sector" | "name" | "price-desc" | "price-asc" | "change-desc" | "change-asc";
 const norm = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+const byName = (a: Asset, b: Asset) => a.name.localeCompare(b.name, "fr");
 
 function fmtTime(range: Range) {
   return (v: number | string) => {
@@ -37,8 +43,14 @@ export default function MarketsPage() {
   const { game, quotes } = useDerived();
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState("NVDA");
-  const [kind, setKind] = useState<AssetKind>("stock");
+  const [tab, setTab] = useState<Tab>("stock");
   const [region, setRegion] = useState<"Toutes" | Region>("Toutes");
+  const [family, setFamily] = useState<"Tous" | Family>("Tous");
+  const [sort, setSort] = useState<Sort>("sector");
+  // Secteurs repliés (null = réglage par défaut : tout ouvert sur ordinateur, tout replié sur téléphone)
+  const [closed, setClosed] = useState<Set<string> | null>(null);
+  const small = useMedia("(max-width: 1279px)");
+  const phone = useMedia("(max-width: 639px)");
 
   // Mini-courbes 1J (même moteur que le serveur, recalées sur le dernier prix)
   const lastQuoteAt = useGame((s) => s.lastQuoteAt);
@@ -53,118 +65,181 @@ export default function MarketsPage() {
     }));
   }, [lastQuoteAt, quotes, showSparks]);
 
-  // Recherche dans tout l'univers ; sans recherche, filtre par catégorie et par région
+  const heldCount = ASSETS.filter((a) => game.holdings[a.symbol]).length;
+  const view: Tab = tab === "held" && heldCount === 0 ? "stock" : tab;
+  // Recherche dans tout l'univers ; sans recherche, filtre par onglet, région et famille de secteurs
   const n = norm(query.trim());
   const list = ASSETS.filter((a) => n
     ? norm(`${a.symbol} ${a.name} ${a.sector} ${regionOf(a)}`).includes(n)
-    : a.kind === kind && (kind !== "stock" || region === "Toutes" || regionOf(a) === region));
+    : view === "held" ? !!game.holdings[a.symbol]
+    : a.kind === view && (view !== "stock" || ((region === "Toutes" || regionOf(a) === region) && (family === "Tous" || familyOf(a) === family))));
   const count = (k: AssetKind) => ASSETS.filter((a) => a.kind === k).length;
-  // Affichage par pages (liste longue, surtout sur téléphone)
-  const filterKey = `${kind}|${region}|${n}`;
+  const change = (a: Asset) => quotes[a.symbol]?.change ?? 0;
+  const price = (a: Asset) => quotes[a.symbol]?.price ?? 0;
+
+  // Regroupement par secteur : seulement s'il y a plusieurs secteurs à l'écran
+  const sectorNames = [...new Set(list.map((a) => a.sector))].sort((a, b) => a.localeCompare(b, "fr"));
+  const grouped = !n && sort === "sector" && view !== "held" && sectorNames.length > 1;
+  const showAvg = hasResearch(game, "sector_view"); // la variation moyenne par secteur se débloque par la recherche
+  const groups = grouped ? sectorNames.map((sec) => {
+    const items = list.filter((a) => a.sector === sec).sort(byName);
+    const vals = items.map((a) => quotes[a.symbol]?.change).filter((v): v is number => typeof v === "number");
+    return { sec, items, avg: vals.length ? vals.reduce((x, y) => x + y, 0) / vals.length : null };
+  }) : [];
+  const isClosed = (sec: string) => (closed ? closed.has(sec) : phone);
+  const toggle = (sec: string) => {
+    const next = new Set(closed ?? (phone ? sectorNames : []));
+    if (next.has(sec)) next.delete(sec); else next.add(sec);
+    setClosed(next);
+  };
+  const allClosed = grouped && groups.every((g) => isClosed(g.sec));
+
+  // Liste à plat : triée, puis affichée par pages
+  const flat = grouped ? [] : [...list].sort(
+    sort === "price-desc" ? (a, b) => price(b) - price(a)
+    : sort === "price-asc" ? (a, b) => price(a) - price(b)
+    : sort === "change-desc" ? (a, b) => change(b) - change(a)
+    : sort === "change-asc" ? (a, b) => change(a) - change(b)
+    : n ? () => 0 : byName);
+  const filterKey = `${view}|${region}|${family}|${sort}|${n}`;
   const [limit, setLimit] = useState({ key: filterKey, n: PAGE });
-  const shown = list.slice(0, limit.key === filterKey ? limit.n : PAGE);
+  const shown = flat.slice(0, limit.key === filterKey ? limit.n : PAGE);
+
   // Sur petit écran, la fiche s'ouvre par-dessus la liste
-  const small = useMedia("(max-width: 1279px)");
   const [sheet, setSheet] = useState(false);
   const open = (sym: string) => { setSelected(sym); if (small) setSheet(true); };
+  /** Clic sur un en-tête de colonne : trie, puis inverse le sens. */
+  const sortBy = (col: "name" | "price" | "change") => setSort((cur) =>
+    col === "name" ? "name" : cur === `${col}-desc` ? `${col}-asc` : `${col}-desc`);
+  const arrow = (col: "price" | "change") => (sort === `${col}-desc` ? " ↓" : sort === `${col}-asc` ? " ↑" : "");
 
-  // Analyse sectorielle (recherche) : variation moyenne sur 24 h par secteur
-  const sectors = hasResearch(game, "sector_view")
-    ? [...new Set(ASSETS.filter((a) => a.kind === "stock").map((a) => a.sector))].map((sec) => {
-        const vals = ASSETS.filter((a) => a.sector === sec).map((a) => quotes[a.symbol]?.change).filter((v): v is number => typeof v === "number");
-        return { sec, avg: vals.length ? vals.reduce((x, y) => x + y, 0) / vals.length : 0, n: vals.length };
-      }).sort((a, b) => b.avg - a.avg)
-    : null;
+  const row = (a: Asset) => {
+    const q = quotes[a.symbol];
+    const sp = sparks[a.symbol] ?? [];
+    return (
+      <tr key={a.symbol} onClick={() => open(a.symbol)}
+        className={`border-b border-line/70 cursor-pointer transition-colors ${selected === a.symbol ? "bg-primary-soft/60" : "hover:bg-slate-50"}`}>
+        <td className="pl-3 pr-1 sm:px-4 py-2">
+          <div className="flex items-center gap-2.5 sm:gap-3">
+            <CompanyLogo symbol={a.symbol} size={30} />
+            <div className="min-w-0">
+              <div className="font-semibold flex flex-wrap items-center gap-x-1.5 gap-y-0.5">{a.name}
+                {game.holdings[a.symbol] && <span className="text-[10px] rounded bg-primary-soft text-primary px-1.5 py-0.5 font-semibold">Détenu</span>}
+                {!hasResearch(game, a.research) && <span title={`Achat après la recherche « ${RESEARCH_BY_ID[a.research]?.name} »`} className="text-slate-400"><Lock size={11} /></span>}
+              </div>
+              <div className="text-[11px] text-muted flex items-center gap-1.5">{a.symbol} · {flag(a.country)}{a.kind === "crypto" ? " · 24 h/24" : ""}<PriceStatus symbol={a.symbol} /></div>
+            </div>
+          </div>
+        </td>
+        {!grouped && <td className="px-2 text-muted hidden md:table-cell">{a.sector}</td>}
+        {showSparks && <td className="px-2 hidden sm:table-cell"><Sparkline points={sp} up={(q?.change ?? 0) >= 0} /></td>}
+        <td className="px-2 text-right font-semibold tabular whitespace-nowrap">{q ? eur2(q.price) : "—"}</td>
+        <td className="pl-1 pr-3 sm:px-4 text-right whitespace-nowrap">{q ? <Delta value={q.change} /> : "—"}</td>
+      </tr>
+    );
+  };
+  const chip = (on: boolean) => `shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium ${on ? "bg-primary-soft text-primary" : "text-muted hover:bg-slate-100"}`;
+  const th = "font-medium hover:text-ink";
 
   return (
     <>
       <PageHeader icon={LineChart} title="Marchés" subtitle={`${ASSETS.length} actifs : actions, ETF, matières premières et cryptos · cours en euros`} />
       <div className="grid gap-4 grid-cols-1 xl:grid-cols-12">
-        <Card className="xl:col-span-7 !p-0 overflow-hidden">
-          <div className="p-4 border-b border-line flex items-center gap-3">
-            <div className="flex items-center gap-2 flex-1 rounded-[10px] bg-slate-50 px-3 py-2">
-              <Search size={16} className="text-muted" />
-              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Rechercher : entreprise, secteur, pays, crypto…"
-                className="bg-transparent outline-none text-[13px] flex-1" />
-            </div>
-          </div>
-          {!n && (
-            <div className="px-4 pt-3 pb-2 border-b border-line space-y-2">
-              <div role="tablist" aria-label="Catégorie" className="flex flex-wrap gap-1.5">
-                {KINDS.map((k) => (
-                  <button key={k} role="tab" aria-selected={kind === k} onClick={() => setKind(k)}
-                    className={`shrink-0 rounded-[10px] px-3 py-1.5 text-[12px] font-semibold transition-colors ${kind === k ? "bg-primary text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>
-                    {KIND_LABEL[k]} <span className={kind === k ? "text-white/70" : "text-muted"}>{count(k)}</span>
-                  </button>
-                ))}
+        <Card className="xl:col-span-7 !p-0">
+          {/* Recherche et filtres : restent visibles quand on fait défiler la liste */}
+          <div className="md:sticky md:top-16 z-10 rounded-t-[14px] border-b border-line bg-card">
+            <div className="flex items-center gap-2 p-3 pb-2">
+              <div className="flex items-center gap-2 flex-1 rounded-[10px] bg-slate-50 px-3 py-2">
+                <Search size={16} className="text-muted" />
+                <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Rechercher : entreprise, secteur, pays, crypto…"
+                  className="bg-transparent outline-none text-[13px] flex-1 min-w-0" />
+                {query && <button onClick={() => setQuery("")} aria-label="Effacer la recherche" className="text-muted hover:text-ink"><X size={15} /></button>}
               </div>
-              {kind === "stock" && (
-                <div className="flex gap-1 overflow-x-auto">
-                  {REGIONS.map((r) => (
-                    <button key={r} onClick={() => setRegion(r)}
-                      className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium ${region === r ? "bg-primary-soft text-primary" : "text-muted hover:bg-slate-100"}`}>{r}</button>
+            </div>
+            {n ? (
+              <div className="px-4 pb-2 text-[12px] text-muted">{list.length} résultat{list.length > 1 ? "s" : ""} dans tous les marchés</div>
+            ) : (
+              <div className="px-3 pb-2 space-y-1.5">
+                <div role="tablist" aria-label="Catégorie" className="flex gap-1.5 overflow-x-auto no-scrollbar">
+                  {heldCount > 0 && (
+                    <button role="tab" aria-selected={view === "held"} onClick={() => setTab("held")}
+                      className={`shrink-0 inline-flex items-center gap-1.5 rounded-[10px] px-3 py-1.5 text-[12px] font-semibold transition-colors ${view === "held" ? "bg-primary text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>
+                      <Wallet size={13} />Mes actifs <span className={view === "held" ? "text-white/70" : "text-muted"}>{heldCount}</span>
+                    </button>
+                  )}
+                  {KINDS.map((k) => (
+                    <button key={k} role="tab" aria-selected={view === k} onClick={() => setTab(k)}
+                      className={`shrink-0 rounded-[10px] px-3 py-1.5 text-[12px] font-semibold transition-colors ${view === k ? "bg-primary text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>
+                      {KIND_LABEL[k]} <span className={view === k ? "text-white/70" : "text-muted"}>{count(k)}</span>
+                    </button>
                   ))}
                 </div>
-              )}
-              {kind !== "stock" && <UnlockHint kind={kind} />}
-            </div>
-          )}
-          {n && <div className="px-4 py-2 border-b border-line text-[12px] text-muted">{list.length} résultat{list.length > 1 ? "s" : ""} dans tous les marchés</div>}
-          {sectors && kind === "stock" && !n && (
-            <div className="px-4 py-3 border-b border-line flex gap-2 overflow-x-auto">
-              {sectors.map((x) => (
-                <button key={x.sec} onClick={() => setQuery(x.sec)} className="shrink-0 rounded-[10px] bg-slate-50 px-3 py-1.5 text-left hover:bg-slate-100">
-                  <div className="text-[11px] text-muted whitespace-nowrap">{x.sec}</div>
-                  <Delta value={x.avg} />
+                {view === "stock" && (
+                  <>
+                    <div className="flex items-center gap-1 overflow-x-auto no-scrollbar" aria-label="Région">
+                      <span className="w-[52px] shrink-0 text-[11px] text-muted">Région</span>
+                      {REGIONS.map((r) => <button key={r} aria-pressed={region === r} onClick={() => setRegion(r)} className={chip(region === r)}>{r}</button>)}
+                    </div>
+                    <div className="flex items-center gap-1 overflow-x-auto no-scrollbar" aria-label="Secteur">
+                      <span className="w-[52px] shrink-0 text-[11px] text-muted">Secteur</span>
+                      {FAMILY_TABS.map((f) => <button key={f} aria-pressed={family === f} onClick={() => setFamily(f)} className={chip(family === f)}>{f}</button>)}
+                    </div>
+                  </>
+                )}
+                {view !== "stock" && view !== "held" && <UnlockHint kind={view} />}
+              </div>
+            )}
+            {/* Barre de tri */}
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar whitespace-nowrap border-t border-line px-3 py-1.5 text-[12px] text-muted">
+              <span className="hidden tabular sm:inline">{list.length} actif{list.length > 1 ? "s" : ""}</span>
+              {!n && view !== "held" && sectorNames.length > 1 && (
+                <button onClick={() => setSort("sector")} aria-pressed={sort === "sector"}
+                  className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium ${sort === "sector" ? "bg-primary-soft text-primary" : "hover:bg-slate-100"}`}>
+                  <Layers size={12} />Par secteur
                 </button>
-              ))}
+              )}
+              {grouped && (
+                <button onClick={() => setClosed(new Set(allClosed ? [] : sectorNames))} className="rounded-full px-2.5 py-1 text-[11px] font-medium hover:bg-slate-100">
+                  {allClosed ? "Tout déplier" : "Tout replier"}
+                </button>
+              )}
+              <span className="ml-auto flex items-center gap-3 pl-2 sm:gap-4">
+                <button onClick={() => sortBy("name")} className={`${th} ${sort === "name" ? "text-primary" : ""}`}>A → Z</button>
+                <button onClick={() => sortBy("price")} className={`${th} ${sort.startsWith("price") ? "text-primary" : ""}`}>Prix{arrow("price")}</button>
+                <button onClick={() => sortBy("change")} className={`${th} whitespace-nowrap ${sort.startsWith("change") ? "text-primary" : ""}`}>Var. 1J{arrow("change")}</button>
+              </span>
             </div>
-          )}
+          </div>
+
           <div className="overflow-x-auto">
             <table className="w-full text-[13px]">
-              <thead className="text-muted text-[12px]">
-                <tr className="border-b border-line">
-                  <th className="text-left font-medium px-4 py-2.5">Nom</th>
-                  <th className="text-left font-medium px-2 hidden md:table-cell">Secteur</th>
-                  {showSparks && <th className="px-2 hidden sm:table-cell" />}
-                  <th className="text-right font-medium px-2">Prix</th>
-                  <th className="text-right font-medium px-4 whitespace-nowrap">Var. 1J</th>
-                </tr>
-              </thead>
               <tbody>
-                {shown.map((a) => {
-                  const q = quotes[a.symbol];
-                  const held = game.holdings[a.symbol];
-                  const sp = sparks[a.symbol] ?? [];
+                {grouped ? groups.map((g) => {
+                  const shut = isClosed(g.sec);
                   return (
-                    <tr key={a.symbol} onClick={() => open(a.symbol)}
-                      className={`border-b border-line/70 cursor-pointer transition-colors ${selected === a.symbol ? "bg-primary-soft/60" : "hover:bg-slate-50"}`}>
-                      <td className="pl-3 pr-1 sm:px-4 py-2.5">
-                        <div className="flex items-center gap-2.5 sm:gap-3">
-                          <CompanyLogo symbol={a.symbol} size={32} />
-                          <div className="min-w-0">
-                            <div className="font-semibold flex flex-wrap items-center gap-x-1.5 gap-y-0.5">{a.name}
-                              {held && <span className="text-[10px] rounded bg-primary-soft text-primary px-1.5 py-0.5 font-semibold">Détenu</span>}
-                              {!hasResearch(game, a.research) && <span className="inline-flex items-center gap-0.5 text-[10px] rounded bg-slate-100 text-muted px-1.5 py-0.5 font-semibold"><Lock size={9} />Recherche</span>}
-                            </div>
-                            <div className="text-[11px] text-muted flex items-center gap-1.5">{a.symbol} · {flag(a.country)}{a.kind === "crypto" ? " · 24 h/24" : ""}<PriceStatus symbol={a.symbol} /></div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-2 text-muted hidden md:table-cell">{a.sector}</td>
-                      {showSparks && <td className="px-2 hidden sm:table-cell"><Sparkline points={sp} up={(q?.change ?? 0) >= 0} /></td>}
-                      <td className="px-2 text-right font-semibold tabular whitespace-nowrap">{q ? eur2(q.price) : "—"}</td>
-                      <td className="pl-1 pr-3 sm:px-4 text-right whitespace-nowrap">{q ? <Delta value={q.change} /> : "—"}</td>
-                    </tr>
+                    <Fragment key={g.sec}>
+                      <tr className="border-b border-line bg-slate-50/80">
+                        <td colSpan={5} className="p-0">
+                          <button onClick={() => toggle(g.sec)} aria-expanded={!shut} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-100 sm:px-4">
+                            <ChevronRight size={15} className={`text-muted transition-transform ${shut ? "" : "rotate-90"}`} />
+                            <span className="text-[12px] font-semibold">{g.sec}</span>
+                            <span className="text-[11px] text-muted tabular">{g.items.length}</span>
+                            {showAvg && g.avg !== null && <Delta value={g.avg} className="ml-auto" />}
+                          </button>
+                        </td>
+                      </tr>
+                      {!shut && g.items.map(row)}
+                    </Fragment>
                   );
-                })}
+                }) : shown.map(row)}
               </tbody>
             </table>
           </div>
-          {shown.length < list.length && (
+          {list.length === 0 && <Empty>Aucun actif ne correspond. Essayez un autre filtre ou une autre recherche.</Empty>}
+          {!grouped && shown.length < flat.length && (
             <div className="p-3 border-t border-line text-center">
               <Button variant="secondary" onClick={() => setLimit({ key: filterKey, n: shown.length + PAGE })}>
-                Afficher plus ({list.length - shown.length} restants)
+                Afficher plus ({flat.length - shown.length} restants)
               </Button>
             </div>
           )}
