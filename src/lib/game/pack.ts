@@ -15,8 +15,8 @@ const round4 = (v: number) => Math.round(v * 10_000) / 10_000;
 /** [minutes depuis `t0`, jour, liquidités, portefeuille, ville, population, revenus, dépenses,
  *   flux de ville encaissé, frais de courtage?, recherche?, démolitions?] — les jours non gardés sont additionnés dans le suivant. */
 type HistRow = [number, number, number, number, number, number, number, number, number?, number?, number?, number?];
-/** [date, type, montant, texte (0 = se recalcule), symbole?, quantité?, prix?] */
-type TxRow = [number, number, number, string | 0, string?, number?, number?];
+/** [date, type, montant, texte (0 = se recalcule), symbole?, quantité?, prix?, plus-value réalisée?] */
+type TxRow = [number, number, number, string | 0, string?, number?, number?, number?];
 
 export interface PackedSave extends Omit<GameState, "history" | "transactions" | "plots"> {
   fmt: 2;
@@ -60,6 +60,7 @@ export function pack(g: GameState): PackedSave {
       const trade = t.kind === "buy" || t.kind === "sell";
       const row: TxRow = [t.at, KINDS.indexOf(t.kind), cents(t.amount), trade && t.label === tradeLabel(t.kind, t.qty, t.symbol) ? 0 : t.label];
       if (t.symbol !== undefined) row.push(t.symbol, t.qty, t.price);
+      if (t.symbol !== undefined && t.gain !== undefined) row.push(cents(t.gain));
       return row;
     }),
     pl,
@@ -75,12 +76,13 @@ export function unpack(data: unknown): GameState {
   const history: Snapshot[] = h.map(([m, day, cash, portfolio, city, population, income, expenses, flow, fees = 0, research = 0, demolish = 0]) =>
     ({ at: t0 + m * 60_000, day, cash, portfolio, city, netWorth: cash + portfolio + city, population, income, expenses,
       ...(flow !== undefined ? { flow, fees, research, demolish } : {}) }));
-  const transactions: Transaction[] = tx.map(([at, k, amount, label, symbol, qty, price], i) => {
+  const transactions: Transaction[] = tx.map(([at, k, amount, label, symbol, qty, price, gain], i) => {
     const kind = KINDS[k] ?? "buy";
     return {
       id: `${at.toString(36)}-${tx.length - i}`, at, kind, amount,
       label: label === 0 ? tradeLabel(kind, qty, symbol) : label,
       ...(symbol !== undefined ? { symbol, qty, price } : {}),
+      ...(gain !== undefined ? { gain } : {}),
     };
   });
   const plots: Plot[] = Object.entries(pl).flatMap(([id, xy]) =>

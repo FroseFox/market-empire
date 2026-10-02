@@ -5,7 +5,8 @@ import { Lock, Newspaper } from "lucide-react";
 import { useGame } from "@/store/game";
 import { hasResearch } from "@/lib/game/engine";
 import { ASSET_BY_SYMBOL } from "@/lib/market/universe";
-import { useNews } from "@/lib/news";
+import { useNews, type NewsItem } from "@/lib/news";
+import { neighbors } from "@/lib/market/relations";
 import { Card, Empty, PageHeader } from "@/components/ui";
 import NewsList from "@/components/NewsList";
 
@@ -17,9 +18,21 @@ export default function NewsPage() {
   const [country, setCountry] = useState("");
   const advanced = hasResearch(game, "news_filters");
 
+  const chains = hasResearch(game, "chain_news");
+
   const held = Object.keys(game.holdings);
+  // Entreprises liées à mes positions (hors positions elles-mêmes) → « fournisseur de NVIDIA »
+  const linked = new Map<string, string>();
+  if (chains) for (const h of held) for (const nb of neighbors(h)) {
+    if (!held.includes(nb.symbol) && !linked.has(nb.symbol)) linked.set(nb.symbol, `${nb.role} de ${ASSET_BY_SYMBOL[h]?.name ?? h}`);
+  }
+  const chainNote = (n: NewsItem) => {
+    const s = n.symbols.find((x) => linked.has(x));
+    return s ? `${ASSET_BY_SYMBOL[s]?.name ?? s} : ${linked.get(s)}, que vous détenez.` : undefined;
+  };
   let items = news.items;
-  if (filter === "held") items = items.filter((n) => n.symbols.some((s) => held.includes(s)));
+  if (filter === "chains") items = items.filter((n) => n.symbols.some((s) => linked.has(s)));
+  else if (filter === "held") items = items.filter((n) => n.symbols.some((s) => held.includes(s)));
   else if (filter.startsWith("f:")) {
     const f = game.folders.find((x) => x.id === filter.slice(2));
     items = f ? items.filter((n) => n.symbols.some((s) => f.symbols.includes(s))) : items;
@@ -43,6 +56,7 @@ export default function NewsPage() {
           <div className="flex flex-wrap gap-2 mb-3">
             {chip("all", "Tout")}
             {chip("held", "Mes positions")}
+            {chains && chip("chains", "Chaînes de mes positions")}
             {advanced && game.folders.map((f) => chip(`f:${f.id}`, f.name))}
             {filter.startsWith("s:") && chip(filter, ASSET_BY_SYMBOL[filter.slice(2)]?.name ?? filter.slice(2))}
           </div>
@@ -62,7 +76,7 @@ export default function NewsPage() {
             {news.status === "loading" ? <Empty>Chargement des actualités…</Empty>
               : news.status === "unavailable" ? <Empty>Impossible de charger les actualités pour l&apos;instant. Réessayez dans un moment.</Empty>
               : items.length === 0 ? <Empty>Aucune actualité pour ce filtre.</Empty>
-              : <NewsList items={items} onSymbol={(s) => setFilter(`s:${s}`)} />}
+              : <NewsList items={items} onSymbol={(s) => setFilter(`s:${s}`)} note={filter === "chains" ? chainNote : undefined} />}
           </Card>
         </div>
         <div className="xl:col-span-4 space-y-4">
@@ -73,6 +87,18 @@ export default function NewsPage() {
               <li>Pensez aux <Link href="/relations" className="text-primary">relations</Link> : une nouvelle chez un fournisseur peut toucher ses clients.</li>
             </ul>
           </Card>
+          {!chains && (
+            <Card>
+              <div className="flex items-start gap-3">
+                <span className="h-8 w-8 rounded-full bg-slate-100 text-muted grid place-items-center shrink-0"><Lock size={15} /></span>
+                <div>
+                  <div className="font-semibold text-[14px]">Actualités de mes chaînes</div>
+                  <p className="text-[12px] text-muted mt-0.5">Les nouvelles qui touchent les fournisseurs, clients et concurrents de vos positions.</p>
+                  <Link href="/recherche" className="text-[12px] text-primary font-medium mt-2 inline-block">Débloquer dans Recherche →</Link>
+                </div>
+              </div>
+            </Card>
+          )}
           {!advanced && (
             <Card>
               <div className="flex items-start gap-3">

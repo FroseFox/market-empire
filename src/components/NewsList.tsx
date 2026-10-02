@@ -5,7 +5,7 @@ import { ASSET_BY_SYMBOL } from "@/lib/market/universe";
 import { timeAgo, type NewsItem } from "@/lib/news";
 import { Delta } from "@/components/ui";
 
-export default function NewsList({ items, compact = false, onSymbol }: { items: NewsItem[]; compact?: boolean; onSymbol?: (s: string) => void }) {
+export default function NewsList({ items, compact = false, onSymbol, note }: { items: NewsItem[]; compact?: boolean; onSymbol?: (s: string) => void; note?: (n: NewsItem) => string | undefined }) {
   const quotes = useGame((s) => s.quotes);
   return (
     <ul className="divide-y divide-line">
@@ -17,6 +17,7 @@ export default function NewsList({ items, compact = false, onSymbol }: { items: 
             </span>
             {!compact && n.summary && <span className="block text-[13px] text-muted mt-1 max-w-[70ch]">{n.summary}</span>}
           </a>
+          {note?.(n) && <div className="mt-1.5 text-[11px] text-slate-600">{note(n)}</div>}
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 mt-2 text-[11px] text-muted">
             <span>{n.source} · {timeAgo(n.publishedAt)}</span>
             {!compact && n.topic && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600">{n.topic}</span>}
