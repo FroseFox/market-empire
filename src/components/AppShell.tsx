@@ -12,6 +12,7 @@ import { startWorldSync } from "@/lib/world/players";
 import { initAuth, useAuth } from "@/lib/auth";
 import { startOnline } from "@/lib/online";
 import AccountMenu from "@/components/AccountMenu";
+import AuthGate, { Splash } from "@/components/AuthGate";
 import { DAY_MS } from "@/lib/game/engine";
 import { eur } from "@/lib/format";
 
@@ -127,9 +128,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     if (STATIC_MODE) { startCloudSync(); startWorldSync(); return; }
     initAuth().then(startOnline);
   }, [hydrated]);
-  const authError = useAuth((s) => s.error);
-  const notify = useGame((s) => s.notify);
-  useEffect(() => { if (authError) { notify(`Connexion Discord : ${authError}`, "error"); useAuth.setState({ error: null }); } }, [authError, notify]);
   const authStatus = useAuth((s) => s.status);
   const cloud = useGame((s) => s.cloud);
   const cash = useGame((s) => s.game.cash);
@@ -140,7 +138,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   const isActive = (href: string) => (href === "/" ? path === "/" : path.startsWith(href));
 
-  return (
+  // Site publié : pas de jeu sans compte Discord (la page Claude, elle, a sa propre identité)
+  if (!STATIC_MODE && !hydrated) return <Splash text="Chargement de votre empire…" />;
+  const shell = (
     <div className="min-h-screen flex">
       {/* Sidebar */}
       <aside className="hidden lg:flex w-[232px] shrink-0 flex-col bg-navy text-slate-300 px-4 py-5 sticky top-0 h-screen">
@@ -204,6 +204,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       )}
     </div>
   );
+  return STATIC_MODE ? shell : <AuthGate>{shell}</AuthGate>;
 }
 
 const MOBILE_MAIN = ["/", "/marches", "/portefeuille", "/ville"];

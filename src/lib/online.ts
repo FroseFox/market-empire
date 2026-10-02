@@ -17,8 +17,14 @@ const LINK_KEY = "market-empire-linked";
 const MIN_GAP = 60_000;
 const DEBOUNCE = 15_000;
 
-/** Pays (territoire) du joueur connecté. */
-export const useOnline = create<{ country: string | null }>(() => ({ country: null }));
+/** Où en est l'ouverture de la partie en ligne, une fois connecté avec Discord :
+ *  - connecting : lecture du compte ;
+ *  - new        : première connexion, le joueur doit créer son compte (nom de sa ville) ;
+ *  - ready      : la partie est chargée, on peut jouer ;
+ *  - error      : le serveur n'a pas répondu. */
+export type OnlinePhase = "idle" | "connecting" | "new" | "ready" | "error";
+/** Pays (territoire) du joueur connecté, et étape d'ouverture du compte. */
+export const useOnline = create<{ country: string | null; phase: OnlinePhase }>(() => ({ country: null, phase: "idle" }));
 
 const compact = (g: E.GameState): E.GameState => ({ ...g, history: g.history.slice(-120), transactions: g.transactions.slice(0, 50) });
 
@@ -70,33 +76,10 @@ function setPlayerName(name: string) {
   if (name && g.playerName !== name) useGame.setState({ game: { ...g, playerName: name } });
 }
 
-async function connect(uid: string, name: string) {
-  active = uid;
-  setCloud("syncing");
-  try {
-    const joined = await rpc<{ country: string | null }[]>("join_world", { p_countries: countryPreference(uid) });
-    useOnline.setState({ country: joined?.[0]?.country ?? null });
-
-    // La sauvegarde la plus récente gagne. Sur un appareil jamais lié à ce compte,
-    // la sauvegarde en ligne l'emporte (on n'écrase pas une vraie partie par une partie neuve).
-    const rows = await restAsUser<{ data: E.GameState; saved_at: number }[]>("saves?select=data,saved_at&limit=1");
-    let linked = false;
-    try { linked = localStorage.getItem(LINK_KEY) === uid; } catch { /* stockage indisponible */ }
-    const remote = rows?.[0];
-    const local = useGame.getState();
-    if (remote?.data && (!linked || Number(remote.saved_at) > local.savedAt)) {
-      useGame.setState({ game: E.normalize(remote.data), savedAt: Number(remote.saved_at) });
-      useGame.getState().sync();
-      setCloud("saved");
-    } else {
-      dirty = true;
-      await flush();
-    }
-    try { localStorage.setItem(LINK_KEY, uid); } catch { /* idem */ }
-    setPlayerName(name);
-  } catch {
-    setCloud("error");
-  }
+/** Le compte est ouvert : on mémorise l'appareil et on sauvegarde à chaque changement. */
+function finish(uid: string, name: string) {
+  try { localStorage.setItem(LINK_KEY, uid); } catch { /* stockage indisponible */ }
+  setPlayerName(name);
   unsubGame?.();
   unsubGame = useGame.subscribe((s, p) => {
     if (s.game === p.game || !active) return;
@@ -104,6 +87,77 @@ async function connect(uid: string, name: string) {
     if (useGame.getState().cloud === "saved") setCloud("syncing");
     schedule();
   });
+  useOnline.setState({ phase: "ready" });
+}
+
+async function connect(uid: string, name: string) {
+  active = uid;
+  setCloud("syncing");
+  useOnline.setState({ phase: "connecting" });
+  try {
+    // Crée le profil du joueur à sa première connexion (nom et avatar lus depuis Discord) et lui attribue un pays
+    const joined = await rpc<{ country: string | null }[]>("join_world", { p_countries: countryPreference(uid) });
+    if (active !== uid) return; // déconnecté entre-temps
+    useOnline.setState({ country: joined?.[0]?.country ?? null });
+
+    const rows = await restAsUser<{ data: E.GameState; saved_at: number }[]>("saves?select=data,saved_at&limit=1");
+    if (active !== uid) return;
+    // Pas de réponse : on ne sait pas s'il existe une sauvegarde, donc on n'écrit surtout rien
+    if (!rows) throw new Error("sauvegarde illisible");
+    let previous: string | null = null;
+    try { previous = localStorage.getItem(LINK_KEY); } catch { /* stockage indisponible */ }
+    const remote = rows[0];
+    const local = useGame.getState();
+    if (remote?.data) {
+      // La sauvegarde la plus récente gagne. Sur un appareil jamais lié à ce compte,
+      // la sauvegarde en ligne l'emporte (on n'écrase pas une vraie partie par une autre).
+      if (previous !== uid || Number(remote.saved_at) > local.savedAt) {
+        useGame.setState({ game: E.normalize(remote.data), savedAt: Number(remote.saved_at) });
+        useGame.getState().sync();
+        setCloud("saved");
+      } else {
+        dirty = true;
+        await flush();
+      }
+      finish(uid, name);
+      return;
+    }
+    // Aucune sauvegarde en ligne : nouveau compte. Si l'appareil servait à un autre compte,
+    // on repart d'une partie neuve (on ne donne pas la partie de quelqu'un d'autre).
+    if (previous && previous !== uid) useGame.getState().reset();
+    setPlayerName(name);
+    useOnline.setState({ phase: "new" });
+  } catch {
+    if (active !== uid) return;
+    setCloud("error");
+    useOnline.setState({ phase: "error" });
+  }
+}
+
+/** Création du compte : nomme la ville et enregistre la première sauvegarde en ligne. */
+export async function createAccount(cityName: string): Promise<string | null> {
+  const user = useAuth.getState().user;
+  if (!user || active !== user.id) return "Connexion perdue, reconnectez-vous.";
+  const r = E.renameCity(useGame.getState().game, cityName);
+  if (!r.ok) return r.error;
+  useGame.setState({ game: r.state, savedAt: Date.now() });
+  dirty = true;
+  lastWrite = 0;
+  await flush();
+  if (useGame.getState().cloud === "error") return "Le serveur n'a pas répondu, réessayez dans un instant.";
+  finish(user.id, user.name);
+  return null;
+}
+
+/** Nouvel essai après une erreur de serveur. */
+export function retryOnline() {
+  const user = useAuth.getState().user;
+  if (user) connect(user.id, user.name);
+}
+
+/** Jouer quand même : la partie reste sur l'appareil, rien n'est envoyé au serveur avant la prochaine connexion. */
+export function playOffline() {
+  useOnline.setState({ phase: "ready" });
 }
 
 function disconnect() {
@@ -111,7 +165,7 @@ function disconnect() {
   unsubGame?.(); unsubGame = null;
   if (timer) { clearTimeout(timer); timer = null; }
   dirty = false;
-  useOnline.setState({ country: null });
+  useOnline.setState({ country: null, phase: "idle" });
   setCloud("local");
 }
 
