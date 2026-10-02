@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { build, buy, moveBuilding, catchUp, computeCity, createFolder, DAY_MS, demolish, doResearch, newGame, normalize, sell, tickDay, updateFolder } from "./engine";
+import * as E from "./engine";
 import { isRoad } from "./layout";
 import { STARTING_CASH } from "./config";
 
@@ -157,3 +158,29 @@ describe("placement libre", () => {
     expect(d.ok && d.state.plots.some((p) => p.x === 13 && p.y === 13)).toBe(false);
   });
 });
+
+describe("bilan de période", () => {
+  it("explique exactement la variation du patrimoine", () => {
+    const ok = (r: E.ActionResult) => { if (!r.ok) throw new Error(r.error); return r.state; };
+    const worth = (g: E.GameState, p: E.Prices) => g.cash + E.portfolioValue(g.holdings, p) + E.computeCity(g).assetValue;
+    let g = E.newGame(0);
+    let cityFlow = 0;
+    g = ok(E.buy(g, "AAPL", 100, 200, 1));          // frais : 20 €
+    g = ok(E.build(g, "house_s", 2));               // neutre : liquidités → ville
+    for (let d = 0; d < 3; d++) { cityFlow += E.computeCity(g).net; g = E.tickDay(g, { AAPL: 200 }, 10 + d); }
+    g = ok(E.demolish(g, "house_s", 20));           // perte : la moitié du coût
+    g = ok(E.sell(g, "AAPL", 50, 220, 21));         // frais : 11 €
+    const prices = { AAPL: 220 };                   // +20 € × 100 titres = +2 000 €
+    const r = E.periodReport(g, worth(g, prices), Infinity);
+    expect(r.days).toBe(3);
+    expect(r.start).toBe(100_000);
+    expect(r.fees).toBeCloseTo(31, 2);
+    expect(r.city).toBeCloseTo(cityFlow, 1);
+    expect(r.demolish).toBeGreaterThan(0);
+    expect(r.market).toBeCloseTo(2000, 1);
+    expect(r.start + r.market + r.city - r.fees - r.research - r.demolish).toBeCloseTo(r.end, 1);
+    // Sur le dernier jour seulement : la période ne reprend que ce qui s'est passé depuis.
+    expect(E.periodReport(g, worth(g, prices), 1).fees).toBeCloseTo(11, 2);
+  });
+});
+
