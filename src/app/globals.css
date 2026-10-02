@@ -43,3 +43,21 @@ body { font-family: var(--font-sans); font-size: 14px; }
 }
 /* Pas de surbrillance grise au toucher sur mobile */
 button, a { -webkit-tap-highlight-color: transparent; }
+
+/* Ville : la carte remplit l'écran sous la barre du haut (et au-dessus de la barre du bas sur mobile) */
+.city-stage {
+  position: relative;
+  overflow: hidden;
+  height: calc(100dvh - 4rem - 58px - env(safe-area-inset-bottom, 0px));
+  min-height: 380px;
+}
+@media (min-width: 1024px) { .city-stage { height: calc(100dvh - 4rem); } }
+/* Panneaux posés sur la carte */
+.hud {
+  background: var(--color-card);
+  border: 1px solid var(--color-line);
+  border-radius: 14px;
+  box-shadow: 0 6px 20px rgb(15 23 42 / 0.10);
+}
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
