@@ -2,20 +2,22 @@
 // Partie en ligne sur le site publié (compte Discord + Supabase).
 // Économe en données :
 // - une seule ligne par joueur pour la sauvegarde, écrasée (pas d'historique côté serveur) ;
-// - sauvegarde allégée (120 derniers jours, 50 dernières opérations) ;
-// - au plus une écriture par minute, seulement si la partie a changé,
+// - sauvegarde au format compact (voir lib/game/pack.ts) ;
+// - au plus une écriture toutes les 5 minutes, seulement si le contenu a vraiment changé,
 //   + une dernière écriture quand on quitte la page ;
+// - à l'ouverture, on ne télécharge la sauvegarde que si elle est plus récente que celle de l'appareil ;
 // - sauvegarde et chiffres du classement envoyés en un seul appel.
 import { create } from "zustand";
 import * as E from "@/lib/game/engine";
+import { pack, unpack } from "@/lib/game/pack";
 import { useGame } from "@/store/game";
 import { restAsUser, rpc, useAuth } from "@/lib/auth";
 import { STATIC_MODE } from "@/lib/market/client";
 import { countryPreference } from "@/lib/world/countries";
 
 const LINK_KEY = "market-empire-linked";
-const MIN_GAP = 60_000;
-const DEBOUNCE = 15_000;
+const MIN_GAP = 5 * 60_000;
+const DEBOUNCE = 30_000;
 
 /** Où en est l'ouverture de la partie en ligne, une fois connecté avec Discord :
  *  - connecting : lecture du compte ;
@@ -25,8 +27,6 @@ const DEBOUNCE = 15_000;
 export type OnlinePhase = "idle" | "connecting" | "new" | "ready" | "error";
 /** Pays (territoire) du joueur connecté, et étape d'ouverture du compte. */
 export const useOnline = create<{ country: string | null; phase: OnlinePhase }>(() => ({ country: null, phase: "idle" }));
-
-const compact = (g: E.GameState): E.GameState => ({ ...g, history: g.history.slice(-120), transactions: g.transactions.slice(0, 50) });
 
 function figures() {
   const s = useGame.getState();
@@ -47,6 +47,8 @@ let active: string | null = null;
 let unsubGame: (() => void) | null = null;
 let timer: ReturnType<typeof setTimeout> | null = null;
 let lastWrite = 0, dirty = false, writing = false;
+/** Dernier contenu envoyé : on n'écrit pas deux fois la même chose. */
+let lastSent = "";
 const setCloud = (c: "local" | "syncing" | "saved" | "error") => useGame.setState({ cloud: c });
 
 async function flush(keepalive = false) {
@@ -54,10 +56,13 @@ async function flush(keepalive = false) {
   writing = true;
   dirty = false;
   const s = useGame.getState();
+  const data = pack(s.game), fig = figures();
+  const body = JSON.stringify([data, fig]);
+  if (body === lastSent) { writing = false; setCloud("saved"); return; }
   try {
-    const ok = await rpc<boolean>("save_game", { p_data: compact(s.game), p_saved_at: s.savedAt || Date.now(), ...figures() }, { keepalive });
+    const ok = await rpc<boolean>("save_game", { p_data: data, p_saved_at: s.savedAt || Date.now(), ...fig }, { keepalive });
     if (ok === false) { dirty = true; schedule(); } // le serveur limite à une écriture toutes les 20 s
-    else { lastWrite = Date.now(); setCloud("saved"); }
+    else { lastWrite = Date.now(); lastSent = body; setCloud("saved"); }
   } catch {
     dirty = true;
     setCloud("error");
@@ -100,24 +105,30 @@ async function connect(uid: string, name: string) {
     if (active !== uid) return; // déconnecté entre-temps
     useOnline.setState({ country: joined?.[0]?.country ?? null });
 
-    const rows = await restAsUser<{ data: E.GameState; saved_at: number }[]>("saves?select=data,saved_at&limit=1");
+    // D'abord la date seule (quelques octets) : la sauvegarde n'est téléchargée que s'il le faut
+    const meta = await restAsUser<{ saved_at: number }[]>("saves?select=saved_at&limit=1");
     if (active !== uid) return;
     // Pas de réponse : on ne sait pas s'il existe une sauvegarde, donc on n'écrit surtout rien
-    if (!rows) throw new Error("sauvegarde illisible");
+    if (!meta) throw new Error("sauvegarde illisible");
     let previous: string | null = null;
     try { previous = localStorage.getItem(LINK_KEY); } catch { /* stockage indisponible */ }
-    const remote = rows[0];
     const local = useGame.getState();
-    if (remote?.data) {
+    if (meta[0]) {
+      const remoteAt = Number(meta[0].saved_at);
       // La sauvegarde la plus récente gagne. Sur un appareil jamais lié à ce compte,
       // la sauvegarde en ligne l'emporte (on n'écrase pas une vraie partie par une autre).
-      if (previous !== uid || Number(remote.saved_at) > local.savedAt) {
-        useGame.setState({ game: E.normalize(remote.data), savedAt: Number(remote.saved_at) });
+      if (previous !== uid || remoteAt > local.savedAt) {
+        const rows = await restAsUser<{ data: unknown; saved_at: number }[]>("saves?select=data,saved_at&limit=1");
+        if (active !== uid) return;
+        if (!rows?.[0]?.data) throw new Error("sauvegarde illisible");
+        useGame.setState({ game: E.normalize(unpack(rows[0].data)), savedAt: Number(rows[0].saved_at) });
         useGame.getState().sync();
         setCloud("saved");
-      } else {
+      } else if (local.savedAt > remoteAt) {
         dirty = true;
         await flush();
+      } else {
+        setCloud("saved"); // déjà à jour : ni lecture ni écriture
       }
       finish(uid, name);
       return;
@@ -165,6 +176,7 @@ function disconnect() {
   unsubGame?.(); unsubGame = null;
   if (timer) { clearTimeout(timer); timer = null; }
   dirty = false;
+  lastSent = "";
   useOnline.setState({ country: null, phase: "idle" });
   setCloud("local");
 }
