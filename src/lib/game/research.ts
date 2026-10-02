@@ -29,13 +29,19 @@ export const RESEARCH: ResearchNode[] = [
   { id: "history_1y", branch: "Entreprises", name: "Historique 1 an", description: "Débloque le graphique sur 1 an dans les fiches.", cost: 10_000, requires: ["hq"], col: 2, row: 1 },
   { id: "sector_view", branch: "Entreprises", name: "Analyse sectorielle", description: "Performance moyenne par secteur dans les Marchés.", cost: 20_000, requires: ["history_1y"], col: 2, row: 2 },
 
+  { id: "realized_pnl", branch: "Entreprises", name: "Plus-values réalisées", description: "Le Portefeuille affiche le gain ou la perte de chaque vente et le total réalisé.", cost: 20_000, requires: ["sector_view"], col: 2, row: 3 },
+  { id: "portfolio_breakdown", branch: "Entreprises", name: "Analyse du portefeuille", description: "Répartition de vos investissements par secteur, par région et par type d'actif.", cost: 30_000, requires: ["realized_pnl"], col: 2, row: 4 },
+
   { id: "relations_1", branch: "Relations", name: "Relations directes", description: "Fournisseurs, clients, concurrents et partenaires.", cost: 0, requires: ["hq"], col: 3, row: 1 },
   { id: "supply_chain", branch: "Relations", name: "Chaînes d'approvisionnement", description: "Affiche aussi les relations de second niveau.", cost: 25_000, requires: ["relations_1"], col: 3, row: 2 },
+
+  { id: "chain_exposure", branch: "Relations", name: "Exposition aux chaînes", description: "Dans Relations, voyez ce que vous détenez dans la chaîne affichée : montant et part de votre portefeuille.", cost: 40_000, requires: ["supply_chain"], col: 3, row: 3 },
 
   { id: "news_1", branch: "Actualités", name: "Flux d'actualités", description: "Les actualités économiques liées aux entreprises.", cost: 0, requires: ["hq"], col: 4, row: 1 },
   { id: "folders_1", branch: "Dossiers", name: "Dossiers", description: "Jusqu'à 2 dossiers d'analyse.", cost: 0, requires: ["hq"], col: 5, row: 1 },
   { id: "folders_plus", branch: "Dossiers", name: "Dossiers illimités", description: "Autant de dossiers que vous voulez.", cost: 12_000, requires: ["folders_1"], col: 5, row: 2 },
   { id: "news_filters", branch: "Actualités", name: "Filtres avancés", description: "Filtrer les actualités par dossier, par thème et par pays.", cost: 8_000, requires: ["news_1", "folders_1"], col: 4.5, row: 2.6 },
+  { id: "chain_news", branch: "Actualités", name: "Actualités de mes chaînes", description: "Un filtre pour les nouvelles qui touchent les fournisseurs, clients et concurrents de vos positions.", cost: 35_000, requires: ["news_filters", "supply_chain"], col: 4, row: 3.6 },
 ];
 
 export const RESEARCH_BY_ID: Record<string, ResearchNode> = Object.fromEntries(RESEARCH.map((n) => [n.id, n]));

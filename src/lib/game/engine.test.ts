@@ -175,6 +175,9 @@ describe("bilan de période", () => {
     expect(r.days).toBe(3);
     expect(r.start).toBe(100_000);
     expect(r.fees).toBeCloseTo(31, 2);
+    // Vente de 50 titres à 220 € achetés 200 € : +1 000 € moins 11 € de frais.
+    expect(g.transactions[0].gain).toBeCloseTo(989, 2);
+    expect(g.realized).toBeCloseTo(989, 2);
     expect(r.city).toBeCloseTo(cityFlow, 1);
     expect(r.demolish).toBeGreaterThan(0);
     expect(r.market).toBeCloseTo(2000, 1);

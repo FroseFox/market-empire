@@ -34,7 +34,7 @@ describe("sauvegarde en ligne allégée", () => {
     expect(back.transactions).toHaveLength(25);
     back.transactions.forEach((t, i) => {
       const o = g.transactions[i];
-      expect([t.at, t.kind, t.label, t.symbol, t.qty, t.price]).toEqual([o.at, o.kind, o.label, o.symbol, o.qty, o.price]);
+      expect([t.at, t.kind, t.label, t.symbol, t.qty, t.price, t.gain]).toEqual([o.at, o.kind, o.label, o.symbol, o.qty, o.price, o.gain]);
       expect(t.amount).toBeCloseTo(o.amount, 2);
     });
     expect(new Set(back.transactions.map((t) => t.id)).size).toBe(25);

@@ -1,13 +1,14 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Network, Search } from "lucide-react";
+import { Lock, Network, Search } from "lucide-react";
 import { useDerived } from "@/store/game";
 import { ASSETS, ASSET_BY_SYMBOL } from "@/lib/market/universe";
 import { neighbors, type Neighbor } from "@/lib/market/relations";
 import { hasResearch } from "@/lib/game/engine";
 import { Card, Delta, PageHeader } from "@/components/ui";
 import AddToFolder from "@/components/AddToFolder";
+import { eur, pctPlain } from "@/lib/format";
 
 const ROLE_STYLE: Record<Neighbor["role"], { color: string; label: string }> = {
   fournisseur: { color: "#2563EB", label: "Fournisseurs" },
@@ -75,12 +76,17 @@ function buildGraph(center: string, deep: boolean) {
 }
 
 export default function RelationsPage() {
-  const { game, quotes } = useDerived();
+  const { game, quotes, portfolio } = useDerived();
   const [center, setCenter] = useState("NVDA");
   const [query, setQuery] = useState("");
   const deep = hasResearch(game, "supply_chain");
   const { nodes, edges, list, box } = useMemo(() => buildGraph(center, deep), [center, deep]);
   const asset = ASSET_BY_SYMBOL[center];
+  // Exposition : ce que le joueur détient dans la chaîne affichée (recherche « Exposition aux chaînes »)
+  const exposure = hasResearch(game, "chain_exposure");
+  const heldValue = (sym: string) => { const h = game.holdings[sym]; return h ? h.qty * (quotes[sym]?.price ?? h.avgCost) : 0; };
+  const chainHeld = exposure ? [...new Set(nodes.map((n) => n.symbol))].filter((s) => game.holdings[s]) : [];
+  const chainValue = chainHeld.reduce((a, s) => a + heldValue(s), 0);
   // Sur téléphone, le graphe défile à l'horizontale : on le centre sur l'entreprise choisie
   const scroller = useRef<HTMLDivElement>(null);
   const graphCard = useRef<HTMLDivElement>(null);
@@ -123,6 +129,7 @@ export default function RelationsPage() {
             {(Object.keys(ROLE_STYLE) as Neighbor["role"][]).map((r) => (
               <span key={r} className="inline-flex items-center gap-1.5 text-[12px] text-muted"><span className="h-2.5 w-2.5 rounded-full" style={{ background: ROLE_STYLE[r].color }} />{ROLE_STYLE[r].label}</span>
             ))}
+            {exposure && <span className="inline-flex items-center gap-1.5 text-[12px] text-muted"><span className="h-2.5 w-2.5 rounded-full bg-ink ring-2 ring-white outline outline-1 outline-slate-300" />Détenu</span>}
             {!deep && <Link href="/recherche" className="ml-auto text-[12px] text-primary font-medium hover:underline">Voir les chaînes complètes →</Link>}
           </div>
           <div ref={scroller} className="overflow-x-auto">
@@ -142,6 +149,7 @@ export default function RelationsPage() {
                     <text x={w / 2} y={n.level === 0 ? 23 : 18} textAnchor="middle" fontSize={n.level === 0 ? 15 : 13} fontWeight={700} fill={n.level === 0 ? "#FFFFFF" : "#0F172A"} fontFamily="Montserrat, sans-serif">
                       {shortName(ASSET_BY_SYMBOL[n.symbol]?.name ?? n.symbol, n.level === 0 ? 17 : 15)}
                     </text>
+                    {exposure && game.holdings[n.symbol] && <circle cx={w - 9} cy={9} r={4} fill={n.level === 0 ? "#FFFFFF" : "#0F172A"} />}
                     {q && (
                       <text x={w / 2} y={n.level === 0 ? 42 : 34} textAnchor="middle" fontSize={11} fontWeight={600} fontFamily="Montserrat, sans-serif"
                         fill={q.change >= 0 ? (n.level === 0 ? "#6EE7B7" : "#059669") : (n.level === 0 ? "#FCA5A5" : "#DC2626")}>
@@ -159,6 +167,18 @@ export default function RelationsPage() {
 
         <Card title={asset.name} className="xl:col-span-3" extra={<AddToFolder symbols={[center]} label="Dossier" />}>
           <div className="flex items-center gap-2 text-[12px] text-muted mb-4">{asset.sector} · {center} {quotes[center] && <Delta value={quotes[center].change} />}</div>
+          {exposure ? (
+            <div className="rounded-[12px] bg-slate-50 p-3 mb-4">
+              <div className="text-[12px] text-muted">Votre exposition à cette chaîne</div>
+              <div className="text-[18px] font-bold tabular">{eur(chainValue)}</div>
+              <div className="text-[11px] text-muted">
+                {chainHeld.length === 0 ? "Vous ne détenez aucune entreprise affichée ici."
+                  : `${chainHeld.length} entreprise${chainHeld.length > 1 ? "s" : ""} détenue${chainHeld.length > 1 ? "s" : ""}${portfolio > 0 ? ` · ${pctPlain(chainValue / portfolio)} du portefeuille` : ""}`}
+              </div>
+            </div>
+          ) : (
+            <Link href="/recherche" className="flex items-center gap-1.5 text-[11px] text-muted hover:text-primary mb-4"><Lock size={11} />Exposition à cette chaîne : à débloquer dans Recherche</Link>
+          )}
           {list.length === 0 ? <p className="text-[13px] text-muted">Aucune relation saisie pour cette entreprise pour l&apos;instant.</p> : (
             <div className="space-y-4">
               {(Object.keys(ROLE_STYLE) as Neighbor["role"][]).map((role) => {
@@ -171,7 +191,10 @@ export default function RelationsPage() {
                       {items.map((n) => (
                         <li key={role + n.symbol}>
                           <button onClick={() => pick(n.symbol)} className="text-left w-full rounded-[8px] px-2 py-1.5 hover:bg-slate-50">
-                            <span className="block text-[13px] font-medium">{ASSET_BY_SYMBOL[n.symbol]?.name ?? n.symbol}</span>
+                            <span className="flex items-baseline justify-between gap-2 text-[13px] font-medium">
+                              <span>{ASSET_BY_SYMBOL[n.symbol]?.name ?? n.symbol}</span>
+                              {exposure && game.holdings[n.symbol] && <span className="text-[11px] text-primary tabular shrink-0">Détenu · {eur(heldValue(n.symbol))}</span>}
+                            </span>
                             <span className="block text-[11px] text-muted">{n.note}</span>
                           </button>
                         </li>

@@ -20,6 +20,8 @@ export interface Transaction {
   qty?: number;
   price?: number;
   amount: number; // effet sur les liquidités (négatif = sortie)
+  /** Vente : plus-value réalisée, frais déduits (absent des anciennes opérations). */
+  gain?: number;
 }
 
 export interface Folder { id: string; name: string; symbols: string[]; notes: string }
@@ -66,6 +68,8 @@ export interface GameState {
   tutorialDone?: boolean;
   /** Coûts du jour en cours, versés dans l'historique au prochain passage de jour. */
   today?: DayCosts;
+  /** Total des plus-values réalisées depuis que le jeu les enregistre. */
+  realized?: number;
   transactions: Transaction[];
   history: Snapshot[];
 }
@@ -345,6 +349,7 @@ export function sell(state: GameState, symbol: string, qty: number, price: numbe
   const fee = tradeFee(gross);
   const holdings = { ...state.holdings };
   const left = h.qty - qty;
+  const gain = round2(gross - fee - qty * h.avgCost);
   if (left <= 1e-9) delete holdings[symbol];
   else holdings[symbol] = { qty: left, avgCost: h.avgCost };
   return {
@@ -354,7 +359,8 @@ export function sell(state: GameState, symbol: string, qty: number, price: numbe
       cash: round2(state.cash + gross - fee),
       holdings,
       today: spend(state, "fees", fee),
-      transactions: addTx(state, { kind: "sell", label: `Vente ${qty} × ${symbol}`, symbol, qty, price, amount: gross - fee, at }),
+      realized: round2((state.realized ?? 0) + gain),
+      transactions: addTx(state, { kind: "sell", label: `Vente ${qty} × ${symbol}`, symbol, qty, price, amount: gross - fee, gain, at }),
     },
   };
 }
