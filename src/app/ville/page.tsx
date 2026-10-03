@@ -7,9 +7,10 @@ import type { LucideIcon } from "lucide-react";
 import { useDerived, useGame } from "@/store/game";
 import { BUILDINGS, BUILDING_BY_ID, CATEGORY_LABELS, CITY_RANKS, SERVICES, SERVICE_IDS, DEMOLISH_REFUND, EXPORT_RATIO, MAINTENANCE_RATE, RESOURCE_PRICES, type BuildingType, type Category } from "@/lib/game/config";
 import { Button, ConfirmButton, Progress } from "@/components/ui";
-import IsoCity, { type CityMarker, type CityMode, type MarkerKind } from "@/components/IsoCity";
+import IsoCity, { type CityMarker, type CityMode, type CitySign, type MarkerKind } from "@/components/IsoCity";
+import CompanyLogo, { companyBadge } from "@/components/CompanyLogo";
 import { useMedia } from "@/lib/useMedia";
-import { activeBranches, branchCost, branchLimit, buildingAudit, forecast, goalStatuses, hasResearch, isTileFree, prestige, renovateCost, upgradeOffer, type CityStats } from "@/lib/game/engine";
+import { activeBranches, branchAt, branchCost, branchLimit, buildingAudit, forecast, goalStatuses, hasResearch, isTileFree, prestige, renovateCost, upgradeOffer, type CityStats } from "@/lib/game/engine";
 import { BRANCH_EFFECTS, BRANCH_MIN_VALUE, FORECAST_DAYS, PROJECTS } from "@/lib/game/config";
 import { specialtyText } from "@/lib/world/countries";
 import { ASSET_BY_SYMBOL, familyOf } from "@/lib/market/universe";
@@ -102,6 +103,7 @@ export default function CityPage() {
     }
     if (tool === "move") { if (hit) setMode({ kind: "move", id: hit.id, from: { x, y } }); return; }
     if (tool === "demolish") {
+      if (hit?.id === "branch") { notify("Site d'entreprise : il se ferme depuis le bouton Entreprises.", "error"); return; }
       if (hit && BUILDING_BY_ID[hit.id]?.buildable === false) { notify("Bâtiment d'origine : il peut être déplacé mais pas démoli.", "error"); return; }
       setSelected(hit ? { x, y } : null);
       return;
@@ -120,6 +122,19 @@ export default function CityPage() {
     () => cityMarkers(game.plots, { energy: flags.energy, food: flags.food, full: flags.full, staff: flags.staff, service: flags.service }),
     [game.plots, flags.energy, flags.food, flags.full, flags.staff, flags.service],
   );
+  // Enseignes des entreprises implantées : une par bâtiment « branch », dans l'ordre des implantations
+  const branches = game.branches, holdings = game.holdings;
+  const signs = useMemo(() => {
+    const on = new Set(activeBranches({ branches, holdings }).map((b) => b.symbol));
+    const out: Record<string, CitySign> = {};
+    game.plots.filter((p) => p.id === "branch").forEach((p, i) => {
+      const br = branches?.[i], asset = br && ASSET_BY_SYMBOL[br.symbol];
+      if (!br || !asset) return;
+      const e = BRANCH_EFFECTS[familyOf(asset)], active = on.has(br.symbol);
+      out[`${p.x},${p.y}`] = { ...companyBadge(br.symbol), title: asset.name, text: active ? `${e.label} · ${num(e.jobs)} emplois` : "Site en sommeil", dim: !active };
+    });
+    return out;
+  }, [game.plots, branches, holdings]);
   const outlook = hasResearch(game, "city_forecast") ? forecast(game) : null;
   const goals = goalStatuses(game, city);
   const toClaim = goals.filter((g) => g.done && !g.claimed).length;
@@ -174,7 +189,7 @@ export default function CityPage() {
   return (
     <div className="city-stage">
       <IsoCity plots={game.plots} height="fill" initialZoom={phone ? 1.3 : 1} mode={mode} selected={selected} onTileClick={onTileClick}
-        markers={markers} selectedTone={tool === "demolish" ? "danger" : "primary"}
+        markers={markers} signs={signs} selectedTone={tool === "demolish" ? "danger" : "primary"}
         padTop={small ? 64 : 72} padBottom={small ? 76 : 84} zoomClass="left-3 top-[76px]" hint={false} />
 
       {/* Haut : ressources à gauche, budget à droite */}
@@ -346,7 +361,7 @@ function Firms() {
   return (
     <div className="space-y-3">
       <p className="text-[12px] text-muted">
-        Une entreprise dont vous détenez au moins {compactEur(BRANCH_MIN_VALUE)} d&apos;actions peut ouvrir un site dans votre ville. Il tourne tant que vous gardez cette participation, quel que soit le cours.
+        Une entreprise dont vous détenez au moins {compactEur(BRANCH_MIN_VALUE)} d&apos;actions peut ouvrir un site dans votre ville : son bâtiment apparaît sur la carte avec son enseigne. Il tourne tant que vous gardez cette participation, quel que soit le cours.
       </p>
       <div className="flex justify-between text-[12px]"><span className="font-semibold">Sites ouverts</span><span className="tabular text-muted">{mine.length} / {limit} (un de plus à chaque rang)</span></div>
       {mine.length > 0 && (
@@ -355,6 +370,7 @@ function Firms() {
             const a = ASSET_BY_SYMBOL[b.symbol], on = active.has(b.symbol);
             return (
               <li key={b.symbol} className="flex items-center gap-3 rounded-[10px] border border-line p-2.5">
+                <CompanyLogo symbol={b.symbol} size={34} />
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-[13px] font-semibold">{a?.name ?? b.symbol} <span className="font-normal text-muted">· {effect(b.symbol).label}</span></div>
                   <div className={`text-[11px] ${on ? "text-muted" : "text-danger"}`}>{on ? line(b.symbol) : "En sommeil : vous ne détenez plus la participation de départ"}</div>
@@ -373,6 +389,7 @@ function Firms() {
               const enough = value >= BRANCH_MIN_VALUE, full = mine.length >= limit;
               return (
                 <li key={asset.symbol} className="flex items-center gap-3">
+                  <CompanyLogo symbol={asset.symbol} size={34} />
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-[13px] font-medium">{asset.name} <span className="text-muted">· {compactEur(value)} détenus</span></div>
                     <div className="text-[11px] text-muted">{effect(asset.symbol).label} : {line(asset.symbol)}</div>
@@ -587,16 +604,18 @@ function SelectedPanel({ plot, city, confirmDemolish, onUpgrade, onMove, onDemol
   const next = offer ? BUILDING_BY_ID[offer.to] : null;
   const canUpgrade = hasResearch(game, "city_upgrade");
   const popLocked = !!next?.unlockPop && game.population < next.unlockPop;
-  const audit = hasResearch(game, "city_audit") ? buildingAudit(plot.id, city) : null;
+  const firm = plot.id === "branch" ? branchAt(game, plot.x, plot.y) : undefined;
+  const firmAsset = firm ? ASSET_BY_SYMBOL[firm.symbol] : undefined;
+  const audit = !firm && hasResearch(game, "city_audit") ? buildingAudit(plot.id, city) : null;
   const Icon = CAT_ICON[b.category];
   const refund = compactEur(b.cost * DEMOLISH_REFUND);
   return (
     <section className={`hud appear w-full max-w-[380px] p-3.5 ${confirmDemolish ? "border-red-200" : ""}`}>
       <div className="mb-2.5 flex items-start gap-3">
-        <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-[10px] ${CAT_TINT[b.category]}`}><Icon size={19} /></span>
+        {firm ? <CompanyLogo symbol={firm.symbol} size={40} /> : <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-[10px] ${CAT_TINT[b.category]}`}><Icon size={19} /></span>}
         <div className="min-w-0 flex-1">
-          <div className="text-[15px] font-semibold">{b.name}</div>
-          <div className="text-[12px] text-muted">{CATEGORY_LABELS[b.category]} · entretien {eur(b.cost * MAINTENANCE_RATE)}/j</div>
+          <div className="truncate text-[15px] font-semibold">{firmAsset?.name ?? b.name}</div>
+          <div className="text-[12px] text-muted">{firmAsset ? `${BRANCH_EFFECTS[familyOf(firmAsset)].label} · entreprise implantée` : `${CATEGORY_LABELS[b.category]} · entretien ${eur(b.cost * MAINTENANCE_RATE)}/j`}</div>
         </div>
         <button onClick={onClose} aria-label="Fermer" className="rounded-[6px] p-1 text-muted hover:bg-slate-100"><X size={16} /></button>
       </div>
@@ -624,7 +643,11 @@ function SelectedPanel({ plot, city, confirmDemolish, onUpgrade, onMove, onDemol
           <Button onClick={onUpgrade} disabled={!canUpgrade || popLocked || offer.cost > game.cash} className="shrink-0 !px-3">{canUpgrade ? "Améliorer" : <Lock size={14} />}</Button>
         </div>
       )}
-      {b.buildable === false && <p className="mt-2.5 text-[12px] text-muted">Bâtiment d&apos;origine : il peut être déplacé mais pas démoli.</p>}
+      {firmAsset && (() => {
+        const e = BRANCH_EFFECTS[familyOf(firmAsset)], on = activeBranches(game).some((x) => x.symbol === firmAsset.symbol);
+        return <p className={`text-[12px] ${on ? "text-muted" : "text-danger"}`}>{on ? `${num(e.jobs)} emplois · +${num(e.revenue)} €/j. Le site tourne tant que vous gardez votre participation ; il se ferme depuis le bouton Entreprises.` : "En sommeil : vous ne détenez plus la participation de départ."}</p>;
+      })()}
+      {b.buildable === false && !firm && <p className="mt-2.5 text-[12px] text-muted">Bâtiment d&apos;origine : il peut être déplacé mais pas démoli.</p>}
       {confirmDemolish ? (
         <div className="mt-3 flex gap-2">
           <Button variant="danger" onClick={onDemolish} className="flex-1">Démolir (+{refund})</Button>

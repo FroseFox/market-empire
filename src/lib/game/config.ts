@@ -202,6 +202,8 @@ export const BUILDINGS: BuildingType[] = [
 
   // 🏛️ Bâtiments de départ (non constructibles)
   { id: "townhall", name: "Mairie", category: "civic", cost: 30_000, jobs: 30, energyUse: 5, buildable: false, description: "Administration de la ville" },
+  // 🏢 Site d'une entreprise implantée : un par entreprise, posé par le jeu (ses effets viennent de BRANCH_EFFECTS)
+  { id: "branch", name: "Site d'entreprise", category: "services", cost: 0, buildable: false, description: "Entreprise dont vous êtes actionnaire" },
   { id: "village", name: "Village d'origine", category: "housing", cost: 50_000, housing: 250, buildable: false, description: "250 logements" },
 ];
 

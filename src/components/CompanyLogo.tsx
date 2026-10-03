@@ -57,6 +57,18 @@ function logoUrl(a: Asset, size: number): string | null {
   return `https://img.logo.dev/ticker/${encodeURIComponent(a.providerSymbol)}?${q}`;
 }
 
+/** Ce qu'il faut pour dessiner l'enseigne d'une entreprise ailleurs que dans une page (carte de la ville) :
+ *  l'adresse du logo quand il existe, sinon un sigle et les couleurs du secteur. */
+export function companyBadge(symbol: string, size = 48): { src: string | null; label: string; colors: [string, string] } {
+  const asset = ASSET_BY_SYMBOL[symbol];
+  const base = asset?.short ?? symbol;
+  return {
+    src: asset && LOGO_KEY && !STATIC_MODE ? logoUrl(asset, size) : null,
+    label: base.length > 4 ? base.slice(0, 4) : base,
+    colors: SECTOR_TINT[asset?.sector ?? ""] ?? ["#0F172A", "#334155"],
+  };
+}
+
 export default function CompanyLogo({ symbol, size = 32 }: { symbol: string; size?: number }) {
   const asset = ASSET_BY_SYMBOL[symbol];
   const [failed, setFailed] = useState(false);
