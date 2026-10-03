@@ -56,7 +56,7 @@ interface Item { depth: number; ax: number; ay: number; draw: (t: number) => voi
 /** Indicateur affiché au-dessus d'un bâtiment (manque d'énergie, logements pleins…). */
 export type MarkerKind = "energy" | "food" | "full" | "staff" | "service";
 export interface CityMarker { x: number; y: number; kind: MarkerKind; label: string }
-const MARKER_COLOR: Record<MarkerKind, string> = { energy: "#EF4444", food: "#EF4444", full: "#F59E0B", staff: "#F59E0B", service: "#F59E0B" };
+export const MARKER_COLOR: Record<MarkerKind, string> = { energy: "#EF4444", food: "#EF4444", full: "#F59E0B", staff: "#F59E0B", service: "#F59E0B" };
 /** Hauteur approximative des bâtiments (pour poser l'indicateur au-dessus du toit). */
 const TOP: Record<string, number> = {
   village: 24, house_s: 22, house_m: 40, house_l: 64, house_xl: 108, shop: 22, services: 56, townhall: 42,
@@ -67,37 +67,37 @@ const TOP: Record<string, number> = {
 };
 
 /** Calque « Quartiers » : une couleur par catégorie, pour lire la ville d'un coup d'œil. */
-const CAT_COLOR: Record<Category, string> = {
+export const CAT_COLOR: Record<Category, string> = {
   housing: "#3B82F6", commerce: "#8B5CF6", services: "#0EA5E9", industry: "#64748B",
   agriculture: "#84CC16", energy: "#F59E0B", public: "#10B981", civic: "#4F46E5",
 };
-const LEGEND = (Object.keys(CAT_COLOR) as Category[]).filter((c) => c !== "civic");
+export const LEGEND = (Object.keys(CAT_COLOR) as Category[]).filter((c) => c !== "civic");
 
 // Éclairage choisi par le joueur : « auto » suit l'heure réelle, « day » garde la ville en plein jour.
-type Light = "auto" | "day";
+export type Light = "auto" | "day";
 const LIGHT_KEY = "market-empire-light";
 let lightPref: Light | null = null;
 const lightSubs = new Set<() => void>();
-function readLight(): Light {
+export function readLight(): Light {
   if (lightPref === null) {
     try { lightPref = localStorage.getItem(LIGHT_KEY) === "day" ? "day" : "auto"; } catch { lightPref = "auto"; }
   }
   return lightPref;
 }
-function setLight(v: Light) {
+export function setLight(v: Light) {
   lightPref = v;
   try { localStorage.setItem(LIGHT_KEY, v); } catch { /* préférence non mémorisée */ }
   lightSubs.forEach((l) => l());
 }
-const subLight = (cb: () => void) => { lightSubs.add(cb); return () => { lightSubs.delete(cb); }; };
+export const subLight = (cb: () => void) => { lightSubs.add(cb); return () => { lightSubs.delete(cb); }; };
 
 /** Image d'un bâtiment prête à être recopiée (et ses fenêtres allumées, pour la nuit). */
 interface Sprite { cv: HTMLCanvasElement; lit: HTMLCanvasElement | null; dx: number; dy: number; w: number; h: number }
 /** Au-delà de cette taille (zoom × densité d'écran), peu de bâtiments sont visibles : on dessine en direct. */
 const SPRITE_MAX_SCALE = 3;
 
-type ZoomKind = "in" | "out" | "reset";
-const ZOOM_BUTTONS: { kind: ZoomKind; label: string; text: string }[] = [
+export type ZoomKind = "in" | "out" | "reset";
+export const ZOOM_BUTTONS: { kind: ZoomKind; label: string; text: string }[] = [
   { kind: "in", label: "Zoomer", text: "+" },
   { kind: "out", label: "Dézoomer", text: "−" },
   { kind: "reset", label: "Recentrer", text: "⟲" },
@@ -105,7 +105,7 @@ const ZOOM_BUTTONS: { kind: ZoomKind; label: string; text: string }[] = [
 const MIN_ZOOM = 0.6, MAX_ZOOM = 4;
 
 /** 0 le jour, 1 la nuit, avec transitions à l'aube et au crépuscule (heure locale). */
-function nightFactor(d = new Date()) {
+export function nightFactor(d = new Date()) {
   const h = d.getHours() + d.getMinutes() / 60;
   if (h < 6 || h >= 21) return 1;
   if (h < 7.5) return 1 - (h - 6) / 1.5;
