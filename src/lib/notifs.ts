@@ -9,6 +9,7 @@ import { useGame } from "@/store/game";
 import * as E from "@/lib/game/engine";
 import { CITY_RANKS } from "@/lib/game/config";
 import { ASSET_BY_SYMBOL } from "@/lib/market/universe";
+import { play } from "@/lib/sound";
 
 export interface Notif { id: string; at: number; title: string; text: string; href: string; tone: "good" | "bad" | "info"; read: boolean }
 /** Variation sur un jour à partir de laquelle un actif détenu est signalé. */
@@ -36,7 +37,9 @@ export const useNotifs = create<Store>((set, get) => ({
     if (get().list.some((x) => x.id === n.id)) return; // déjà signalé
     const list = [{ ...n, at: Date.now(), read: false }, ...get().list].slice(0, MAX);
     set({ list }); save(list);
-    useGame.getState().notify(n.title, n.tone === "bad" ? "error" : "ok");
+    // Le message s'affiche sans passer par le son d'erreur : une notification a sa propre sonnerie
+    useGame.getState().notify(n.title, "ok");
+    play(n.id.startsWith("rank-") ? "rank" : "notify");
     // Onglet en arrière-plan : notification du navigateur si elle est autorisée
     if (get().system && typeof document !== "undefined" && document.hidden && typeof Notification !== "undefined" && Notification.permission === "granted") {
       try { new Notification(`Market Empire · ${n.title}`, { body: n.text, tag: n.id }); } catch { /* non pris en charge ici */ }

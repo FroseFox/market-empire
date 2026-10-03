@@ -3,11 +3,12 @@
 // Chaque étape se coche toute seule quand elle est faite ; le joueur peut replier ou quitter le guide.
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { BookOpen, ChevronDown, X } from "lucide-react";
 import { useGame } from "@/store/game";
 import { GUIDE, guideIndex } from "@/lib/game/guide";
 import Robot from "@/components/Robot";
+import { play } from "@/lib/sound";
 
 export default function Guide() {
   const game = useGame((s) => s.game);
@@ -16,9 +17,15 @@ export default function Guide() {
   const onCity = path.startsWith("/ville");
   // Sur la ville (plein écran), le guide démarre replié pour laisser voir la carte
   const [folded, setFolded] = useState<boolean | null>(null);
+  const index = guideIndex(game), finished = index < 0;
+  // Une étape vient d'être validée : petit son de réussite
+  const seen = useRef(index);
+  useEffect(() => {
+    if (index !== seen.current && !game.tutorialDone) play(finished ? "rank" : "ok");
+    seen.current = index;
+  }, [index, finished, game.tutorialDone]);
   if (game.tutorialDone) return null;
 
-  const index = guideIndex(game), finished = index < 0;
   const step = finished ? null : GUIDE[index];
   const isFolded = folded ?? onCity;
   const here = step && (step.href === "/" ? path === "/" : path.startsWith(step.href));
