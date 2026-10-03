@@ -251,3 +251,39 @@ describe("déménagement", () => {
     expect(E.periodReport(r.state, r.state.cash, Infinity).market).toBeCloseTo(0, 2);
   });
 });
+
+describe("rénovation, prévisions, audit", () => {
+  const ok = (r: E.ActionResult) => { if (!r.ok) throw new Error(r.error); return r.state; };
+  it("améliore un bâtiment sur place pour la différence de prix, après la recherche", () => {
+    let g = { ...newGame(T0), cash: 500_000, population: 600 };
+    g = ok(build(g, "house_s", T0, { x: 9, y: 9 }));
+    expect(E.upgrade(g, { x: 9, y: 9 }, T0).ok).toBe(false); // recherche manquante
+    g = ok(doResearch(g, "city_upgrade", T0));
+    const cash = g.cash, worth = g.cash + computeCity(g).assetValue;
+    g = ok(E.upgrade(g, { x: 9, y: 9 }, T0));
+    expect(g.cash).toBe(cash - 55_000);
+    expect(g.plots.find((p) => p.x === 9 && p.y === 9)?.id).toBe("house_m");
+    expect(g.buildings.house_s).toBeUndefined();
+    expect(g.cash + computeCity(g).assetValue).toBeCloseTo(worth, 2); // patrimoine inchangé
+    expect(normalize(g)).toBe(g);
+    // Un bâtiment offert au départ se paie au prix plein : le patrimoine ne gonfle pas
+    const shop = g.plots.find((p) => p.id === "shop")!;
+    const before = g.cash + computeCity(g).assetValue;
+    g = ok(E.upgrade(g, shop, T0));
+    expect(g.cash + computeCity(g).assetValue).toBeCloseTo(before, 2);
+    expect(E.upgrade(g, { x: 9, y: 9 }, T0).ok).toBe(false); // house_l : 2 000 habitants requis
+  });
+  it("la prévision suit ce que feront vraiment les prochains jours", () => {
+    let g = ok(build({ ...newGame(T0), cash: 500_000 }, "house_s", T0));
+    const f = E.forecast(g, 3);
+    for (let i = 0; i < 3; i++) g = tickDay(g, {}, T0 + i);
+    expect(f.population).toBe(g.population);
+    expect(f.net).toBeCloseTo(computeCity(g).net, 6);
+  });
+  it("l'audit d'un bâtiment tient compte du personnel et de l'entretien", () => {
+    const c = computeCity(newGame(T0));
+    const a = E.buildingAudit("shop", c);
+    expect(a.staffing).toBe(1);
+    expect(a.net).toBeCloseTo(120 - 5 * 2 * 0.7 - 15, 6);
+  });
+});

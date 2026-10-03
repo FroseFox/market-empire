@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import {
-  Bitcoin, ChartPie, LineChart, Link2, Check, Crosshair, DollarSign, Receipt, Rss, Earth, Euro, Gem, FlaskConical, Folder, FolderPlus, Filter, History, Landmark, LayoutGrid, Lock, Network, Newspaper, PieChart, Workflow,
+  Bitcoin, Building2, ChartPie, ClipboardCheck, Telescope, LineChart, Link2, Check, Crosshair, DollarSign, Receipt, Rss, Earth, Euro, Gem, FlaskConical, Folder, FolderPlus, Filter, History, Landmark, LayoutGrid, Lock, Network, Newspaper, PieChart, Workflow,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useGame } from "@/store/game";
@@ -14,6 +14,7 @@ const ICONS: Record<string, LucideIcon> = {
   hq: Landmark, us_stocks: DollarSign, eu_stocks: Euro, world_stocks: Earth, crypto: Bitcoin, commodities: Gem, etf: PieChart, history_1y: History, sector_view: LayoutGrid,
   relations_1: Network, supply_chain: Workflow, news_1: Newspaper, news_filters: Filter, folders_1: Folder, folders_plus: FolderPlus,
   realized_pnl: Receipt, portfolio_breakdown: ChartPie, chain_exposure: Crosshair, chain_news: Rss, folder_tracking: LineChart, folder_links: Link2,
+  city_upgrade: Building2, city_forecast: Telescope, city_audit: ClipboardCheck,
 };
 
 // Géométrie de l'arbre (en px, dans un cadre qui défile à l'horizontale sur mobile)
@@ -35,13 +36,13 @@ export default function ResearchPage() {
   const selStatus = status(sel);
   const owned = RESEARCH.filter((n) => done.has(n.id)).length;
 
-  // L'arbre se réduit pour tenir dans le cadre (jusqu'à 70 %, puis défile)
+  // L'arbre se réduit pour tenir dans le cadre (jusqu'à 60 %, puis défile)
   const frame = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
   useEffect(() => {
     const el = frame.current;
     if (!el) return;
-    const ro = new ResizeObserver(() => setScale(Math.max(0.7, Math.min(1, (el.clientWidth - 16) / WIDTH))));
+    const ro = new ResizeObserver(() => setScale(Math.max(0.6, Math.min(1, (el.clientWidth - 16) / WIDTH))));
     ro.observe(el);
     return () => ro.disconnect();
   }, []);

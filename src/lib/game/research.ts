@@ -2,7 +2,7 @@
 // jamais de bonus artificiel sur les gains (doc Projet §7).
 // Chaque nœud a une position dans l'arbre (colonne, niveau) et peut
 // demander plusieurs prérequis : les branches se rejoignent.
-export type Branch = "Racine" | "Marchés" | "Entreprises" | "Relations" | "Actualités" | "Dossiers";
+export type Branch = "Racine" | "Marchés" | "Entreprises" | "Relations" | "Actualités" | "Dossiers" | "Ville";
 
 export interface ResearchNode {
   id: string;
@@ -11,7 +11,7 @@ export interface ResearchNode {
   description: string;
   cost: number;
   requires: string[];
-  /** Position dans l'arbre : colonne (0 à 5, fractions permises) et niveau. */
+  /** Position dans l'arbre : colonne (0 à 6, fractions permises) et niveau. */
   col: number;
   row: number;
 }
@@ -44,6 +44,11 @@ export const RESEARCH: ResearchNode[] = [
   { id: "folder_links", branch: "Dossiers", name: "Entreprises liées au dossier", description: "Le dossier liste les fournisseurs, clients et concurrents de ses entreprises qui n'y figurent pas encore.", cost: 25_000, requires: ["folder_tracking"], col: 5, row: 4 },
   { id: "news_filters", branch: "Actualités", name: "Filtres avancés", description: "Filtrer les actualités par dossier, par thème et par pays.", cost: 8_000, requires: ["news_1", "folders_1"], col: 4.5, row: 2.6 },
   { id: "chain_news", branch: "Actualités", name: "Actualités de mes chaînes", description: "Un filtre pour les nouvelles qui touchent les fournisseurs, clients et concurrents de vos positions.", cost: 35_000, requires: ["news_filters", "supply_chain"], col: 4, row: 3.6 },
+
+  // Ville : des outils de gestion, jamais de revenu en plus
+  { id: "city_upgrade", branch: "Ville", name: "Rénovation urbaine", description: "Améliorez un bâtiment sur place vers sa version supérieure en payant seulement la différence de prix, sans le démolir.", cost: 15_000, requires: ["hq"], col: 6, row: 1 },
+  { id: "city_forecast", branch: "Ville", name: "Prévisions de la ville", description: "La Ville affiche la population et le flux net attendus dans 7 jours si rien ne change.", cost: 20_000, requires: ["city_upgrade"], col: 6, row: 2 },
+  { id: "city_audit", branch: "Ville", name: "Audit des bâtiments", description: "La fiche de chaque bâtiment montre ce qu'il rapporte et coûte réellement par jour, selon le personnel disponible et vos ressources.", cost: 30_000, requires: ["city_forecast"], col: 6, row: 3 },
 ];
 
 export const RESEARCH_BY_ID: Record<string, ResearchNode> = Object.fromEntries(RESEARCH.map((n) => [n.id, n]));
@@ -57,4 +62,5 @@ export const BRANCH_COLOR: Record<Branch, string> = {
   Relations: "#8B5CF6",
   "Actualités": "#F59E0B",
   Dossiers: "#10B981",
+  Ville: "#EC4899",
 };

@@ -11,6 +11,7 @@ import IsoCity from "@/components/IsoCity";
 import { computeAlerts, computeObjectives, type AlertLevel } from "@/lib/game/insights";
 import { compactEur, eur, num, pctPlain, signedEur, tone } from "@/lib/format";
 import { DAY_LENGTH_MINUTES } from "@/lib/game/config";
+import { CITY_RANKS } from "@/lib/game/config";
 import { periodReport, type Snapshot } from "@/lib/game/engine";
 
 type Period = "7 jours" | "30 jours" | "Tout";
@@ -108,6 +109,7 @@ export default function EconomyPage() {
         <Card title="Ville" icon={Building2} action={{ label: "Voir la ville", href: "/ville" }} className="xl:col-span-3">
           <div className="mb-4"><IsoCity plots={game.plots} height={130} compact /></div>
           <ul className="space-y-3 text-[13px]">
+            <CityLine label="Rang" value={CITY_RANKS[city.rank].name} sub={CITY_RANKS[city.rank + 1] ? `${CITY_RANKS[city.rank + 1].name} à ${num(CITY_RANKS[city.rank + 1].pop)} habitants` : "Rang maximal"} />
             <CityLine label="Population" value={num(game.population)} sub={`${num(city.housing)} logements`} />
             <CityLine label="Emplois" value={num(city.jobs)} sub={`${num(city.employed)} occupés`} />
             <CityLine label="Chômage" value={pctPlain(city.unemploymentRate)} sub={`${num(city.unemployed)} actifs sans emploi`} bad={city.unemploymentRate > 0.08} />
