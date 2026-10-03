@@ -41,12 +41,20 @@ export default function WikiPage() {
         <div className="space-y-4 xl:col-span-9">
           <Section id="demarrer" title="Démarrer">
             <div className="flex items-start gap-3">
-              <Robot size={56} />
               <div>
                 <p>Vous commencez avec <b>{eur(STARTING_CASH)}</b> et une petite ville de <b>{num(STARTING_POPULATION)} habitants</b>. Le but : bâtir un empire économique en investissant sur les vrais marchés et en développant votre ville.</p>
                 <p className="mt-2">La boucle du jeu : <b>argent → investissement → ville → population → économie</b>. La bourse est risquée et peut rapporter gros ; la ville rapporte moins, mais tous les jours.</p>
                 <p className="mt-2">Le jeu ne vous dira jamais d&apos;acheter ou de vendre, et il n&apos;invente aucun événement boursier : les cours et les actualités sont réels, c&apos;est vous qui décidez.</p>
-                {tutorialDone && <Button variant="secondary" onClick={reopen} className="mt-3">Relancer le guide du robot</Button>}
+                <p className="mt-2">Votre guide s&apos;appelle <b>Tic</b>. Il vous accompagne au début, vous accueille au retour d&apos;une absence et fête vos réussites.</p>
+                <div className="mt-3 flex flex-wrap gap-3">
+                  {([["happy", "Il vous guide"], ["think", "Il signale un souci"], ["cheer", "Il fête une réussite"]] as const).map(([mood, label]) => (
+                    <figure key={mood} className="flex w-[132px] flex-col items-center rounded-[14px] bg-slate-50 px-3 pb-2.5 pt-3">
+                      <Robot size={96} mood={mood} />
+                      <figcaption className="mt-1 text-center text-[11px] font-medium text-muted">{label}</figcaption>
+                    </figure>
+                  ))}
+                </div>
+                {tutorialDone && <Button variant="secondary" onClick={reopen} className="mt-3">Relancer le guide de Tic</Button>}
               </div>
             </div>
           </Section>

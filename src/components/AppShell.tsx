@@ -16,6 +16,8 @@ import Guide from "@/components/Guide";
 import AbsenceReport from "@/components/AbsenceReport";
 import NotifBell from "@/components/NotifBell";
 import { startNotifs } from "@/lib/notifs";
+import { startSoundEvents } from "@/lib/soundEvents";
+import SoundButton from "@/components/SoundButton";
 import AuthGate, { Splash } from "@/components/AuthGate";
 import { DAY_MS } from "@/lib/game/engine";
 import { eur } from "@/lib/format";
@@ -132,6 +134,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!hydrated) return;
     startNotifs();
+    startSoundEvents();
     if (STATIC_MODE) { startCloudSync(); startWorldSync(); return; }
     initAuth().then(startOnline);
   }, [hydrated]);
@@ -185,6 +188,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 <div className="leading-tight"><div className="text-[13px] font-semibold">{hydrated ? name : ""}</div><div className="text-[11px] text-muted">Investisseur</div></div>
               </div>
             ) : hydrated && <AccountMenu />}
+            {hydrated && <SoundButton />}
             {hydrated && <NotifBell />}
             <Link href="/ville" className="flex items-center gap-2 rounded-[12px] bg-success-soft px-3 py-1.5">
               <div className="leading-tight text-right">
