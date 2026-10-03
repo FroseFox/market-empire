@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Briefcase, Building2, Smile, Users, Wallet, Wheat, X, Zap } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import IsoCity from "@/components/IsoCity";
+import IsoCity from "@/components/City3D";
 import { CITY_RANKS } from "@/lib/game/config";
 import { computeCity } from "@/lib/game/engine";
 import { isBuildable, MAX_MAP_SIZE, type Plot } from "@/lib/game/layout";

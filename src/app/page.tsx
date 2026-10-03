@@ -7,7 +7,7 @@ import {
 import { useDerived } from "@/store/game";
 import { Card, Delta, PageHeader, Progress, Segmented, StatCard } from "@/components/ui";
 import { IncomeBars, WealthChart } from "@/components/charts";
-import IsoCity from "@/components/IsoCity";
+import IsoCity from "@/components/City3D";
 import { computeAlerts, computeObjectives, nextActions, type AlertLevel } from "@/lib/game/insights";
 import Robot from "@/components/Robot";
 import { compactEur, eur, num, pctPlain, signedEur, tone } from "@/lib/format";
