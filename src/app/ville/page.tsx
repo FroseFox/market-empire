@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import {
-  BarChart3, ArrowUpCircle, Briefcase, Building2, Ellipsis, Handshake, Sparkles, Wrench, Factory, FastForward, Hammer, Home, Landmark, LayoutList, Lock, MousePointerClick, Move, Pencil, RotateCcw, Smile, Store, Target, Trash2, Trees, TrendingUp, Trophy, Users, Wheat, X, Zap,
+  BarChart3, ArrowUpCircle, Briefcase, Copy, Undo2, Building2, Ellipsis, Handshake, Sparkles, Wrench, Factory, FastForward, Hammer, Home, Landmark, LayoutList, Lock, MousePointerClick, Move, Pencil, RotateCcw, Smile, Store, Target, Trash2, Trees, TrendingUp, Trophy, Users, Wheat, X, Zap,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useDerived, useGame } from "@/store/game";
@@ -10,7 +10,7 @@ import { Button, ConfirmButton, Progress } from "@/components/ui";
 import IsoCity, { type CityMarker, type CityMode, type CitySign, type MarkerKind } from "@/components/IsoCity";
 import CompanyLogo, { companyBadge } from "@/components/CompanyLogo";
 import { useMedia } from "@/lib/useMedia";
-import { activeBranches, branchAt, branchCost, branchLimit, buildingAudit, forecast, goalStatuses, hasResearch, isTileFree, prestige, renovateCost, upgradeOffer, type CityStats } from "@/lib/game/engine";
+import { activeBranches, branchAt, branchCost, mapSize, nextTerritory, branchLimit, buildingAudit, forecast, goalStatuses, hasResearch, isTileFree, prestige, renovateCost, upgradeOffer, type CityStats } from "@/lib/game/engine";
 import { BRANCH_EFFECTS, BRANCH_MIN_VALUE, FORECAST_DAYS, PROJECTS } from "@/lib/game/config";
 import { specialtyText } from "@/lib/world/countries";
 import { ASSET_BY_SYMBOL, familyOf } from "@/lib/market/universe";
@@ -64,6 +64,9 @@ export default function CityPage() {
   const notify = useGame((s) => s.notify);
   const claimGoal = useGame((s) => s.claimGoal);
   const upgrade = useGame((s) => s.upgrade);
+  const buildAuto = useGame((s) => s.buildAuto);
+  const undo = useGame((s) => s.undo);
+  const undoLast = useGame((s) => s.undoLast);
   const [tool, setTool] = useState<Tool>(null);
   const [mode, setMode] = useState<CityMode | null>(null);
   const [selected, setSelected] = useState<Tile | null>(null);
@@ -162,6 +165,7 @@ export default function CityPage() {
   } else if (selectedPlot && !mode) {
     dock = <SelectedPanel plot={selectedPlot} city={city} confirmDemolish={tool === "demolish"}
       onUpgrade={() => upgrade({ x: selectedPlot.x, y: selectedPlot.y })}
+      onCopy={() => { setSelected(null); setMode({ kind: "place", id: selectedPlot.id }); }}
       onMove={() => setMode({ kind: "move", id: selectedPlot.id, from: { x: selectedPlot.x, y: selectedPlot.y } })}
       onDemolish={() => { demolish(selectedPlot.id, { x: selectedPlot.x, y: selectedPlot.y }); setSelected(null); }}
       onClose={() => setSelected(null)} />;
@@ -189,7 +193,7 @@ export default function CityPage() {
   return (
     <div className="city-stage">
       <IsoCity plots={game.plots} height="fill" initialZoom={phone ? 1.3 : 1} mode={mode} selected={selected} onTileClick={onTileClick}
-        markers={markers} signs={signs} selectedTone={tool === "demolish" ? "danger" : "primary"}
+        markers={markers} signs={signs} mapSize={mapSize(game)} selectedTone={tool === "demolish" ? "danger" : "primary"}
         padTop={small ? 64 : 72} padBottom={small ? 76 : 84} zoomClass="left-3 top-[76px]" hint={false} />
 
       {/* Haut : ressources à gauche, budget à droite */}
@@ -222,6 +226,11 @@ export default function CityPage() {
           <div className="pointer-events-auto appear flex max-w-full items-center gap-2.5 rounded-full bg-primary py-1.5 pl-3.5 pr-1.5 text-[13px] text-white shadow-lg">
             <MousePointerClick size={15} className="shrink-0" />
             <span className="min-w-0 truncate">{hintText}</span>
+            {mode?.kind === "place" && modeBuilding && [1, 5].map((k) => (
+              <button key={k} onClick={() => { buildAuto(mode.id, k); if (useGame.getState().game.cash < modeBuilding.cost) setMode(null); }}
+                disabled={game.cash < modeBuilding.cost} title={`Construire ${k > 1 ? `${k} bâtiments` : "un bâtiment"}, placé${k > 1 ? "s" : ""} automatiquement`}
+                className="shrink-0 rounded-full bg-white px-2.5 py-1 text-[12px] font-semibold text-primary hover:bg-blue-50 disabled:opacity-50">Auto ×{k}</button>
+            ))}
             <button onClick={cancel} className="shrink-0 rounded-full bg-white/15 px-3 py-1 text-[12px] font-semibold hover:bg-white/25">{small ? "Annuler" : "Annuler (Échap)"}</button>
           </div>
         </div>
@@ -231,12 +240,17 @@ export default function CityPage() {
       <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex items-end gap-3 p-3">
         <div className="flex min-w-0 flex-1 flex-col items-start gap-2">
           {dock && <div className="pointer-events-auto w-full max-w-[900px]">{dock}</div>}
+          {undo && !dock && (
+            <button onClick={undoLast} className="hud pointer-events-auto appear inline-flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-semibold hover:border-slate-300">
+              <Undo2 size={14} className="text-primary" />Annuler : {undo.label.toLowerCase()}
+            </button>
+          )}
           <div className="hud pointer-events-auto flex max-w-full gap-1 overflow-x-auto no-scrollbar p-1.5" role="toolbar" aria-label="Outils de la ville">
             {TOOLS.map(({ id, label, icon: Icon, on, cls = "" }) => (
-              <button key={id} onClick={() => pickTool(id)} aria-pressed={on} title={label}
-                className={`relative flex min-w-[54px] shrink-0 flex-col items-center gap-0.5 rounded-[10px] px-2 py-1.5 text-[10px] font-semibold transition-colors sm:min-w-0 sm:flex-row sm:gap-2 sm:px-3.5 sm:py-2.5 sm:text-[13px] ${cls} ${
+              <button key={id} onClick={() => pickTool(id)} aria-pressed={on} title={label} aria-label={label}
+                className={`relative flex h-11 min-w-[40px] shrink-0 items-center justify-center gap-1.5 rounded-[10px] px-2 text-[12px] font-semibold transition-colors sm:h-auto sm:min-w-0 sm:gap-2 sm:px-3.5 sm:py-2.5 sm:text-[13px] ${cls} ${
                   on ? (id === "demolish" ? "bg-danger text-white" : "bg-primary text-white") : "text-ink hover:bg-slate-100"}`}>
-                <Icon size={18} strokeWidth={1.9} />{label}
+                <Icon size={18} strokeWidth={1.9} /><span className={on ? "" : "hidden sm:inline"}>{label}</span>
                 {id === "goals" && toClaim > 0 && (
                   <span className="absolute right-0.5 top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-success px-1 text-[10px] font-bold leading-none text-white" aria-label={`${toClaim} subvention${toClaim > 1 ? "s" : ""} à encaisser`}>{toClaim}</span>
                 )}
@@ -424,6 +438,8 @@ function Bar({ icon: Icon, label, value, ratio, tone: barTone }: { icon: LucideI
 function Progression({ city, population, goals, onClaim }: { city: CityStats; population: number; goals: ReturnType<typeof goalStatuses>; onClaim: (id: string) => void }) {
   const game = useGame((s) => s.game);
   const buildProject = useGame((s) => s.buildProject);
+  const expandTerritory = useGame((s) => s.expandTerritory);
+  const land = nextTerritory(game), size = mapSize(game);
   const rank = CITY_RANKS[city.rank], next = CITY_RANKS[city.rank + 1];
   const unlocks = next ? BUILDINGS.filter((b) => b.buildable !== false && (b.unlockPop ?? 0) > population && (b.unlockPop ?? 0) <= next.pop) : [];
   const needs = next ? SERVICE_IDS.filter((id) => SERVICES[id].needPop > population && SERVICES[id].needPop <= next.pop) : [];
@@ -452,6 +468,17 @@ function Progression({ city, population, goals, onClaim }: { city: CityStats; po
             )}
           </>
         ) : <p className="mt-2 text-[12px] text-muted">Rang maximal atteint.</p>}
+      </div>
+      <div className="flex items-center justify-between gap-3 border-t border-line pt-3">
+        <div className="min-w-0">
+          <div className="text-[13px] font-medium">Territoire : {size} × {size} carreaux</div>
+          <div className="text-[11px] text-muted">
+            {!land ? "Taille maximale atteinte." : city.rank < land.minRank ? `Agrandissement à ${land.size} × ${land.size} au rang « ${CITY_RANKS[land.minRank].name} ».` : `Agrandir à ${land.size} × ${land.size} : 4 carreaux de plus de chaque côté.`}
+          </div>
+        </div>
+        {land && (city.rank < land.minRank ? <span className="inline-flex shrink-0 items-center gap-1 text-[12px] font-semibold tabular text-muted"><Lock size={12} />{compactEur(land.cost)}</span>
+          : <ConfirmButton onConfirm={expandTerritory} disabled={land.cost > game.cash} confirmLabel="Confirmer"
+              className="shrink-0 rounded-[10px] bg-primary px-3 py-2 text-[13px] font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40">{compactEur(land.cost)}</ConfirmButton>)}
       </div>
       <div className="border-t border-line pt-3">
         <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted">Grands projets · {game.projects?.length ?? 0} / {PROJECTS.length}</div>
@@ -596,7 +623,7 @@ function Palette({ active, onPick, onClose }: { active: string | null; onPick: (
   );
 }
 
-function SelectedPanel({ plot, city, confirmDemolish, onUpgrade, onMove, onDemolish, onClose }: { plot: Plot; city: CityStats; confirmDemolish: boolean; onUpgrade: () => void; onMove: () => void; onDemolish: () => void; onClose: () => void }) {
+function SelectedPanel({ plot, city, confirmDemolish, onUpgrade, onCopy, onMove, onDemolish, onClose }: { plot: Plot; city: CityStats; confirmDemolish: boolean; onUpgrade: () => void; onCopy: () => void; onMove: () => void; onDemolish: () => void; onClose: () => void }) {
   const game = useGame((s) => s.game);
   const b = BUILDING_BY_ID[plot.id];
   if (!b) return null;
@@ -655,7 +682,10 @@ function SelectedPanel({ plot, city, confirmDemolish, onUpgrade, onMove, onDemol
         </div>
       ) : (
         <div className="mt-3 flex gap-2">
-          <Button variant="secondary" onClick={onMove} className="inline-flex flex-1 items-center justify-center gap-1.5"><Move size={15} />Déplacer</Button>
+          {b.buildable !== false && (
+            <Button variant="secondary" onClick={onCopy} disabled={b.cost > game.cash} title={`Poser un autre ${b.name} (${compactEur(b.cost)})`} className="inline-flex flex-1 items-center justify-center gap-1.5 !px-2"><Copy size={15} />Copier</Button>
+          )}
+          <Button variant="secondary" onClick={onMove} className="inline-flex flex-1 items-center justify-center gap-1.5 !px-2"><Move size={15} />Déplacer</Button>
           {b.buildable !== false && (
             <ConfirmButton onConfirm={onDemolish} confirmLabel={`Confirmer (+${refund})`}
               className="flex-1 rounded-[10px] border border-line bg-card px-3 py-2 text-[13px] font-semibold text-danger hover:bg-danger-soft">Démolir</ConfirmButton>

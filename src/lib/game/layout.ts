@@ -5,14 +5,23 @@ import { BUILDING_BY_ID, type Category } from "./config";
 
 export interface Plot { id: string; x: number; y: number }
 
+/** Côté de la carte de départ. Le territoire peut s'agrandir autour du même centre (voir TERRITORY dans config). */
 export const MAP_SIZE = 32;
+export const MAX_MAP_SIZE = 48;
 const CENTER = MAP_SIZE / 2;
+/** Limites d'une carte de côté `size`, centrée comme la carte de départ : carreaux de `lo` à `hi - 1`. */
+export function mapBounds(size = MAP_SIZE): { lo: number; hi: number } {
+  const lo = (MAP_SIZE - size) / 2;
+  return { lo, hi: lo + size };
+}
 
 export const isRoad = (x: number, y: number) => x % 4 === 0 || y % 4 === 0;
 
 /** Un carreau peut recevoir un bâtiment : dans la carte, hors route. */
-export const isBuildable = (x: number, y: number) =>
-  Number.isInteger(x) && Number.isInteger(y) && x >= 1 && y >= 1 && x < MAP_SIZE - 1 && y < MAP_SIZE - 1 && !isRoad(x, y);
+export function isBuildable(x: number, y: number, size = MAP_SIZE): boolean {
+  const { lo, hi } = mapBounds(size);
+  return Number.isInteger(x) && Number.isInteger(y) && x >= lo + 1 && y >= lo + 1 && x < hi - 1 && y < hi - 1 && !isRoad(x, y);
+}
 
 type Zone = "center" | "industry" | "farm";
 function zoneOf(cat: Category): Zone {
@@ -32,20 +41,21 @@ function sectorOf(x: number, y: number): Zone {
 }
 
 const TILES: { x: number; y: number; d: number; sector: Zone }[] = [];
-for (let x = 1; x < MAP_SIZE - 1; x++) {
-  for (let y = 1; y < MAP_SIZE - 1; y++) {
+const MAX = mapBounds(MAX_MAP_SIZE);
+for (let x = MAX.lo + 1; x < MAX.hi - 1; x++) {
+  for (let y = MAX.lo + 1; y < MAX.hi - 1; y++) {
     if (isRoad(x, y)) continue;
     TILES.push({ x, y, d: Math.hypot(x + 0.5 - CENTER, y + 0.5 - CENTER), sector: sectorOf(x, y) });
   }
 }
 
-export function placeTile(plots: Plot[], buildingId: string): { x: number; y: number } | null {
+export function placeTile(plots: Plot[], buildingId: string, size = MAP_SIZE): { x: number; y: number } | null {
   const zone = zoneOf(BUILDING_BY_ID[buildingId]?.category ?? "housing");
   const used = new Set(plots.map((p) => `${p.x},${p.y}`));
   let best: (typeof TILES)[number] | null = null;
   let bestScore = Infinity;
   for (const t of TILES) {
-    if (used.has(`${t.x},${t.y}`)) continue;
+    if (used.has(`${t.x},${t.y}`) || !isBuildable(t.x, t.y, size)) continue;
     const score = t.d + (t.sector === zone ? 0 : zone === "center" ? 4 : 7) + (t.x * 31 + t.y * 17) % 7 * 0.01;
     if (score < bestScore) { bestScore = score; best = t; }
   }
@@ -53,12 +63,12 @@ export function placeTile(plots: Plot[], buildingId: string): { x: number; y: nu
 }
 
 /** Reconstruit un plan à partir des bâtiments (anciennes sauvegardes). */
-export function layoutFrom(buildings: Record<string, number>): Plot[] {
+export function layoutFrom(buildings: Record<string, number>, size = MAP_SIZE): Plot[] {
   const plots: Plot[] = [];
   const order = ["village", "townhall", ...Object.keys(buildings).filter((k) => k !== "village" && k !== "townhall")];
   for (const id of order) {
     for (let i = 0; i < (buildings[id] ?? 0); i++) {
-      const t = placeTile(plots, id);
+      const t = placeTile(plots, id, size);
       if (t) plots.push({ id, ...t });
     }
   }

@@ -7,7 +7,7 @@ import type { LucideIcon } from "lucide-react";
 import IsoCity from "@/components/IsoCity";
 import { CITY_RANKS } from "@/lib/game/config";
 import { computeCity } from "@/lib/game/engine";
-import type { Plot } from "@/lib/game/layout";
+import { isBuildable, MAX_MAP_SIZE, type Plot } from "@/lib/game/layout";
 import { fetchCity, type PublicPlayer } from "@/lib/world/players";
 import { PLAYABLE } from "@/lib/world/countries";
 import { compactEur, num, pctPlain } from "@/lib/format";
@@ -68,7 +68,7 @@ export default function CityVisit({ player, onClose }: { player: PublicPlayer; o
         </div>
 
         <div className="relative min-h-0 flex-1">
-          {plots ? <IsoCity plots={plots} height="fill" zoomClass="right-3 top-3" />
+          {plots ? <IsoCity plots={plots} height="fill" zoomClass="right-3 top-3" mapSize={plots.some((p) => !isBuildable(p.x, p.y)) ? MAX_MAP_SIZE : undefined} />
             : (
               <div className="grid h-full place-items-center p-8 text-center text-[13px] text-muted" role="status">
                 {plots === undefined ? "Chargement de la ville…" : "Cette ville n'a pas encore publié son plan. Revenez plus tard : il apparaît dès que son joueur rouvre le jeu."}

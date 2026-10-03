@@ -49,7 +49,7 @@ export function simulate(days: number, claim = true): { days: SimDay[]; final: E
       if (!b) break;
       if (b.cost > g.cash) break; // il économise
       const r = E.build(g, b.id, d);
-      if (!r.ok || r.state.plots.length === g.plots.length) break; // plus de place
+      if (!r.ok) break; // plus de place
       g = r.state;
     }
     g = E.tickDay(g, {}, d);

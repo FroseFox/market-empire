@@ -282,6 +282,14 @@ export const RENOVATE_RATE = 0.03;
 /** Les attentes en équipements montent avec le rang : +10 % de pénalité par rang. */
 export const NEED_PER_RANK = 0.1;
 
+// ─── Territoire ───────────────────────────────────────────────
+/** Agrandissements du territoire : côté de la carte, prix, rang de ville minimal. Compté dans le patrimoine. */
+export const TERRITORY: { size: number; cost: number; minRank: number }[] = [
+  { size: 32, cost: 0, minRank: 0 },
+  { size: 40, cost: 2_000_000, minRank: 4 },
+  { size: 48, cost: 10_000_000, minRank: 6 },
+];
+
 // ─── Grands projets (fin de partie) ───────────────────────────
 export interface Project {
   id: string; name: string; description: string; cost: number;
