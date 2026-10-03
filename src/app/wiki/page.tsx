@@ -55,7 +55,8 @@ export default function WikiPage() {
                     </figure>
                   ))}
                 </div>
-                {tutorialDone && <Button variant="secondary" onClick={reopen} className="mt-3">Relancer le guide de Tic</Button>}
+                <p className="mt-3">Tic reste toujours disponible, en bas de l&apos;écran : une fois les premières étapes passées, il indique les gestes les plus utiles du moment. Vous pouvez le replier, il ne disparaît pas.</p>
+                {tutorialDone && <Button variant="secondary" onClick={reopen} className="mt-3">Revoir les étapes de démarrage</Button>}
               </div>
             </div>
           </Section>
