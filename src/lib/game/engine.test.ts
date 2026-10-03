@@ -329,6 +329,34 @@ describe("ville et bourse : entreprises implantées", () => {
     expect(E.openBranch(g, "MSFT", 400, T0).ok).toBe(false);
     expect(ok(E.closeBranch(g, "AAPL")).branches).toEqual([]);
   });
+  it("chaque entreprise implantée a son bâtiment sur la carte, qu'on retrouve après un déplacement", () => {
+    let g = { ...newGame(T0), cash: 2_000_000, population: 2_000 };
+    g = ok(buy(g, "AAPL", 60, 200, T0));
+    g = ok(buy(g, "MSFT", 40, 400, T0));
+    g = ok(E.openBranch(g, "AAPL", 200, T0));
+    g = ok(E.openBranch(g, "MSFT", 400, T0));
+    const sites = g.plots.filter((p) => p.id === "branch");
+    expect(sites).toHaveLength(2);
+    expect(g.buildings.branch).toBe(2);
+    expect(E.branchAt(g, sites[0].x, sites[0].y)?.symbol).toBe("AAPL");
+    expect(E.branchAt(g, sites[1].x, sites[1].y)?.symbol).toBe("MSFT");
+    expect(normalize(g)).toBe(g);
+    // Déplacer le bâtiment d'Apple : il reste celui d'Apple ; il ne se démolit pas
+    g = ok(moveBuilding(g, sites[0], { x: 1, y: 1 }));
+    expect(E.branchAt(g, 1, 1)?.symbol).toBe("AAPL");
+    expect(demolish(g, "branch", T0, { x: 1, y: 1 }).ok).toBe(false);
+    // Fermer Apple retire son bâtiment, pas celui de Microsoft
+    g = ok(E.closeBranch(g, "AAPL"));
+    expect(g.plots.filter((p) => p.id === "branch")).toEqual([sites[1]]);
+    expect(E.branchAt(g, sites[1].x, sites[1].y)?.symbol).toBe("MSFT");
+    expect(computeCity(g).cityValue).toBe(computeCity(newGame(T0)).cityValue); // le bâtiment ne coûte pas d'entretien
+    // Une partie d'avant ce bâtiment : il est posé à l'ouverture
+    const old = { ...g, buildings: { ...g.buildings }, plots: g.plots.filter((p) => p.id !== "branch") };
+    delete (old.buildings as Record<string, number>).branch;
+    const fixed = normalize(old);
+    expect(fixed.plots.filter((p) => p.id === "branch")).toHaveLength(1);
+    expect(fixed.buildings.branch).toBe(1);
+  });
   it("le coût d'implantation ne passe pas pour un gain ou une perte de bourse", () => {
     let g = ok(buy({ ...newGame(T0), cash: 300_000 }, "AAPL", 60, 200, T0));
     const fees = g.today!.fees;

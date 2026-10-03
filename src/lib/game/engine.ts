@@ -112,6 +112,7 @@ export interface GameState {
   history: Snapshot[];
 }
 
+/** Entreprise implantée. Son bâtiment sur la carte est le plot « branch » de même rang (1re entreprise ↔ 1er plot « branch »). */
 export interface Branch { symbol: string; minQty: number }
 export interface Contract { id: string; resource: "energy" | "food"; qty: number; side: "buy" | "sell"; partner: string }
 
@@ -560,6 +561,13 @@ export function openDesk(state: GameState, hubName: string, at: number): ActionR
 // ─── Entreprises implantées ───────────────────────────────────
 
 /** Nombre maximal d'entreprises implantées : une par rang de ville atteint. */
+/** Entreprise installée sur un carreau de la carte, s'il y en a une. */
+export function branchAt(state: Pick<GameState, "plots"> & Partial<Pick<GameState, "branches">>, x: number, y: number): Branch | undefined {
+  const sites = state.plots.filter((p) => p.id === "branch");
+  const i = sites.findIndex((p) => p.x === x && p.y === y);
+  return i < 0 ? undefined : state.branches?.[i];
+}
+
 export const branchLimit = (state: Pick<GameState, "population">) => cityRank(state.population) + 1;
 export const branchCost = (state: Partial<Pick<GameState, "branches">>) => BRANCH_COST * ((state.branches?.length ?? 0) + 1);
 
@@ -572,12 +580,16 @@ export function openBranch(state: GameState, symbol: string, price: number, at: 
   if ((state.branches?.length ?? 0) >= branchLimit(state)) return { ok: false, error: "Limite atteinte : une entreprise de plus à chaque rang de ville." };
   const cost = branchCost(state);
   if (cost > state.cash) return { ok: false, error: "Liquidités insuffisantes." };
+  const tile = placeTile(state.plots, "branch");
+  if (!tile) return { ok: false, error: "Plus de place sur la carte." };
   return {
     ok: true,
     state: {
       ...state,
       cash: round2(state.cash - cost),
       branches: [...(state.branches ?? []), { symbol, minQty: BRANCH_MIN_VALUE / price }],
+      buildings: { ...state.buildings, branch: (state.buildings.branch ?? 0) + 1 },
+      plots: [...state.plots, { id: "branch", ...tile }],
       today: spend(state, "extra", -cost),
       transactions: addTx(state, { kind: "build", label: `Implantation : ${asset.name}`, amount: -cost, at }),
     },
@@ -586,8 +598,13 @@ export function openBranch(state: GameState, symbol: string, price: number, at: 
 
 /** Ferme le site d'une entreprise (sans remboursement). */
 export function closeBranch(state: GameState, symbol: string): ActionResult {
-  if (!state.branches?.some((b) => b.symbol === symbol)) return { ok: false, error: "Cette entreprise n'est pas implantée." };
-  return { ok: true, state: { ...state, branches: state.branches.filter((b) => b.symbol !== symbol) } };
+  const index = state.branches?.findIndex((b) => b.symbol === symbol) ?? -1;
+  if (index < 0) return { ok: false, error: "Cette entreprise n'est pas implantée." };
+  // Son bâtiment est le plot « branch » de même rang
+  const plot = state.plots.filter((p) => p.id === "branch")[index];
+  const buildings: Record<string, number> = { ...state.buildings, branch: (state.buildings.branch ?? 1) - 1 };
+  if (buildings.branch <= 0) delete buildings.branch;
+  return { ok: true, state: { ...state, branches: state.branches!.filter((b) => b.symbol !== symbol), buildings, plots: state.plots.filter((p) => p !== plot) } };
 }
 
 // ─── Tensions et fin de partie ────────────────────────────────
@@ -817,6 +834,17 @@ export function normalize(input: GameState): GameState {
   if (!Array.isArray(state.research)) state = { ...state, research: [...STARTING_RESEARCH] };
   else if (STARTING_RESEARCH.some((r) => !state.research.includes(r))) state = { ...state, research: [...new Set([...STARTING_RESEARCH, ...state.research])] };
   if (!Array.isArray(state.folders)) state = { ...state, folders: [] };
+  // Une entreprise implantée = un bâtiment « branch » (les parties d'avant ce bâtiment n'en ont pas encore)
+  const sites = state.branches?.length ?? 0;
+  if ((state.buildings.branch ?? 0) !== sites) {
+    const buildings: Record<string, number> = { ...state.buildings, branch: sites };
+    if (!sites) delete buildings.branch;
+    const old = Array.isArray(state.plots) ? state.plots : [];
+    let fixed = [...old.filter((p) => p.id !== "branch"), ...old.filter((p) => p.id === "branch").slice(0, sites)];
+    const kept = fixed.filter((p) => p.id === "branch");
+    for (let i = kept.length; i < sites; i++) { const t = placeTile(fixed, "branch"); if (t) fixed = [...fixed, { id: "branch", ...t }]; }
+    state = { ...state, buildings, plots: fixed };
+  }
   const plots = Array.isArray(state.plots) ? state.plots : [];
   const counts: Record<string, number> = {};
   for (const p of plots) counts[p.id] = (counts[p.id] ?? 0) + 1;

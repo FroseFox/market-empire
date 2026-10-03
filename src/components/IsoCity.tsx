@@ -11,6 +11,18 @@ import { Layers, Moon, Sun } from "lucide-react";
 import { BUILDING_BY_ID, CATEGORY_LABELS, type Category } from "@/lib/game/config";
 import { isBuildable, isRoad, MAP_SIZE, type Plot } from "@/lib/game/layout";
 
+/** Enseigne d'une entreprise implantée, affichée au-dessus de son bâtiment. */
+export interface CitySign {
+  /** Adresse du logo ; sans logo (ou s'il ne charge pas), le sigle sur les couleurs du secteur. */
+  src: string | null; label: string; colors: [string, string];
+  /** Infobulle. */
+  title: string; text: string;
+  /** Site en sommeil : enseigne estompée. */
+  dim?: boolean;
+}
+/** Logos déjà demandés (une seule requête par adresse, partagée entre les vues). */
+const LOGOS = new Map<string, { img: HTMLImageElement; ok: boolean }>();
+
 export type CityMode = { kind: "place"; id: string } | { kind: "move"; id: string; from: { x: number; y: number } };
 
 const TW = 64, TH = 32; // taille d'un carreau à l'échelle 1
@@ -49,7 +61,7 @@ const MARKER_COLOR: Record<MarkerKind, string> = { energy: "#EF4444", food: "#EF
 const TOP: Record<string, number> = {
   village: 24, house_s: 22, house_m: 40, house_l: 64, house_xl: 108, shop: 22, services: 56, townhall: 42,
   factory_s: 40, factory_m: 46, factory_l: 56, farm_s: 14, farm_m: 24, farm_l: 32, power_s: 52, power_m: 50, power_l: 48,
-  park: 22, school: 26, hospital: 44,
+  park: 22, school: 26, hospital: 44, branch: 40,
   market: 18, hotel: 70, mall: 30, bank: 32, tech: 30, warehouse: 16, foodplant: 34, greenhouse: 10, ranch: 16,
   solar: 10, wind: 64, house_eco: 38, house_tower: 150, park_l: 26, university: 40, fire: 34,
 };
@@ -109,12 +121,14 @@ function hash(x: number, y: number) {
   return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
 }
 
-export default function IsoCity({ plots, height = 440, compact = false, mode = null, selected = null, onTileClick, initialZoom = 1, markers, selectedTone = "primary", padTop = 0, padBottom = 0, zoomClass = "right-3 top-3", hint = true }: {
+export default function IsoCity({ plots, height = 440, compact = false, mode = null, selected = null, onTileClick, initialZoom = 1, markers, signs, selectedTone = "primary", padTop = 0, padBottom = 0, zoomClass = "right-3 top-3", hint = true }: {
   plots: Plot[];
   /** Hauteur en pixels, ou "fill" pour occuper tout le parent (vue plein écran). */
   height?: number | "fill"; compact?: boolean;
   /** Indicateurs posés au-dessus des bâtiments. */
   markers?: CityMarker[];
+  /** Enseignes des entreprises implantées, par carreau (« x,y »). */
+  signs?: Record<string, CitySign>;
   /** Couleur du contour du carreau sélectionné. */
   selectedTone?: "primary" | "danger";
   /** Marges haute / basse occupées par l'interface : la ville est cadrée entre les deux. */
@@ -144,6 +158,7 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
   const selectedRef = useRef<{ x: number; y: number } | null>(null);
   const toneRef = useRef(selectedTone);
   const markersRef = useRef<Map<string, CityMarker>>(new Map());
+  const signsRef = useRef<Record<string, CitySign>>({});
   const clickRef = useRef<typeof onTileClick>(undefined);
   const controls = useRef<Controls | null>(null);
   const interactive = !!onTileClick;
@@ -159,6 +174,15 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
     toneRef.current = selectedTone;
     markersRef.current = new Map((markers ?? []).map((m) => [`${m.x},${m.y}`, m]));
     clickRef.current = onTileClick;
+    signsRef.current = signs ?? {};
+    // Logos des enseignes : chargés une fois, la carte est redessinée à leur arrivée
+    for (const sg of Object.values(signs ?? {})) {
+      if (!sg.src || LOGOS.has(sg.src)) continue;
+      const entry = { img: new Image(), ok: false };
+      LOGOS.set(sg.src, entry);
+      entry.img.onload = () => { entry.ok = true; redraw.current(); };
+      entry.img.src = sg.src;
+    }
     lightRef.current = light;
     layersRef.current = layers;
     redraw.current();
@@ -668,6 +692,13 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
           }
           break;
         }
+        case "branch": {
+          const h = H(30);
+          block(x + 0.14, y + 0.14, x + 0.86, y + 0.86, 0, h, "#E2E8F0", "#F8FAFC", "#C9D3E0");
+          windows(x + 0.14, y + 0.14, x + 0.86, y + 0.86, 0, h, 7);
+          block(x + 0.26, y + 0.26, x + 0.74, y + 0.74, h, H(3), "#F1F5F9", "#CBD5E1", "#94A3B8");
+          break;
+        }
         case "park": {
           poly([iso(x + 0.06, y + 0.06), iso(x + 0.94, y + 0.06), iso(x + 0.94, y + 0.94), iso(x + 0.06, y + 0.94)], "#8FD27C");
           poly([iso(x + 0.06, y + 0.44), iso(x + 0.94, y + 0.44), iso(x + 0.94, y + 0.56), iso(x + 0.06, y + 0.56)], "#EADFC4");
@@ -712,6 +743,7 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
           if (p.id !== "factory_s") smoke(x + 0.68, y + 0.1, 28 * big + 2, t + 900 + y * 300);
           break;
         }
+        case "branch": sign(p); break;
         case "power_s": turbine(x + 0.8, y + 0.5, reduce ? 0 : t + x * 97); break;
         case "wind":
           turbine(x + 0.25, y + 0.25, reduce ? 0 : t + x * 97);
@@ -722,6 +754,38 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
         case "power_m": if (!reduce) smoke(x + 0.83, y + 0.17, 46, t + y * 200); break;
         case "power_l": if (!reduce) { smoke(x + 0.3, y + 0.35, 42, t); smoke(x + 0.7, y + 0.72, 42, t + 1300); } break;
       }
+    }
+
+    /** Enseigne d'une entreprise : un panneau sur le toit avec son logo (ou son sigle), toujours lisible. */
+    function sign(p: Plot) {
+      const sg = signsRef.current[`${p.x},${p.y}`];
+      if (!sg) return;
+      const size = Math.max(20, Math.min(64, 28 * scale));
+      const [px, roof] = iso(p.x + 0.5, p.y + 0.5, 33);
+      const top = roof - size - 5 * scale, left = px - size / 2, r = size * 0.22;
+      const alpha = g.globalAlpha;
+      g.globalAlpha = alpha * (sg.dim ? 0.45 : 1);
+      // Mât
+      g.strokeStyle = "#64748B"; g.lineWidth = Math.max(1.2, 1.6 * scale);
+      g.beginPath(); g.moveTo(px, roof); g.lineTo(px, top + size); g.stroke();
+      const panel = () => { g.beginPath(); if (g.roundRect) g.roundRect(left, top, size, size, r); else g.rect(left, top, size, size); };
+      g.fillStyle = "rgba(15,23,42,.18)"; g.beginPath(); if (g.roundRect) g.roundRect(left + 1.5, top + 2, size, size, r); else g.rect(left + 1.5, top + 2, size, size); g.fill();
+      const logo = sg.src ? LOGOS.get(sg.src) : undefined;
+      if (logo?.ok) {
+        panel(); g.fillStyle = "#FFFFFF"; g.fill();
+        g.save(); panel(); g.clip();
+        g.drawImage(logo.img, left, top, size, size);
+        g.restore();
+      } else {
+        const grad = g.createLinearGradient(left, top, left + size, top + size);
+        grad.addColorStop(0, sg.colors[0]); grad.addColorStop(1, sg.colors[1]);
+        panel(); g.fillStyle = grad; g.fill();
+        g.fillStyle = "#FFFFFF"; g.textAlign = "center"; g.textBaseline = "middle";
+        g.font = `700 ${Math.round(size * (sg.label.length > 3 ? 0.3 : 0.38))}px Montserrat, system-ui, sans-serif`;
+        g.fillText(sg.label, px, top + size / 2 + 0.5);
+      }
+      panel(); g.lineWidth = 1.5; g.strokeStyle = "#FFFFFF"; g.stroke();
+      g.globalAlpha = alpha;
     }
 
     // ─── Images de bâtiments ───
@@ -1243,7 +1307,8 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
         // Infobulle ancrée au-dessus du bâtiment (elle ne suit pas la souris)
         const [ax, ay] = iso(tx + 0.5, ty + 0.5, (TOP[p.id] ?? 30) + 4);
         const mk = markersRef.current.get(`${tx},${ty}`);
-        setTip({ left: ax, top: ay - (mk ? 34 : 6), title: b?.name ?? p.id, text: mk?.label ?? b?.description ?? "", warn: !!mk });
+        const sg = signsRef.current[`${tx},${ty}`];
+        setTip({ left: ax, top: ay - (mk ? 34 : sg ? 30 : 6), title: sg?.title ?? b?.name ?? p.id, text: mk?.label ?? sg?.text ?? b?.description ?? "", warn: !!mk });
       } else setTip(null);
       if (!raf) frame(performance.now());
     };
