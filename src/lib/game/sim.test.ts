@@ -13,8 +13,8 @@ describe("rythme de progression de la ville (robot)", () => {
     expect(reached(1)).toBeLessThan(100);   // Bourg : quelques jours réels
     expect(reached(2)).toBeLessThan(330);   // Petite ville : moins de 2 semaines
   });
-  it("le dernier rang demande entre 3 semaines et un peu plus d'un mois", () => {
-    const last = reached(CITY_RANKS.length - 1);
+  it("devenir capitale économique demande entre 3 semaines et un peu plus d'un mois", () => {
+    const last = reached(CITY_RANKS.findIndex((r) => r.name === "Capitale économique"));
     expect(last).toBeGreaterThan(500);
     expect(last).toBeLessThan(900);
   });

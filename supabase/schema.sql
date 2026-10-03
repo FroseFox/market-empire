@@ -46,6 +46,7 @@ create table public.players (             -- profil public : classement et carte
   population integer not null default 0, perf real not null default 0, day integer not null default 1,
   updated_at timestamptz not null default now(),
   city jsonb check (city is null or pg_column_size(city) <= 16384),  -- plan public de la ville (visites)
+  offer jsonb,                                                       -- surplus annoncé : {"energy": n, "food": n}
   flagged boolean not null default false, flag_reason text,          -- sauvegarde impossible : retiré du classement
   nw_ref bigint, nw_ref_at timestamptz                               -- référence du garde-fou (migrations/20261003b_ranking_guard.sql)
 );
@@ -55,6 +56,8 @@ create table public.saves (               -- sauvegarde privée, une ligne par j
   saved_at bigint not null, updated_at timestamptz not null default now()
 );
 
+-- Commerce entre joueurs (migrations/20261003c_trade.sql) : players.offer (surplus annoncé), table contracts
+-- (lecture de SES contrats uniquement), vue public.market, fonctions publish_offer / sign_contract / cancel_contract.
 -- Vue public.ranking : players sans les joueurs signalés et sans le plan de ville (c'est elle que lit le classement).
 -- Déclencheur players_guard : signale les sauvegardes impossibles (jours en avance, population ou patrimoine impossibles).
 

@@ -36,6 +36,11 @@ interface Store {
   renameCity: (name: string) => boolean;
   claimGoal: (id: string) => boolean;
   upgrade: (tile: { x: number; y: number }) => boolean;
+  openBranch: (symbol: string) => boolean;
+  closeBranch: (symbol: string) => void;
+  openDesk: (hub: string) => boolean;
+  renovate: () => boolean;
+  buildProject: (id: string) => boolean;
   closeTutorial: () => void;
   skipDay: () => void;
   reset: () => void;
@@ -155,6 +160,38 @@ export const useGame = create<Store>()(
         if (!r.ok) { get().notify(r.error, "error"); return false; }
         set({ game: r.state });
         get().notify("Bâtiment amélioré");
+        return true;
+      },
+      openBranch: (symbol) => {
+        const r = E.openBranch(get().game, symbol, get().quotes[symbol]?.price ?? 0, Date.now());
+        if (!r.ok) { get().notify(r.error, "error"); return false; }
+        set({ game: r.state });
+        get().notify("Entreprise implantée dans votre ville");
+        return true;
+      },
+      closeBranch: (symbol) => {
+        const r = E.closeBranch(get().game, symbol);
+        if (r.ok) set({ game: r.state });
+      },
+      openDesk: (hub) => {
+        const r = E.openDesk(get().game, hub, Date.now());
+        if (!r.ok) { get().notify(r.error, "error"); return false; }
+        set({ game: r.state });
+        get().notify(`Bureau ouvert à ${hub}`);
+        return true;
+      },
+      renovate: () => {
+        const r = E.renovate(get().game, Date.now());
+        if (!r.ok) { get().notify(r.error, "error"); return false; }
+        set({ game: r.state });
+        get().notify("Ville rénovée");
+        return true;
+      },
+      buildProject: (id) => {
+        const r = E.buildProject(get().game, id, Date.now());
+        if (!r.ok) { get().notify(r.error, "error"); return false; }
+        set({ game: r.state });
+        get().notify("Grand projet achevé");
         return true;
       },
       closeTutorial: () => set({ game: { ...get().game, tutorialDone: true } }),
