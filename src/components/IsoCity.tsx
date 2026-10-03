@@ -3,8 +3,11 @@
 // Tout est calculé à partir de `plots` : aucune image externe.
 // Navigation : molette / pincement (zoom vers le curseur), glisser, double-clic, clavier (flèches, + / −, 0).
 // La ville suit l'heure réelle : elle s'assombrit le soir et les fenêtres s'allument.
-import { useEffect, useRef, useState } from "react";
-import { BUILDING_BY_ID } from "@/lib/game/config";
+// Performances : chaque type de bâtiment est dessiné une fois puis réutilisé comme image tant que le zoom ne bouge pas,
+// et la ville au repos est animée à 30 images par seconde.
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { Layers, Moon, Sun } from "lucide-react";
+import { BUILDING_BY_ID, CATEGORY_LABELS, type Category } from "@/lib/game/config";
 import { isBuildable, isRoad, MAP_SIZE, type Plot } from "@/lib/game/layout";
 
 export type CityMode = { kind: "place"; id: string } | { kind: "move"; id: string; from: { x: number; y: number } };
@@ -37,14 +40,45 @@ type Pt = [number, number];
 interface Item { depth: number; ax: number; ay: number; draw: (t: number) => void }
 
 /** Indicateur affiché au-dessus d'un bâtiment (manque d'énergie, logements pleins…). */
-export type MarkerKind = "energy" | "food" | "full" | "staff";
+export type MarkerKind = "energy" | "food" | "full" | "staff" | "service";
 export interface CityMarker { x: number; y: number; kind: MarkerKind; label: string }
-const MARKER_COLOR: Record<MarkerKind, string> = { energy: "#EF4444", food: "#EF4444", full: "#F59E0B", staff: "#F59E0B" };
+const MARKER_COLOR: Record<MarkerKind, string> = { energy: "#EF4444", food: "#EF4444", full: "#F59E0B", staff: "#F59E0B", service: "#F59E0B" };
 /** Hauteur approximative des bâtiments (pour poser l'indicateur au-dessus du toit). */
 const TOP: Record<string, number> = {
   village: 24, house_s: 22, house_m: 40, house_l: 64, house_xl: 108, shop: 22, services: 56, townhall: 42,
   factory_s: 40, factory_m: 46, factory_l: 56, farm_s: 14, farm_m: 24, farm_l: 32, power_s: 52, power_m: 50, power_l: 48,
+  park: 22, school: 26, hospital: 44,
 };
+
+/** Calque « Quartiers » : une couleur par catégorie, pour lire la ville d'un coup d'œil. */
+const CAT_COLOR: Record<Category, string> = {
+  housing: "#3B82F6", commerce: "#8B5CF6", services: "#0EA5E9", industry: "#64748B",
+  agriculture: "#84CC16", energy: "#F59E0B", public: "#10B981", civic: "#4F46E5",
+};
+const LEGEND = (Object.keys(CAT_COLOR) as Category[]).filter((c) => c !== "civic");
+
+// Éclairage choisi par le joueur : « auto » suit l'heure réelle, « day » garde la ville en plein jour.
+type Light = "auto" | "day";
+const LIGHT_KEY = "market-empire-light";
+let lightPref: Light | null = null;
+const lightSubs = new Set<() => void>();
+function readLight(): Light {
+  if (lightPref === null) {
+    try { lightPref = localStorage.getItem(LIGHT_KEY) === "day" ? "day" : "auto"; } catch { lightPref = "auto"; }
+  }
+  return lightPref;
+}
+function setLight(v: Light) {
+  lightPref = v;
+  try { localStorage.setItem(LIGHT_KEY, v); } catch { /* préférence non mémorisée */ }
+  lightSubs.forEach((l) => l());
+}
+const subLight = (cb: () => void) => { lightSubs.add(cb); return () => { lightSubs.delete(cb); }; };
+
+/** Image d'un bâtiment prête à être recopiée (et ses fenêtres allumées, pour la nuit). */
+interface Sprite { cv: HTMLCanvasElement; lit: HTMLCanvasElement | null; dx: number; dy: number; w: number; h: number }
+/** Au-delà de cette taille (zoom × densité d'écran), peu de bâtiments sont visibles : on dessine en direct. */
+const SPRITE_MAX_SCALE = 3;
 
 type ZoomKind = "in" | "out" | "reset";
 const ZOOM_BUTTONS: { kind: ZoomKind; label: string; text: string }[] = [
@@ -109,6 +143,10 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
   const clickRef = useRef<typeof onTileClick>(undefined);
   const controls = useRef<Controls | null>(null);
   const interactive = !!onTileClick;
+  const light = useSyncExternalStore(subLight, readLight, () => "auto" as Light);
+  const [layers, setLayers] = useState(false);
+  const lightRef = useRef<Light>(light);
+  const layersRef = useRef(layers);
 
   // Les props qui changent souvent passent par des refs : pas besoin de tout redessiner la scène
   useEffect(() => {
@@ -117,6 +155,8 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
     toneRef.current = selectedTone;
     markersRef.current = new Map((markers ?? []).map((m) => [`${m.x},${m.y}`, m]));
     clickRef.current = onTileClick;
+    lightRef.current = light;
+    layersRef.current = layers;
     redraw.current();
   });
 
@@ -150,10 +190,11 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
 
     // Repère les nouveaux bâtiments pour l'animation de construction
     const nowMs = performance.now();
+    let growUntil = 0;
     if (seen.current === null) seen.current = new Set(plots.map(keyOf));
     for (const p of plots) {
       const k = keyOf(p);
-      if (!seen.current.has(k)) { seen.current.add(k); births.current.set(k, nowMs); }
+      if (!seen.current.has(k)) { seen.current.add(k); births.current.set(k, nowMs); growUntil = nowMs + 900; }
     }
 
     // Zone visible : autour des bâtiments (plus large en mode construction, pour avoir de la place)
@@ -229,7 +270,12 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
       const sx = ox + (ax - ay) * (TW / 2) * scale, sy = oy + (ax + ay) * (TH / 2) * scale;
       return sx > -90 * scale && sx < W + 90 * scale && sy > -40 * scale && sy < H + 130 * scale;
     };
-    let night = nightFactor(), nightAt = performance.now();
+    const nightNow = () => (lightRef.current === "day" ? 0 : nightFactor());
+    let night = nightNow(), nightAt = performance.now(), lightSeen = lightRef.current;
+    // Pendant la préparation d'une image de bâtiment : pas d'effets animés, fenêtres toujours relevées
+    let baking = false, vsForce = -1;
+    /** Variante (0 à 2) d'un bâtiment selon son carreau : couleur des champs, fenêtres allumées. */
+    const vsOf = (x: number, y: number) => (vsForce >= 0 ? vsForce : (Math.floor(x) + Math.floor(y)) % 3);
 
     // ─── Primitives ───
     const poly = (pts: Pt[], fill: string, stroke?: string) => {
@@ -250,6 +296,7 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
 
     /** Fenêtres sur les deux faces visibles d'un pavé. */
     function windows(ax: number, ay: number, bx: number, by: number, z0: number, h: number, floor = 9, lit = C.win) {
+      const vs = vsOf(ax, ay), fx0 = Math.floor(ax), fy0 = Math.floor(ay), collect = baking || night > 0;
       const rows = Math.floor((h - 4) / floor);
       for (let r = 0; r < rows; r++) {
         const z = z0 + 4 + r * floor;
@@ -258,14 +305,14 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
           const u0 = ax + (bx - ax) * ((c + 0.25) / cols), u1 = ax + (bx - ax) * ((c + 0.75) / cols);
           const q: Pt[] = [iso(u0, by, z), iso(u1, by, z), iso(u1, by, z + floor * 0.5), iso(u0, by, z + floor * 0.5)];
           poly(q, lit);
-          if (night > 0 && hash(Math.round(u0 * 97), Math.round(z * 3)) < 0.7) lights.push(q);
+          if (collect && hash(Math.round((u0 - fx0) * 97) + vs * 131, Math.round(z * 3)) < 0.7) lights.push(q);
         }
         const cols2 = Math.max(2, Math.round((by - ay) * 5));
         for (let c = 0; c < cols2; c++) {
           const v0 = ay + (by - ay) * ((c + 0.25) / cols2), v1 = ay + (by - ay) * ((c + 0.75) / cols2);
           const q: Pt[] = [iso(bx, v0, z), iso(bx, v1, z), iso(bx, v1, z + floor * 0.5), iso(bx, v0, z + floor * 0.5)];
           poly(q, C.winDark);
-          if (night > 0 && hash(Math.round(v0 * 89), Math.round(z * 5)) < 0.55) lights.push(q);
+          if (collect && hash(Math.round((v0 - fy0) * 89) + vs * 57, Math.round(z * 5)) < 0.55) lights.push(q);
         }
       }
     }
@@ -282,10 +329,10 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
       poly([iso(dx, by, 0), iso(dx + 0.08, by, 0), iso(dx + 0.08, by, 5), iso(dx, by, 5)], "#94A3B8");
     }
 
-    function tree(x: number, y: number, s = 1) {
+    function tree(x: number, y: number, s = 1, pine = hash(Math.round(x * 13), Math.round(y * 17)) < 0.35) {
       const [px, py] = iso(x, y, 0);
       g.fillStyle = C.shadow; g.beginPath(); g.ellipse(px + 3 * scale, py, 6 * s * scale, 3 * s * scale, 0, 0, Math.PI * 2); g.fill();
-      if (hash(Math.round(x * 13), Math.round(y * 17)) < 0.35) {
+      if (pine) {
         // Sapin
         g.fillStyle = C.trunk; g.fillRect(px - 1 * scale, py - 5 * s * scale, 2 * scale, 5 * s * scale);
         for (let i = 0; i < 3; i++) {
@@ -339,7 +386,7 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
     }
 
     function field(x: number, y: number, rows: string[]) {
-      poly([iso(x + 0.06, y + 0.06), iso(x + 0.94, y + 0.06), iso(x + 0.94, y + 0.94), iso(x + 0.06, y + 0.94)], C.crops[(x + y) % 3]);
+      poly([iso(x + 0.06, y + 0.06), iso(x + 0.94, y + 0.06), iso(x + 0.94, y + 0.94), iso(x + 0.06, y + 0.94)], C.crops[vsOf(x, y)]);
       for (let i = 1; i < 6; i++) {
         const v = y + 0.06 + (0.88 * i) / 6;
         const a = iso(x + 0.1, v), b = iso(x + 0.9, v);
@@ -362,7 +409,7 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
         case "house_s":
           house(x + 0.12, y + 0.14, x + 0.48, y + 0.5, H(11));
           house(x + 0.56, y + 0.52, x + 0.9, y + 0.88, H(10), "#D08C5B", "#A96F46");
-          if (grow >= 1) tree(x + 0.78, y + 0.25, 0.8);
+          if (grow >= 1) tree(x + 0.78, y + 0.25, 0.8, vsOf(x, y) === 0);
           break;
         case "house_m": {
           const h = H(34);
@@ -430,8 +477,6 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
             poly([iso(a, y + 0.2, h), iso(b, y + 0.2, h), iso(b, y + 0.2, h + 6), iso(a, y + 0.2, h)], "#8391A5");
             poly([iso(b, y + 0.2, h), iso(b, y + 0.9, h), iso(b, y + 0.9, h + 6), iso(b, y + 0.2, h + 6)], "#9AA7B8");
           }
-          if (grow >= 1 && !reduce) smoke(x + 0.2, y + 0.12, 34 * big + 2, t + x * 400);
-          if (grow >= 1 && p.id !== "factory_s" && !reduce) smoke(x + 0.68, y + 0.1, 28 * big + 2, t + 900 + y * 300);
           break;
         }
         case "farm_s": case "farm_m": case "farm_l":
@@ -445,24 +490,117 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
             const v = y + 0.18 + i * 0.24;
             poly([iso(x + 0.12, v, 3), iso(x + 0.62, v, 3), iso(x + 0.62, v + 0.16, 7 * grow), iso(x + 0.12, v + 0.16, 7 * grow)], i % 2 ? C.panelHi : C.panel, "rgba(255,255,255,.25)");
           }
-          if (grow >= 1) turbine(x + 0.8, y + 0.5, reduce ? 0 : t + x * 97);
           break;
         case "power_m": {
           const h = H(20);
           block(x + 0.76, y + 0.1, x + 0.9, y + 0.24, 0, H(44), "#6B778A", C.chimney, "#465264");
           block(x + 0.1, y + 0.35, x + 0.7, y + 0.9, 0, h, C.indTop, "#D5DCE5", "#A5B1C2");
           poly([iso(x + 0.1, y + 0.9, h * 0.35), iso(x + 0.7, y + 0.9, h * 0.35), iso(x + 0.7, y + 0.9, h * 0.5), iso(x + 0.1, y + 0.9, h * 0.5)], C.amber);
-          if (grow >= 1 && !reduce) smoke(x + 0.83, y + 0.17, 46, t + y * 200);
           break;
         }
         case "power_l":
           coolingTower(x + 0.3, y + 0.35, 11, H(40));
           coolingTower(x + 0.7, y + 0.72, 11, H(40));
-          if (grow >= 1 && !reduce) { smoke(x + 0.3, y + 0.35, 42, t); smoke(x + 0.7, y + 0.72, 42, t + 1300); }
           break;
+        case "park": {
+          poly([iso(x + 0.06, y + 0.06), iso(x + 0.94, y + 0.06), iso(x + 0.94, y + 0.94), iso(x + 0.06, y + 0.94)], "#8FD27C");
+          poly([iso(x + 0.06, y + 0.44), iso(x + 0.94, y + 0.44), iso(x + 0.94, y + 0.56), iso(x + 0.06, y + 0.56)], "#EADFC4");
+          const [wx, wy] = iso(x + 0.7, y + 0.78);
+          g.fillStyle = "#7CC4F0"; g.beginPath(); g.ellipse(wx, wy, 9 * scale, 4.5 * scale, 0, 0, Math.PI * 2); g.fill();
+          block(x + 0.44, y + 0.16, x + 0.58, y + 0.3, 0, H(6), "#F59E0B", "#F8FAFC", "#CBD5E1");
+          if (grow >= 1) { tree(x + 0.24, y + 0.22, 0.9, false); tree(x + 0.78, y + 0.24, 0.8, true); tree(x + 0.24, y + 0.78, 0.85, false); }
+          break;
+        }
+        case "school": {
+          const h = H(16);
+          poly([iso(x + 0.72, y + 0.14), iso(x + 0.92, y + 0.14), iso(x + 0.92, y + 0.86), iso(x + 0.72, y + 0.86)], "#7DC98A");
+          block(x + 0.1, y + 0.14, x + 0.68, y + 0.86, 0, h, "#F2B544", "#FFF7E0", "#E8D5A8");
+          windows(x + 0.1, y + 0.14, x + 0.68, y + 0.86, 0, h, 7);
+          block(x + 0.3, y + 0.4, x + 0.48, y + 0.6, h, H(8), "#D9962B", "#FFF7E0", "#E8D5A8");
+          break;
+        }
+        case "hospital": {
+          const h = H(38);
+          block(x + 0.18, y + 0.1, x + 0.74, y + 0.5, 0, h, "#F8FAFC", "#FFFFFF", "#D7DEE7");
+          windows(x + 0.18, y + 0.1, x + 0.74, y + 0.5, 0, h, 7);
+          poly([iso(x + 0.41, y + 0.18, h + 0.4), iso(x + 0.51, y + 0.18, h + 0.4), iso(x + 0.51, y + 0.42, h + 0.4), iso(x + 0.41, y + 0.42, h + 0.4)], "#EF4444");
+          poly([iso(x + 0.34, y + 0.25, h + 0.4), iso(x + 0.58, y + 0.25, h + 0.4), iso(x + 0.58, y + 0.35, h + 0.4), iso(x + 0.34, y + 0.35, h + 0.4)], "#EF4444");
+          block(x + 0.1, y + 0.52, x + 0.9, y + 0.9, 0, H(16), "#E0F2FE", "#FFFFFF", "#D7DEE7");
+          windows(x + 0.1, y + 0.52, x + 0.9, y + 0.9, 0, H(16), 7);
+          break;
+        }
         default:
           block(x + 0.2, y + 0.2, x + 0.8, y + 0.8, 0, H(14), C.wallTop, C.wallL, C.wallR);
       }
+      if (!baking && grow >= 1) effects(p, t);
+    }
+
+    /** Parties animées d'un bâtiment (fumée, éolienne), dessinées par-dessus son image. */
+    function effects(p: Plot, t: number) {
+      const { x, y } = p;
+      switch (p.id) {
+        case "factory_s": case "factory_m": case "factory_l": {
+          if (reduce) break;
+          const big = p.id === "factory_l" ? 1.5 : p.id === "factory_m" ? 1.2 : 1;
+          smoke(x + 0.2, y + 0.12, 34 * big + 2, t + x * 400);
+          if (p.id !== "factory_s") smoke(x + 0.68, y + 0.1, 28 * big + 2, t + 900 + y * 300);
+          break;
+        }
+        case "power_s": turbine(x + 0.8, y + 0.5, reduce ? 0 : t + x * 97); break;
+        case "power_m": if (!reduce) smoke(x + 0.83, y + 0.17, 46, t + y * 200); break;
+        case "power_l": if (!reduce) { smoke(x + 0.3, y + 0.35, 42, t); smoke(x + 0.7, y + 0.72, 42, t + 1300); } break;
+      }
+    }
+
+    // ─── Images de bâtiments ───
+    // Tant que le zoom ne change pas, un bâtiment se recopie au lieu d'être redessiné polygone par polygone.
+    const sprites = new Map<string, Sprite>();
+    let spriteKey = "", prevKey = "", useSprites = false, glow: HTMLCanvasElement | null = null;
+    const litNow: { sp: Sprite; x: number; y: number }[] = [];
+    const snap = (v: number) => Math.round(v * dpr) / dpr;
+    function bake(id: string, vs: number): Sprite {
+      const top = (TOP[id] ?? 30) + 16, sh = top / 60 + 0.2;
+      const L = (1 + sh * 0.7) * (TW / 2) * scale + 2, R = (1 + sh) * (TW / 2) * scale + 2;
+      const T = top * scale + 2, B = (2 + sh * 1.7) * (TH / 2) * scale + 2;
+      const w = Math.ceil(L + R), h = Math.ceil(T + B);
+      const make = () => { const c = document.createElement("canvas"); c.width = Math.ceil(w * dpr); c.height = Math.ceil(h * dpr); const x = c.getContext("2d")!; x.setTransform(dpr, 0, 0, dpr, 0, 0); return [c, x] as const; };
+      const [cvs, ctx] = make();
+      const keep = { ox, oy, g, lights };
+      ox = L; oy = T; g = ctx; lights = []; baking = true; vsForce = vs;
+      building({ id, x: 0, y: 0 }, 0, 1);
+      let lit: HTMLCanvasElement | null = null;
+      if (lights.length) {
+        const [lc, lx] = make();
+        lx.fillStyle = "rgb(253,224,138)";
+        for (const q of lights) { lx.beginPath(); lx.moveTo(q[0][0], q[0][1]); for (let k = 1; k < 4; k++) lx.lineTo(q[k][0], q[k][1]); lx.closePath(); lx.fill(); }
+        lit = lc;
+      }
+      baking = false; vsForce = -1;
+      ({ ox, oy, g, lights } = keep);
+      return { cv: cvs, lit, dx: L, dy: T, w, h };
+    }
+    function bakeGlow() {
+      const rw = Math.ceil(52 * scale), rh = Math.ceil(26 * scale);
+      const c = document.createElement("canvas");
+      c.width = Math.max(1, Math.ceil(rw * dpr)); c.height = Math.max(1, Math.ceil(rh * dpr));
+      const x = c.getContext("2d")!;
+      x.setTransform(dpr, 0, 0, dpr * 0.5, 0, 0);
+      const gr = x.createRadialGradient(rw / 2, rh, 0, rw / 2, rh, rw / 2);
+      gr.addColorStop(0, "rgba(254,240,180,.35)"); gr.addColorStop(1, "rgba(254,240,180,0)");
+      x.fillStyle = gr; x.fillRect(0, 0, rw, rh * 2);
+      return c;
+    }
+    /** Dessine un bâtiment terminé : depuis son image si elle est disponible, sinon en direct. */
+    function drawBuilding(p: Plot, t: number) {
+      if (!useSprites) { building(p, t, 1); return; }
+      const vs = (p.x + p.y) % 3, key = `${p.id}|${vs}`;
+      let sp = sprites.get(key);
+      if (!sp) { sp = bake(p.id, vs); sprites.set(key, sp); }
+      const [px, py] = iso(p.x, p.y);
+      const dx = snap(px - sp.dx), dy = snap(py - sp.dy);
+      g.drawImage(sp.cv, dx, dy, sp.w, sp.h);
+      if (sp.lit && night > 0) litNow.push({ sp, x: dx, y: dy });
+      effects(p, t);
     }
 
     // ─── Voitures ───
@@ -533,7 +671,9 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
               }
             }
             const p = byTile.get(`${x},${y}`);
-            if (p && BUILDING_BY_ID[p.id]?.category !== "agriculture") {
+            const cat = p ? BUILDING_BY_ID[p.id]?.category : undefined;
+            if (cat && layersRef.current) poly(q, CAT_COLOR[cat], "rgba(255,255,255,.7)");
+            else if (cat && cat !== "agriculture" && p!.id !== "park") {
               poly([iso(x + 0.04, y + 0.04), iso(x + 0.96, y + 0.04), iso(x + 0.96, y + 0.96), iso(x + 0.04, y + 0.96)], C.sidewalk);
             }
           }
@@ -543,23 +683,29 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
       }
     }
 
-    // Calque du sol : redessiné seulement quand la vue change (zoom, déplacement, mode construction).
-    // Pendant un déplacement on dessine en direct ; dès que la vue est stable, on réutilise l'image.
+    // Calque du sol : toute la carte est dessinée une fois par niveau de zoom, puis recopiée (même pendant un déplacement).
+    // Pendant un zoom, ou si la carte agrandie dépasse la taille raisonnable d'une image, on dessine en direct.
     const groundCv = document.createElement("canvas");
     const groundCtx = groundCv.getContext("2d");
-    let groundKey = "", groundSeen = "";
+    let groundKey = "", groundSeen = "", gox = 0, goy = 0, gw = 0, gh = 0;
     function paintGround() {
-      const key = `${scale.toFixed(5)}|${ox.toFixed(1)}|${oy.toFixed(1)}|${cv!.width}|${cv!.height}|${modeRef.current ? 1 : 0}`;
-      if (!groundCtx) { ground(); return; }
+      const tiles = (x1 + 1 - x0) + (y1 + 1 - y0);
+      const w = tiles * (TW / 2) * scale + 4, h = (tiles * (TH / 2) + SLAB) * scale + 8;
+      const key = `${scale}|${dpr}|${modeRef.current ? 1 : 0}${layersRef.current ? 1 : 0}`;
+      if (!groundCtx || w * dpr * h * dpr > 9_000_000) { ground(); return; }
       if (key !== groundKey) {
         if (key !== groundSeen) { groundSeen = key; groundKey = ""; ground(); return; }
-        if (groundCv.width !== cv!.width || groundCv.height !== cv!.height) { groundCv.width = cv!.width; groundCv.height = cv!.height; }
+        groundCv.width = Math.ceil(w * dpr); groundCv.height = Math.ceil(h * dpr);
         groundCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        groundCtx.clearRect(0, 0, W, H);
+        const keep = { ox, oy, W, H };
+        // Origine telle que le coin gauche et le sommet du losange tombent dans l'image
+        ox = 2 - (x0 - (y1 + 1)) * (TW / 2) * scale; oy = 2 - (x0 + y0) * (TH / 2) * scale; W = w; H = h;
         g = groundCtx; ground(); g = main!;
+        gox = ox; goy = oy; gw = w; gh = h;
+        ({ ox, oy, W, H } = keep);
         groundKey = key;
       }
-      main!.drawImage(groundCv, 0, 0, W, H);
+      main!.drawImage(groundCv, snap(ox - gox), snap(oy - goy), gw, gh);
     }
 
     // ─── Objets fixes (bâtiments, arbres, lampadaires), triés une seule fois par profondeur ───
@@ -574,7 +720,8 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
             const grow = b === undefined || reduce ? 1 : Math.min(1, (t - b) / 700);
             const m = modeRef.current;
             if (m?.kind === "move" && m.from.x === x && m.from.y === y) g.globalAlpha = 0.3;
-            building(p, t, 1 - Math.pow(1 - grow, 3));
+            else if (layersRef.current) g.globalAlpha = 0.45;
+            if (grow >= 1) drawBuilding(p, t); else building(p, t, 1 - Math.pow(1 - grow, 3));
             g.globalAlpha = 1;
           } });
         } else if (hash(x, y) < 0.35) {
@@ -614,6 +761,7 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
       const P = (pts: Pt[]) => { g.beginPath(); pts.forEach(([a, b], i) => (i ? g.lineTo(px + a * r, py + b * r) : g.moveTo(px + a * r, py + b * r))); g.closePath(); g.fill(); };
       if (mk.kind === "energy") P([[0.18, -0.62], [-0.38, 0.1], [-0.02, 0.1], [-0.18, 0.62], [0.38, -0.1], [0.02, -0.1]]);
       else if (mk.kind === "full") P([[-0.56, 0], [0, -0.55], [0.56, 0], [0.34, 0], [0.34, 0.46], [-0.34, 0.46], [-0.34, 0]]);
+      else if (mk.kind === "service") { P([[-0.16, -0.58], [0.16, -0.58], [0.16, 0.58], [-0.16, 0.58]]); P([[-0.58, -0.16], [0.58, -0.16], [0.58, 0.16], [-0.58, 0.16]]); }
       else if (mk.kind === "staff") {
         g.beginPath(); g.arc(px, py - r * 0.24, r * 0.24, 0, Math.PI * 2); g.fill();
         g.beginPath(); g.ellipse(px, py + r * 0.52, r * 0.44, r * 0.38, 0, Math.PI, 0); g.closePath(); g.fill();
@@ -639,7 +787,13 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
         applyView();
       }
       lights = [];
-      if (t - nightAt > 60_000) { night = nightFactor(); nightAt = t; }
+      litNow.length = 0;
+      if (t - nightAt > 60_000 || lightSeen !== lightRef.current) { night = nightNow(); nightAt = t; lightSeen = lightRef.current; }
+      // Images de bâtiments : valables tant que le zoom est stable (une image dessinée en direct, puis on les prépare)
+      const key = `${scale}|${dpr}`;
+      if (key !== spriteKey && key === prevKey && scale * dpr <= SPRITE_MAX_SCALE) { sprites.clear(); glow = null; spriteKey = key; }
+      useSprites = key === spriteKey;
+      prevKey = key;
       g = main!;
       g.clearRect(0, 0, W, H);
       paintGround();
@@ -712,16 +866,26 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
 
       // Nuit : la ville s'assombrit, les fenêtres et les lampadaires s'allument
       if (night > 0) {
-        g.fillStyle = `rgba(17,24,58,${0.42 * night})`;
+        g.fillStyle = `rgba(17,24,58,${0.32 * night})`;
         g.fillRect(0, 0, W, H);
         g.fillStyle = `rgba(253,224,138,${0.85 * night})`;
         for (const q of lights) { g.beginPath(); g.moveTo(q[0][0], q[0][1]); for (let k = 1; k < 4; k++) g.lineTo(q[k][0], q[k][1]); g.closePath(); g.fill(); }
+        if (litNow.length) {
+          g.globalAlpha = 0.85 * night;
+          for (const l of litNow) g.drawImage(l.sp.lit!, l.x, l.y, l.sp.w, l.sp.h);
+          g.globalAlpha = 1;
+        }
+        if (useSprites && !glow) glow = bakeGlow();
         for (const [lx, ly] of lamps) {
           if (!onScreenAt(lx, ly)) continue;
           const [hx, hy] = iso(lx, ly, 22), [gx, gy] = iso(lx + 0.2, ly + 0.2, 0);
-          const glow = g.createRadialGradient(gx, gy, 0, gx, gy, 26 * scale);
-          glow.addColorStop(0, `rgba(254,240,180,${0.35 * night})`); glow.addColorStop(1, "rgba(254,240,180,0)");
-          g.fillStyle = glow; g.beginPath(); g.ellipse(gx, gy, 26 * scale, 13 * scale, 0, 0, Math.PI * 2); g.fill();
+          if (useSprites && glow) {
+            g.globalAlpha = night; g.drawImage(glow, gx - 26 * scale, gy - 13 * scale, 52 * scale, 26 * scale); g.globalAlpha = 1;
+          } else {
+            const halo = g.createRadialGradient(gx, gy, 0, gx, gy, 26 * scale);
+            halo.addColorStop(0, `rgba(254,240,180,${0.35 * night})`); halo.addColorStop(1, "rgba(254,240,180,0)");
+            g.fillStyle = halo; g.beginPath(); g.ellipse(gx, gy, 26 * scale, 13 * scale, 0, 0, Math.PI * 2); g.fill();
+          }
           g.fillStyle = `rgba(254,243,199,${night})`; g.beginPath(); g.arc(hx + 4 * scale, hy + 1.5 * scale, 2.2 * scale, 0, Math.PI * 2); g.fill();
         }
       }
@@ -736,8 +900,13 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
     }
 
     // Animation seulement quand la vue est visible à l'écran et l'onglet actif
-    let raf = 0, onScreen = true;
-    const loop = (t: number) => { frame(t); raf = requestAnimationFrame(loop); };
+    // Au repos (ni zoom, ni doigt posé, ni chantier en cours), 30 images par seconde suffisent.
+    const pts = new Map<number, { x: number; y: number }>();
+    let raf = 0, onScreen = true, lastDraw = 0;
+    const loop = (t: number) => {
+      if (goal || pts.size > 0 || t < growUntil || t - lastDraw >= 30) { lastDraw = t; frame(t); }
+      raf = requestAnimationFrame(loop);
+    };
     const run = () => {
       cancelAnimationFrame(raf); raf = 0;
       if (reduce || !onScreen || document.hidden) { frame(performance.now()); return; }
@@ -755,7 +924,6 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
     redraw.current = () => { applyView(); if (!raf) frame(performance.now()); };
 
     // Survol (identifier un bâtiment), glisser (déplacer la vue), pincer / molette (zoom)
-    const pts = new Map<number, { x: number; y: number }>();
     let drag: { x: number; y: number; moved: boolean } | null = null;
     let pinch: { dist: number; mx: number; my: number } | null = null;
     const local = (e: { clientX: number; clientY: number }) => { const r = cv.getBoundingClientRect(); return { lx: e.clientX - r.left, ly: e.clientY - r.top }; };
@@ -848,6 +1016,8 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
     };
   }, [plots, height, compact, interactive, initialZoom, padTop, padBottom]);
 
+  const auto = light === "auto";
+
   return (
     <div ref={wrap} className={`relative w-full overflow-hidden outline-none ${height === "fill" ? "" : "rounded-[12px] focus-visible:ring-2 focus-visible:ring-primary"}`}
       style={{ height: height === "fill" ? "100%" : height, background: "radial-gradient(ellipse at 50% 20%, #F3F8FE 0%, #DDE8F4 100%)" }}
@@ -858,8 +1028,24 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
           {ZOOM_BUTTONS.map((b) => (
             <button key={b.kind} type="button" aria-label={b.label} title={b.label}
               onClick={() => onZoom(b.kind)}
-              className="h-9 w-9 grid place-items-center text-[17px] font-semibold text-ink hover:bg-slate-50 border-b border-line last:border-b-0">{b.text}</button>
+              className="h-9 w-9 grid place-items-center text-[17px] font-semibold text-ink hover:bg-slate-50 border-b border-line">{b.text}</button>
           ))}
+          <button type="button" aria-pressed={layers} onClick={() => setLayers((v) => !v)}
+            aria-label="Calque Quartiers" title="Calque Quartiers : colorer les bâtiments par catégorie"
+            className={`h-9 w-9 grid place-items-center border-b border-line ${layers ? "bg-primary text-white" : "text-ink hover:bg-slate-50"}`}><Layers size={16} /></button>
+          <button type="button" onClick={() => setLight(auto ? "day" : "auto")}
+            aria-label={auto ? "Garder la ville en plein jour" : "Suivre l'heure réelle (nuit le soir)"}
+            title={auto ? "Éclairage : suit l'heure réelle. Cliquer pour rester en plein jour." : "Éclairage : plein jour. Cliquer pour suivre l'heure réelle."}
+            className="h-9 w-9 grid place-items-center text-ink hover:bg-slate-50">{auto ? <Moon size={16} /> : <Sun size={16} />}</button>
+        </div>
+      )}
+      {!compact && layers && (
+        <div className="pointer-events-none absolute inset-x-3 z-10 flex justify-center" style={{ top: padTop + 8 }}>
+          <ul className="flex max-w-full flex-wrap justify-center gap-x-3 gap-y-1 rounded-[12px] border border-line bg-card/95 px-3 py-1.5 text-[11px] font-medium text-ink shadow-sm backdrop-blur">
+            {LEGEND.map((c) => (
+              <li key={c} className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-[3px]" style={{ background: CAT_COLOR[c] }} />{CATEGORY_LABELS[c]}</li>
+            ))}
+          </ul>
         </div>
       )}
       {tip && (

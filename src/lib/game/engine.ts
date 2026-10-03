@@ -3,8 +3,11 @@
 import {
   ACTIVE_RATIO, BUILDING_BY_ID, DAY_LENGTH_MINUTES, DEMOLISH_REFUND, ENERGY_PER_RESIDENT,
   EXPORT_RATIO, FOOD_PER_RESIDENT, MAINTENANCE_RATE, MAX_CATCHUP_DAYS, RESOURCE_PRICES,
+  CITY_RANKS, GOALS, SERVICES, SERVICE_BONUS, SERVICE_IDS,
   STARTING_BUILDINGS, STARTING_CASH, STARTING_POPULATION, TAX_PER_RESIDENT, TRADE_FEE_MIN, TRADE_FEE_RATE,
+  type Goal, type ServiceId,
 } from "./config";
+import { PLAYABLE, countryPrice } from "../world/countries";
 import { isBuildable, layoutFrom, placeTile, type Plot } from "./layout";
 import { ASSET_BY_SYMBOL } from "../market/universe";
 import { FOLDER_LIMIT_BASE, RESEARCH_BY_ID, STARTING_RESEARCH } from "./research";
@@ -14,7 +17,7 @@ export interface Holding { qty: number; avgCost: number }
 export interface Transaction {
   id: string;
   at: number;
-  kind: "buy" | "sell" | "build" | "demolish" | "research";
+  kind: "buy" | "sell" | "build" | "demolish" | "research" | "reward" | "move";
   label: string;
   symbol?: string;
   qty?: number;
@@ -59,7 +62,11 @@ export interface Snapshot {
 }
 
 /** Coûts « perdus » depuis le dernier passage de jour (ils ne se retrouvent dans aucun actif). */
-export interface DayCosts { fees: number; research: number; demolish: number }
+export interface DayCosts {
+  fees: number; research: number; demolish: number;
+  /** Mouvements exceptionnels de la ville (subventions d'objectifs en plus, déménagement en moins), comptés dans son flux. */
+  extra?: number;
+}
 
 export interface GameState {
   version: 1;
@@ -80,6 +87,10 @@ export interface GameState {
   folders: Folder[];
   /** Guide de démarrage fermé par le joueur. */
   tutorialDone?: boolean;
+  /** Objectifs de ville déjà récompensés. */
+  goals?: string[];
+  /** Pays choisi par le joueur (code ISO numérique) ; absent tant qu'il n'a pas déménagé. */
+  country?: string;
   /** Coûts du jour en cours, versés dans l'historique au prochain passage de jour. */
   today?: DayCosts;
   /** Total des plus-values réalisées depuis que le jeu les enregistre. */
@@ -128,6 +139,12 @@ export interface CityStats {
   energy: { prod: number; use: number; balance: number };
   food: { prod: number; use: number; balance: number };
   satisfaction: number;
+  /** Équipements publics : capacité, part de la population desservie, besoin apparu ou non. */
+  services: Record<ServiceId, { capacity: number; coverage: number; needed: boolean }>;
+  /** Ce qui fait bouger la satisfaction (en points, négatif = pénalité), pour l'expliquer au joueur. */
+  factors: { label: string; value: number }[];
+  /** Rang de la ville (indice dans CITY_RANKS). */
+  rank: number;
   income: { taxes: number; buildings: number; exports: number; total: number };
   expenses: { maintenance: number; imports: number; total: number };
   exportsValue: number;
@@ -143,6 +160,7 @@ export interface CityStats {
 }
 
 export function computeCity(state: Pick<GameState, "buildings" | "population">): CityStats {
+  const capacity: Record<ServiceId, number> = { park: 0, school: 0, hospital: 0 };
   let housing = 0, jobs = 0, energyProd = 0, energyUse = 0, foodProd = 0, bRevenue = 0, cityValue = 0, assetValue = 0;
   for (const [id, count] of Object.entries(state.buildings)) {
     const b = BUILDING_BY_ID[id];
@@ -153,6 +171,7 @@ export function computeCity(state: Pick<GameState, "buildings" | "population">):
     energyUse += (b.energyUse ?? 0) * count;
     foodProd += (b.foodProd ?? 0) * count;
     bRevenue += (b.revenue ?? 0) * count;
+    if (b.service) capacity[b.service] += (b.serves ?? 0) * count;
     cityValue += b.cost * count;
     assetValue += b.cost * Math.max(0, count - (STARTING_BUILDINGS[id] ?? 0));
   }
@@ -171,12 +190,22 @@ export function computeCity(state: Pick<GameState, "buildings" | "population">):
   const foodBalance = foodProd - foodUse;
 
   // Satisfaction : une seule statistique (doc §7)
-  let satisfaction = 0.95;
-  satisfaction -= unemploymentRate * 1.2;
-  if (housing > 0 && freeHousing / housing < 0.02) satisfaction -= 0.05; // ville saturée
-  if (energyBalance < 0) satisfaction -= 0.08;
-  if (foodBalance < 0) satisfaction -= 0.08;
-  satisfaction = clamp(satisfaction, 0.1, 1);
+  const factors: CityStats["factors"] = [];
+  const factor = (label: string, value: number) => { if (Math.abs(value) >= 0.0005) factors.push({ label, value }); };
+  factor("Chômage", -unemploymentRate * 1.2);
+  if (housing > 0 && freeHousing / housing < 0.02) factor("Logements saturés", -0.05);
+  if (energyBalance < 0) factor("Manque d'énergie", -0.08);
+  if (foodBalance < 0) factor("Manque de nourriture", -0.08);
+  // Équipements publics : un bonus quand ils sont là, une pénalité quand la ville les attend et ne les a pas
+  const services = {} as CityStats["services"];
+  for (const id of SERVICE_IDS) {
+    const rule = SERVICES[id];
+    const coverage = pop > 0 ? Math.min(1, capacity[id] / pop) : capacity[id] > 0 ? 1 : 0;
+    const needed = pop >= rule.needPop;
+    services[id] = { capacity: capacity[id], coverage, needed };
+    factor(rule.label, SERVICE_BONUS * coverage - (needed ? rule.weight * (1 - coverage) : 0));
+  }
+  const satisfaction = clamp(0.95 + factors.reduce((a, f) => a + f.value, 0), 0.1, 1);
 
   // Revenus
   const taxes = pop * TAX_PER_RESIDENT * (0.6 + 0.4 * satisfaction) * (1 - unemploymentRate * 0.5);
@@ -208,7 +237,7 @@ export function computeCity(state: Pick<GameState, "buildings" | "population">):
     housing, freeHousing, jobs, active, employed, unemployed, unemploymentRate, openJobs,
     energy: { prod: energyProd, use: energyUse, balance: energyBalance },
     food: { prod: foodProd, use: foodUse, balance: foodBalance },
-    satisfaction,
+    satisfaction, services, factors, rank: cityRank(state.population),
     income: { taxes, buildings: buildingsIncome, exports: exportsValue, total: incomeTotal },
     expenses: { maintenance, imports: importsValue, total: expensesTotal },
     exportsValue, importsValue,
@@ -217,6 +246,74 @@ export function computeCity(state: Pick<GameState, "buildings" | "population">):
     cityValue,
     assetValue,
     growth,
+  };
+}
+
+/** Rang atteint pour une population donnée (indice dans CITY_RANKS). */
+export function cityRank(population: number): number {
+  let r = 0;
+  for (let i = 0; i < CITY_RANKS.length; i++) if (population >= CITY_RANKS[i].pop) r = i;
+  return r;
+}
+
+// ─── Objectifs ────────────────────────────────────────────────
+
+export interface GoalStatus { goal: Goal; value: number; progress: number; done: boolean; claimed: boolean }
+
+function goalValue(goal: Goal, state: Pick<GameState, "population">, c: CityStats): number {
+  const big = state.population >= (goal.minPop ?? 0);
+  switch (goal.metric) {
+    case "population": return state.population;
+    case "net": return c.net;
+    case "satisfaction": return big ? c.satisfaction : 0;
+    case "autonomy": return big && c.energy.balance >= 0 && c.food.balance >= 0 ? 1 : 0;
+    case "services": return big ? Math.min(...SERVICE_IDS.map((id) => c.services[id].coverage)) : 0;
+  }
+}
+
+/** Avancement de chaque objectif de ville. */
+export function goalStatuses(state: Pick<GameState, "buildings" | "population" | "goals">, city = computeCity(state)): GoalStatus[] {
+  return GOALS.map((goal) => {
+    const value = goalValue(goal, state, city);
+    return { goal, value, progress: clamp(value / goal.target, 0, 1), done: value >= goal.target - 1e-9, claimed: !!state.goals?.includes(goal.id) };
+  });
+}
+
+/** Encaisse la subvention d'un objectif atteint (une seule fois). */
+export function claimGoal(state: GameState, id: string, at: number): ActionResult {
+  const st = goalStatuses(state).find((g) => g.goal.id === id);
+  if (!st) return { ok: false, error: "Objectif inconnu." };
+  if (st.claimed) return { ok: false, error: "Subvention déjà encaissée." };
+  if (!st.done) return { ok: false, error: "Objectif pas encore atteint." };
+  return {
+    ok: true,
+    state: {
+      ...state,
+      cash: round2(state.cash + st.goal.reward),
+      goals: [...(state.goals ?? []), id],
+      today: spend(state, "extra", st.goal.reward),
+      transactions: addTx(state, { kind: "reward", label: `Subvention : ${st.goal.label}`, amount: st.goal.reward, at }),
+    },
+  };
+}
+
+// ─── Monde ────────────────────────────────────────────────────
+
+/** Installe la ville dans un autre pays, au prix de ce pays. `current` = pays occupé jusque-là. */
+export function relocate(state: GameState, country: string, at: number, current?: string | null): ActionResult {
+  if (!PLAYABLE[country]) return { ok: false, error: "Pays non jouable." };
+  if (country === (current ?? state.country)) return { ok: false, error: "Votre ville est déjà dans ce pays." };
+  const price = countryPrice(country);
+  if (price > state.cash) return { ok: false, error: "Liquidités insuffisantes." };
+  return {
+    ok: true,
+    state: {
+      ...state,
+      cash: round2(state.cash - price),
+      country,
+      today: spend(state, "extra", -price),
+      transactions: addTx(state, { kind: "move", label: `Déménagement : ${PLAYABLE[country]}`, amount: -price, at }),
+    },
   };
 }
 
@@ -256,7 +353,9 @@ export function tickDay(state: GameState, prices: Prices, at: number): GameState
   };
   delete next.today;
   const t = state.today ?? NO_COSTS;
-  next.history = [...state.history, { ...snapshot(next, prices, at), flow: round2(c.net), ...t }].slice(-500);
+  next.history = [...state.history, {
+    ...snapshot(next, prices, at), flow: round2(c.net + (t.extra ?? 0)), fees: t.fees, research: t.research, demolish: t.demolish,
+  }].slice(-500);
   return next;
 }
 
@@ -266,7 +365,7 @@ const NO_COSTS: DayCosts = { fees: 0, research: 0, demolish: 0 };
 
 function spend(state: GameState, key: keyof DayCosts, v: number): DayCosts {
   const t = state.today ?? NO_COSTS;
-  return { ...t, [key]: round2(t[key] + v) };
+  return { ...t, [key]: round2((t[key] ?? 0) + v) };
 }
 
 /** Flux de ville encaissé au jour `i` ; estimé d'après la veille pour les anciennes sauvegardes. */
@@ -297,7 +396,7 @@ export function periodReport(state: Pick<GameState, "history" | "today">, netWor
   const from = Math.max(0, h.length - points);
   const start = h[from]?.netWorth ?? netWorthNow;
   const t = state.today ?? NO_COSTS;
-  let city = 0, fees = t.fees, research = t.research, demolish = t.demolish;
+  let city = t.extra ?? 0, fees = t.fees, research = t.research, demolish = t.demolish;
   for (let i = from + 1; i < h.length; i++) {
     city += dayFlow(h, i);
     fees += h[i].fees ?? 0;

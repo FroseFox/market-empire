@@ -49,6 +49,18 @@ let timer: ReturnType<typeof setTimeout> | null = null;
 let lastWrite = 0, dirty = false, writing = false;
 /** Dernier contenu envoyé : on n'écrit pas deux fois la même chose. */
 let lastSent = "";
+/** Dernier plan de ville publié (ce que les autres joueurs voient en visitant). */
+let lastCity = "";
+
+/** Publie le plan de la ville, seulement s'il a changé. Sans effet si le serveur ne propose pas encore la fonction. */
+async function publishCity(pl: Record<string, number[]>) {
+  const key = JSON.stringify(pl);
+  if (key === lastCity) return;
+  const before = lastCity;
+  lastCity = key; // noté tout de suite : deux appels rapprochés ne publient qu'une fois
+  try { if (!(await rpc<boolean>("publish_city", { p_city: pl })) && lastCity === key) lastCity = before; }
+  catch { if (lastCity === key) lastCity = before; /* visite indisponible : la partie n'en dépend pas */ }
+}
 const setCloud = (c: "local" | "syncing" | "saved" | "error") => useGame.setState({ cloud: c });
 
 async function flush(keepalive = false) {
@@ -62,7 +74,7 @@ async function flush(keepalive = false) {
   try {
     const ok = await rpc<boolean>("save_game", { p_data: data, p_saved_at: s.savedAt || Date.now(), ...fig }, { keepalive });
     if (ok === false) { dirty = true; schedule(); } // le serveur limite à une écriture toutes les 20 s
-    else { lastWrite = Date.now(); lastSent = body; setCloud("saved"); }
+    else { lastWrite = Date.now(); lastSent = body; setCloud("saved"); if (!keepalive) void publishCity(data.pl); }
   } catch {
     dirty = true;
     setCloud("error");
@@ -93,6 +105,7 @@ function finish(uid: string, name: string) {
     schedule();
   });
   useOnline.setState({ phase: "ready" });
+  void publishCity(pack(useGame.getState().game).pl);
 }
 
 async function connect(uid: string, name: string) {
@@ -160,6 +173,13 @@ export async function createAccount(cityName: string): Promise<string | null> {
   return null;
 }
 
+/** Déménagement : réserve le pays côté serveur. `false` = pays déjà pris. Lève une erreur si le serveur ne répond pas. */
+export async function reserveCountry(country: string): Promise<boolean> {
+  const ok = await rpc<boolean>("move_country", { p_country: country });
+  if (ok) useOnline.setState({ country });
+  return !!ok;
+}
+
 /** Nouvel essai après une erreur de serveur. */
 export function retryOnline() {
   const user = useAuth.getState().user;
@@ -177,6 +197,7 @@ function disconnect() {
   if (timer) { clearTimeout(timer); timer = null; }
   dirty = false;
   lastSent = "";
+  lastCity = "";
   useOnline.setState({ country: null, phase: "idle" });
   setCloud("local");
 }

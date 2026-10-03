@@ -34,6 +34,7 @@ interface Store {
   updateFolder: (id: string, patch: Partial<Omit<E.Folder, "id" | "added">>) => void;
   deleteFolder: (id: string) => void;
   renameCity: (name: string) => boolean;
+  claimGoal: (id: string) => boolean;
   closeTutorial: () => void;
   skipDay: () => void;
   reset: () => void;
@@ -139,6 +140,13 @@ export const useGame = create<Store>()(
         if (!r.ok) { get().notify(r.error, "error"); return false; }
         set({ game: r.state });
         get().notify("Ville renommée");
+        return true;
+      },
+      claimGoal: (id) => {
+        const r = E.claimGoal(get().game, id, Date.now());
+        if (!r.ok) { get().notify(r.error, "error"); return false; }
+        set({ game: r.state });
+        get().notify("Subvention encaissée");
         return true;
       },
       closeTutorial: () => set({ game: { ...get().game, tutorialDone: true } }),

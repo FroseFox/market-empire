@@ -41,7 +41,68 @@ export const FOOD_PER_RESIDENT = 0.35;
 export const RESOURCE_PRICES = { energy: 2, food: 1.5 } as const;
 export const EXPORT_RATIO = 0.7;
 
-export type Category = "housing" | "commerce" | "industry" | "services" | "agriculture" | "energy" | "civic";
+export type Category = "housing" | "commerce" | "industry" | "services" | "agriculture" | "energy" | "public" | "civic";
+
+// ─── Équipements publics ──────────────────────────────────────
+// Une ville qui grandit attend des équipements. Chacun dessert un nombre d'habitants ;
+// la couverture (capacité / population) joue sur la satisfaction, donc sur les impôts et la croissance.
+export type ServiceId = "park" | "school" | "hospital";
+export interface ServiceRule {
+  label: string;
+  /** Population à partir de laquelle les habitants l'attendent. */
+  needPop: number;
+  /** Satisfaction perdue quand le besoin n'est pas couvert du tout. */
+  weight: number;
+}
+export const SERVICES: Record<ServiceId, ServiceRule> = {
+  park: { label: "Espaces verts", needPop: 1_000, weight: 0.04 },
+  school: { label: "Écoles", needPop: 2_500, weight: 0.05 },
+  hospital: { label: "Santé", needPop: 8_000, weight: 0.06 },
+};
+export const SERVICE_IDS = Object.keys(SERVICES) as ServiceId[];
+/** Satisfaction gagnée par équipement entièrement couvert (même avant que le besoin n'apparaisse). */
+export const SERVICE_BONUS = 0.015;
+
+// ─── Rangs de ville ───────────────────────────────────────────
+/** Paliers de population : donnent un cap au joueur et rythment les déblocages. */
+export const CITY_RANKS: { name: string; pop: number }[] = [
+  { name: "Village", pop: 0 },
+  { name: "Bourg", pop: 500 },
+  { name: "Petite ville", pop: 1_500 },
+  { name: "Ville", pop: 5_000 },
+  { name: "Grande ville", pop: 15_000 },
+  { name: "Métropole", pop: 40_000 },
+  { name: "Capitale économique", pop: 100_000 },
+];
+
+// ─── Objectifs de ville ───────────────────────────────────────
+/** Ce qu'un objectif mesure (calculé par le moteur). */
+export type GoalMetric = "population" | "net" | "autonomy" | "satisfaction" | "services";
+export interface Goal {
+  id: string;
+  label: string;
+  metric: GoalMetric;
+  target: number;
+  /** Population minimale pour que l'objectif compte (évite de le valider avec une ville minuscule). */
+  minPop?: number;
+  /** Subvention versée une seule fois. */
+  reward: number;
+}
+export const GOALS: Goal[] = [
+  { id: "pop_500", label: "Atteindre 500 habitants", metric: "population", target: 500, reward: 5_000 },
+  { id: "net_1k", label: "Flux net de 1 000 € par jour", metric: "net", target: 1_000, reward: 10_000 },
+  { id: "pop_2k", label: "Atteindre 2 000 habitants", metric: "population", target: 2_000, reward: 20_000 },
+  { id: "autonomy", label: "Autonomie en énergie et en nourriture", metric: "autonomy", target: 1, minPop: 2_000, reward: 25_000 },
+  { id: "happy", label: "Satisfaction de 95 %", metric: "satisfaction", target: 0.95, minPop: 5_000, reward: 50_000 },
+  { id: "services", label: "Tous les équipements publics couverts", metric: "services", target: 1, minPop: 8_000, reward: 60_000 },
+  { id: "net_10k", label: "Flux net de 10 000 € par jour", metric: "net", target: 10_000, reward: 75_000 },
+  { id: "pop_10k", label: "Atteindre 10 000 habitants", metric: "population", target: 10_000, reward: 100_000 },
+  { id: "pop_40k", label: "Devenir une métropole (40 000 habitants)", metric: "population", target: 40_000, reward: 400_000 },
+];
+
+// ─── Monde ────────────────────────────────────────────────────
+/** Prix d'installation dans un pays, selon son poids économique (catégories 1 à 4, voir lib/world/countries). */
+export const COUNTRY_PRICES = [50_000, 200_000, 600_000, 1_500_000] as const;
 
 export interface BuildingType {
   id: string;
@@ -54,6 +115,9 @@ export interface BuildingType {
   energyProd?: number;
   energyUse?: number;
   foodProd?: number;
+  /** Équipement public : besoin couvert et nombre d'habitants desservis. */
+  service?: ServiceId;
+  serves?: number;
   /** Population minimale pour débloquer le bâtiment. */
   unlockPop?: number;
   buildable?: boolean;
@@ -86,6 +150,11 @@ export const BUILDINGS: BuildingType[] = [
   { id: "power_m", name: "Centrale moyenne", category: "energy", cost: 300_000, jobs: 80, energyProd: 750, unlockPop: 1_500, description: "+750 énergie/j" },
   { id: "power_l", name: "Grande centrale", category: "energy", cost: 1_500_000, jobs: 300, energyProd: 5_000, unlockPop: 8_000, description: "+5 000 énergie/j" },
 
+  // 🌳 Équipements publics (pas de revenu direct : ils soutiennent la satisfaction)
+  { id: "park", name: "Parc", category: "public", cost: 25_000, jobs: 5, service: "park", serves: 1_500, unlockPop: 500, description: "Espaces verts pour 1 500 habitants" },
+  { id: "school", name: "École", category: "public", cost: 120_000, jobs: 60, energyUse: 10, service: "school", serves: 4_000, unlockPop: 1_500, description: "Scolarise 4 000 habitants" },
+  { id: "hospital", name: "Hôpital", category: "public", cost: 450_000, jobs: 250, energyUse: 40, service: "hospital", serves: 12_000, unlockPop: 5_000, description: "Soigne 12 000 habitants" },
+
   // 🏛️ Bâtiments de départ (non constructibles)
   { id: "townhall", name: "Mairie", category: "civic", cost: 30_000, jobs: 30, energyUse: 5, buildable: false, description: "Administration de la ville" },
   { id: "village", name: "Village d'origine", category: "housing", cost: 50_000, housing: 250, buildable: false, description: "250 logements" },
@@ -109,5 +178,6 @@ export const CATEGORY_LABELS: Record<Category, string> = {
   industry: "Industrie",
   agriculture: "Agriculture",
   energy: "Énergie",
+  public: "Équipements",
   civic: "Administration",
 };
