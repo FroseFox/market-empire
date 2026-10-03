@@ -8,6 +8,9 @@ import { useAuth } from "@/lib/auth";
 import { getRuntime } from "@/lib/runtime";
 import { useGame } from "@/store/game";
 import * as E from "@/lib/game/engine";
+import { pack } from "@/lib/game/pack";
+import { BUILDING_BY_ID } from "@/lib/game/config";
+import { isBuildable, type Plot } from "@/lib/game/layout";
 import { pickCountry, PLAYABLE } from "./countries";
 
 export interface PublicPlayer {
@@ -23,6 +26,35 @@ export interface PublicPlayer {
   avatar?: string | null;
   color: string;
   isMe: boolean;
+  /** Plan de la ville, quand il est déjà connu (page claude.ai) ; sinon il est lu à la visite. */
+  city?: unknown;
+}
+
+/** Plan de ville publié → emplacements sûrs à dessiner (bâtiments connus, carreaux valides, sans doublon). */
+export function plotsFromCity(city: unknown): Plot[] {
+  if (!city || typeof city !== "object") return [];
+  const seen = new Set<string>(), out: Plot[] = [];
+  for (const [id, xy] of Object.entries(city as Record<string, unknown>)) {
+    if (!BUILDING_BY_ID[id] || !Array.isArray(xy)) continue;
+    for (let i = 0; i + 1 < xy.length && out.length < 900; i += 2) {
+      const x = Number(xy[i]), y = Number(xy[i + 1]), k = `${x},${y}`;
+      if (!isBuildable(x, y) || seen.has(k)) continue;
+      seen.add(k);
+      out.push({ id, x, y });
+    }
+  }
+  return out;
+}
+
+/** Plan de la ville d'un joueur, pour la visiter. `null` = pas encore publié ou serveur injoignable. */
+export async function fetchCity(p: PublicPlayer): Promise<Plot[] | null> {
+  let city = p.city;
+  if (!STATIC_MODE) {
+    const rows = await rest<{ city: unknown }[]>(`players?select=city&id=eq.${encodeURIComponent(p.id)}&limit=1`, 60_000);
+    city = rows?.[0]?.city;
+  }
+  const plots = plotsFromCity(city);
+  return plots.length ? plots : null;
 }
 
 type State = { status: "loading" | "ready" | "offline"; players: PublicPlayer[]; me: string | null };
@@ -43,15 +75,16 @@ function profileFromGame(country: string) {
     population: Math.round(s.game.population),
     perf: cost > 0 ? Math.round((pv / cost - 1) * 10_000) / 10_000 : 0,
     day: s.game.day,
-    country,
+    country: s.game.country && PLAYABLE[s.game.country] ? s.game.country : country,
+    city: pack(s.game).pl,
   };
 }
 
 type Row = { id: string; name: string; avatar: string | null; country: string | null; city_name: string; net_worth: number; population: number; perf: number; day: number; updated_at: string };
 
 /** Site publié : classement lu dans Supabase (mis en cache 5 min, seulement quand la page Monde est ouverte). */
-async function loadOnline() {
-  const rows = await rest<Row[]>("players?select=id,name,avatar,country,city_name,net_worth,population,perf,day,updated_at&order=net_worth.desc&limit=300");
+async function loadOnline(fresh = false) {
+  const rows = await rest<Row[]>("players?select=id,name,avatar,country,city_name,net_worth,population,perf,day,updated_at&order=net_worth.desc&limit=300", fresh ? 0 : undefined);
   if (!rows) { emit({ status: "offline", players: [], me: null }); return; }
   const me = useAuth.getState().user?.id ?? null;
   emit({
@@ -96,6 +129,7 @@ async function start() {
         day: Number(x.day) || 1,
         country: typeof x.country === "string" && PLAYABLE[x.country] ? x.country : "",
         updatedAt: Number(x.updatedAt) || 0,
+        city: x.city,
       };
     });
     resolve();
@@ -129,6 +163,9 @@ async function start() {
   publish();
   useGame.subscribe((s, p) => { if (s.game !== p.game) schedule(); });
 }
+
+/** Après un déménagement : relit tout de suite le classement (site publié). */
+export function refreshWorld() { if (!STATIC_MODE) { lastLoad = Date.now(); loadOnline(true); } }
 
 export function useWorld(): State {
   return useSyncExternalStore(

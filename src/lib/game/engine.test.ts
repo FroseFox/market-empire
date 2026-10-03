@@ -200,3 +200,54 @@ describe("dossiers : suivi depuis l'ajout", () => {
     expect(g.folders[0].added).toEqual({ AMD: { at: 9, price: 80 } });
   });
 });
+
+describe("progression de la ville", () => {
+  const ok = (r: E.ActionResult) => { if (!r.ok) throw new Error(r.error); return r.state; };
+  it("rang selon la population", () => {
+    expect(E.cityRank(250)).toBe(0);
+    expect(E.cityRank(500)).toBe(1);
+    expect(E.cityRank(1_000_000)).toBe(6);
+  });
+  it("les équipements publics soutiennent la satisfaction d'une grande ville", () => {
+    const base = { house_l: 2, factory_m: 6, power_m: 2, farm_m: 4 };
+    const without = computeCity({ buildings: base, population: 5_000 });
+    const withAll = computeCity({ buildings: { ...base, park: 4, school: 2 }, population: 5_000 });
+    expect(without.services.park).toMatchObject({ needed: true, coverage: 0 });
+    expect(without.services.hospital.needed).toBe(false);
+    expect(withAll.services.school.coverage).toBe(1);
+    expect(withAll.satisfaction).toBeGreaterThan(without.satisfaction + 0.08);
+    // La ville de départ n'attend encore rien
+    expect(Object.values(computeCity(newGame(T0)).services).some((sv) => sv.needed)).toBe(false);
+  });
+  it("une subvention d'objectif s'encaisse une seule fois et entre dans le flux de la ville", () => {
+    let g = newGame(T0);
+    expect(E.claimGoal(g, "pop_500", T0).ok).toBe(false);
+    g = { ...g, population: 500 };
+    const before = g.cash;
+    g = ok(E.claimGoal(g, "pop_500", T0));
+    expect(g.cash).toBe(before + 5_000);
+    expect(E.claimGoal(g, "pop_500", T0).ok).toBe(false);
+    const worth = (s: E.GameState) => s.cash + E.computeCity(s).assetValue;
+    const r = E.periodReport(g, worth(g), Infinity);
+    expect(r.city).toBe(5_000);
+    expect(r.market).toBeCloseTo(0, 2);
+    const next = tickDay(g, {}, T0 + DAY_MS);
+    expect(next.today).toBeUndefined();
+    expect(next.history[next.history.length - 1].flow).toBeCloseTo(E.computeCity(g).net + 5_000, 1);
+  });
+});
+
+describe("déménagement", () => {
+  it("débite le prix du pays et refuse sans les moyens", () => {
+    const g = newGame(T0);
+    const r = E.relocate(g, "620", T0, "250"); // Portugal : catégorie 1
+    if (!r.ok) throw new Error(r.error);
+    expect(r.state.country).toBe("620");
+    expect(r.state.cash).toBe(STARTING_CASH - 50_000);
+    expect(r.state.transactions[0].kind).toBe("move");
+    expect(E.relocate(g, "840", T0, "250").ok).toBe(false);   // États-Unis : trop cher au départ
+    expect(E.relocate(g, "250", T0, "250").ok).toBe(false);   // déjà sur place
+    expect(E.relocate(g, "999", T0, "250").ok).toBe(false);   // pays non jouable
+    expect(E.periodReport(r.state, r.state.cash, Infinity).market).toBeCloseTo(0, 2);
+  });
+});

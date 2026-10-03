@@ -44,7 +44,8 @@ create table public.players (             -- profil public : classement et carte
   name text not null, avatar text, country text unique,
   city_name text not null default 'Ma ville', net_worth bigint not null default 0,
   population integer not null default 0, perf real not null default 0, day integer not null default 1,
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  city jsonb check (city is null or pg_column_size(city) <= 16384)  -- plan public de la ville (visites)
 );
 create table public.saves (               -- sauvegarde privée, une ligne par joueur
   id uuid primary key references auth.users(id) on delete cascade,
@@ -58,6 +59,8 @@ create table public.saves (               -- sauvegarde privée, une ligne par j
 --   join_world(p_countries text[])  → crée le profil (nom et avatar lus depuis Discord), attribue un pays libre
 --   save_game(p_data, p_saved_at, p_city, p_net_worth, p_population, p_perf, p_day) → sauvegarde + classement,
 --                                     refusée si la précédente date de moins de 20 s
+--   publish_city(p_city jsonb)       → publie le plan de sa ville (migrations/20261003_city_visits_and_moves.sql)
+--   move_country(p_country text)     → déménage dans un pays jouable libre (false s'il est pris)
 --   delete_me()                      → supprime le compte et ses données
 
 -- ─── Tâches planifiées (pg_cron + pg_net) ───

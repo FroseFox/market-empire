@@ -7,7 +7,7 @@
 import { dayFlow, type GameState, type Snapshot, type Transaction } from "./engine";
 import type { Plot } from "./layout";
 
-const KINDS: Transaction["kind"][] = ["buy", "sell", "build", "demolish", "research"];
+const KINDS: Transaction["kind"][] = ["buy", "sell", "build", "demolish", "research", "reward", "move"];
 const RECENT_DAYS = 30, OLD_DAYS = 60, OLD_STEP = 3, MAX_TX = 25;
 const cents = (v: number) => Math.round(v * 100) / 100;
 const round4 = (v: number) => Math.round(v * 10_000) / 10_000;

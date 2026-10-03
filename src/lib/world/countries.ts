@@ -1,6 +1,8 @@
 // Territoires du monde : les vrais pays (Natural Earth, via world-atlas).
 // Chaque joueur reçoit un pays jouable ; des places financières neutres sont gérées par le jeu.
 
+import { COUNTRY_PRICES } from "../game/config";
+
 /** Pays jouables (code ISO numérique → nom français). */
 export const PLAYABLE: Record<string, string> = {
   "124": "Canada", "840": "États-Unis", "484": "Mexique", "076": "Brésil", "032": "Argentine", "152": "Chili",
@@ -16,6 +18,18 @@ export const PLAYABLE: Record<string, string> = {
   "036": "Australie", "554": "Nouvelle-Zélande",
 };
 export const PLAYABLE_IDS = Object.keys(PLAYABLE);
+
+/** Catégorie de prix (1 à 4) selon le poids économique du pays ; les pays non listés sont en catégorie 1. */
+const TIERS: Record<number, string[]> = {
+  4: ["840", "156", "392", "276"],
+  3: ["826", "250", "356", "380", "124", "410", "076", "036", "643", "724"],
+  2: ["484", "360", "528", "682", "792", "756", "616", "752", "056", "784", "578", "040", "372", "376", "764", "208", "458", "032"],
+};
+const TIER_OF: Record<string, number> = {};
+for (const [tier, ids] of Object.entries(TIERS)) for (const id of ids) TIER_OF[id] = Number(tier);
+export const countryTier = (id: string) => TIER_OF[id] ?? 1;
+/** Prix pour installer sa ville dans ce pays. */
+export const countryPrice = (id: string) => COUNTRY_PRICES[countryTier(id) - 1];
 
 export interface Hub { name: string; country: string; coords: [number, number]; specialty: string; population: number }
 

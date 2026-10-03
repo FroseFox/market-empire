@@ -1,49 +1,51 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import {
-  BarChart3, Briefcase, Building2, Ellipsis, Factory, FastForward, Hammer, Home, Landmark, LayoutList, Lock, MousePointerClick, Move, Pencil, RotateCcw, Smile, Store, Trash2, TrendingUp, Users, Wheat, X, Zap,
+  BarChart3, Briefcase, Building2, Ellipsis, Factory, FastForward, Hammer, Home, Landmark, LayoutList, Lock, MousePointerClick, Move, Pencil, RotateCcw, Smile, Store, Target, Trash2, Trees, TrendingUp, Trophy, Users, Wheat, X, Zap,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useDerived, useGame } from "@/store/game";
-import { BUILDINGS, BUILDING_BY_ID, CATEGORY_LABELS, DEMOLISH_REFUND, EXPORT_RATIO, MAINTENANCE_RATE, RESOURCE_PRICES, type BuildingType, type Category } from "@/lib/game/config";
-import { Button, Progress } from "@/components/ui";
+import { BUILDINGS, BUILDING_BY_ID, CATEGORY_LABELS, CITY_RANKS, SERVICES, SERVICE_IDS, DEMOLISH_REFUND, EXPORT_RATIO, MAINTENANCE_RATE, RESOURCE_PRICES, type BuildingType, type Category } from "@/lib/game/config";
+import { Button, ConfirmButton, Progress } from "@/components/ui";
 import IsoCity, { type CityMarker, type CityMode, type MarkerKind } from "@/components/IsoCity";
 import { useMedia } from "@/lib/useMedia";
-import { isTileFree, type CityStats } from "@/lib/game/engine";
+import { goalStatuses, isTileFree, type CityStats } from "@/lib/game/engine";
 import type { Plot } from "@/lib/game/layout";
 import { compactEur, eur, num, pctPlain, signedEur, tone } from "@/lib/format";
 
 const CAT_ICON: Record<Category, LucideIcon> = {
-  housing: Home, commerce: Store, services: Briefcase, industry: Factory, agriculture: Wheat, energy: Zap, civic: Landmark,
+  housing: Home, commerce: Store, services: Briefcase, industry: Factory, agriculture: Wheat, energy: Zap, public: Trees, civic: Landmark,
 };
 const CAT_TINT: Record<Category, string> = {
   housing: "bg-blue-50 text-blue-600", commerce: "bg-violet-50 text-violet-600", services: "bg-sky-50 text-sky-600",
-  industry: "bg-slate-100 text-slate-600", agriculture: "bg-lime-50 text-lime-700", energy: "bg-amber-50 text-amber-600", civic: "bg-indigo-50 text-indigo-600",
+  industry: "bg-slate-100 text-slate-600", agriculture: "bg-lime-50 text-lime-700", energy: "bg-amber-50 text-amber-600", public: "bg-emerald-50 text-emerald-600", civic: "bg-indigo-50 text-indigo-600",
 };
 type Tile = { x: number; y: number };
 /** Outil actif de la barre du bas. */
-type Tool = "build" | "move" | "demolish" | "list" | "stats" | "more" | null;
-const BUILD_CATS: Category[] = ["housing", "commerce", "services", "industry", "agriculture", "energy"];
+type Tool = "build" | "move" | "demolish" | "goals" | "list" | "stats" | "more" | null;
+const BUILD_CATS: Category[] = ["housing", "commerce", "services", "industry", "agriculture", "energy", "public"];
 const MARKER_LABEL: Record<MarkerKind, string> = {
   energy: "Manque d'énergie : importée au prix fort",
   food: "Manque de nourriture : importée au prix fort",
   full: "Logements pleins : la population ne grandit plus",
   staff: "Postes vacants : il manque des habitants",
+  service: "Équipement public manquant",
 };
 /** Pas plus de quelques pastilles par problème : la carte doit rester lisible. */
 const MAX_MARKERS = 4;
 
 /** Indicateurs posés sur la carte, à l'endroit où le problème se règle. */
-function cityMarkers(plots: Plot[], flags: { energy: boolean; food: boolean; full: boolean; staff: boolean }): CityMarker[] {
-  const pick = (kind: MarkerKind, weight: (b: BuildingType) => number) =>
+function cityMarkers(plots: Plot[], flags: { energy: boolean; food: boolean; full: boolean; staff: boolean; service: string }): CityMarker[] {
+  const pick = (kind: MarkerKind, weight: (b: BuildingType) => number, label = MARKER_LABEL[kind]) =>
     plots.map((p) => ({ p, w: weight(BUILDING_BY_ID[p.id] ?? ({} as BuildingType)) })).filter((r) => r.w > 0)
       .sort((a, b) => b.w - a.w).slice(0, MAX_MARKERS)
-      .map(({ p }) => ({ x: p.x, y: p.y, kind, label: MARKER_LABEL[kind] }));
+      .map(({ p }) => ({ x: p.x, y: p.y, kind, label }));
   const out: CityMarker[] = [];
   if (flags.energy) out.push(...pick("energy", (b) => b.energyUse ?? 0));
   if (flags.food) out.push(...pick("food", (b) => b.housing ?? 0));
   else if (flags.full) out.push(...pick("full", (b) => b.housing ?? 0));
   if (flags.staff) out.push(...pick("staff", (b) => b.jobs ?? 0));
+  if (flags.service) out.push(...pick("service", (b) => b.housing ?? 0, `Il manque : ${flags.service}`));
   // Une seule pastille par bâtiment (la première, donc la plus grave)
   const seen = new Set<string>();
   return out.filter((m) => { const k = `${m.x},${m.y}`; if (seen.has(k)) return false; seen.add(k); return true; });
@@ -55,6 +57,7 @@ export default function CityPage() {
   const moveBuilding = useGame((s) => s.moveBuilding);
   const demolish = useGame((s) => s.demolish);
   const notify = useGame((s) => s.notify);
+  const claimGoal = useGame((s) => s.claimGoal);
   const [tool, setTool] = useState<Tool>(null);
   const [mode, setMode] = useState<CityMode | null>(null);
   const [selected, setSelected] = useState<Tile | null>(null);
@@ -105,11 +108,15 @@ export default function CityPage() {
   const flags = {
     energy: city.energy.balance < 0, food: city.food.balance < 0,
     full: city.freeHousing === 0 && city.housing > 0, staff: city.openJobs > 0 && city.freeHousing === 0,
+    // Équipements attendus par les habitants et insuffisants
+    service: SERVICE_IDS.filter((id) => city.services[id].needed && city.services[id].coverage < 1).map((id) => SERVICES[id].label.toLowerCase()).join(", "),
   };
   const markers = useMemo(
-    () => cityMarkers(game.plots, { energy: flags.energy, food: flags.food, full: flags.full, staff: flags.staff }),
-    [game.plots, flags.energy, flags.food, flags.full, flags.staff],
+    () => cityMarkers(game.plots, { energy: flags.energy, food: flags.food, full: flags.full, staff: flags.staff, service: flags.service }),
+    [game.plots, flags.energy, flags.food, flags.full, flags.staff, flags.service],
   );
+  const goals = goalStatuses(game, city);
+  const toClaim = goals.filter((g) => g.done && !g.claimed).length;
 
   // Panneau au-dessus de la barre d'outils : palette, liste, stats, menu, ou fiche du bâtiment sélectionné
   let dock: React.ReactNode = null;
@@ -121,6 +128,8 @@ export default function CityPage() {
         setMode(off ? null : { kind: "place", id });
         if (!off && small) setTool(null); // petit écran : on replie la palette pour voir la carte
       }} />;
+  } else if (tool === "goals") {
+    dock = <DockPanel title="Progression de la ville" onClose={() => setTool(null)}><Progression city={city} population={game.population} goals={goals} onClaim={claimGoal} /></DockPanel>;
   } else if (tool === "list") {
     dock = <DockPanel title="Mes bâtiments" onClose={() => setTool(null)}><Owned onSelect={(t) => { setTool(null); setSelected(t); }} /></DockPanel>;
   } else if (tool === "stats") {
@@ -146,6 +155,7 @@ export default function CityPage() {
     { id: "build", label: "Construire", icon: Hammer, on: tool === "build" || mode?.kind === "place" },
     { id: "move", label: "Déplacer", icon: Move, on: tool === "move" || mode?.kind === "move" },
     { id: "demolish", label: "Démolir", icon: Trash2, on: tool === "demolish" },
+    { id: "goals", label: "Objectifs", icon: Target, on: tool === "goals" },
     { id: "list", label: "Bâtiments", icon: LayoutList, on: tool === "list" },
     { id: "stats", label: "Stats", icon: BarChart3, on: tool === "stats", cls: "lg:hidden" },
     { id: "more", label: "Options", icon: Ellipsis, on: tool === "more" },
@@ -155,7 +165,7 @@ export default function CityPage() {
     <div className="city-stage">
       <IsoCity plots={game.plots} height="fill" initialZoom={phone ? 1.3 : 1} mode={mode} selected={selected} onTileClick={onTileClick}
         markers={markers} selectedTone={tool === "demolish" ? "danger" : "primary"}
-        padTop={small ? 64 : 72} padBottom={small ? 76 : 84} zoomClass="right-3 top-1/2 -translate-y-1/2" hint={false} />
+        padTop={small ? 64 : 72} padBottom={small ? 76 : 84} zoomClass="left-3 top-1/2 -translate-y-1/2" hint={false} />
 
       {/* Haut : ressources à gauche, budget à droite */}
       <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start gap-3 p-3">
@@ -165,7 +175,7 @@ export default function CityPage() {
             <Building2 size={16} className="text-primary" />
             <span className="leading-tight">
               <span className="block max-w-[150px] truncate text-[13px] font-semibold">{game.cityName}</span>
-              <span className="block text-[10px] text-muted">Jour {game.day}</span>
+              <span className="block text-[10px] text-muted">{CITY_RANKS[city.rank].name} · Jour {game.day}</span>
             </span>
           </button>
           <Pill icon={Users} label="Habitants" value={num(game.population)} sub={`/ ${num(city.housing)}`} bad={false} warn={flags.full}
@@ -196,12 +206,15 @@ export default function CityPage() {
       <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex items-end gap-3 p-3">
         <div className="flex min-w-0 flex-1 flex-col items-start gap-2">
           {dock && <div className="pointer-events-auto w-full max-w-[720px]">{dock}</div>}
-          <div className="hud pointer-events-auto flex max-w-full gap-1 p-1.5" role="toolbar" aria-label="Outils de la ville">
+          <div className="hud pointer-events-auto flex max-w-full gap-1 overflow-x-auto no-scrollbar p-1.5" role="toolbar" aria-label="Outils de la ville">
             {TOOLS.map(({ id, label, icon: Icon, on, cls = "" }) => (
               <button key={id} onClick={() => pickTool(id)} aria-pressed={on} title={label}
-                className={`flex min-w-[54px] flex-col items-center gap-0.5 rounded-[10px] px-2 py-1.5 text-[10px] font-semibold transition-colors sm:min-w-0 sm:flex-row sm:gap-2 sm:px-3.5 sm:py-2.5 sm:text-[13px] ${cls} ${
+                className={`relative flex min-w-[54px] shrink-0 flex-col items-center gap-0.5 rounded-[10px] px-2 py-1.5 text-[10px] font-semibold transition-colors sm:min-w-0 sm:flex-row sm:gap-2 sm:px-3.5 sm:py-2.5 sm:text-[13px] ${cls} ${
                   on ? (id === "demolish" ? "bg-danger text-white" : "bg-primary text-white") : "text-ink hover:bg-slate-100"}`}>
                 <Icon size={18} strokeWidth={1.9} />{label}
+                {id === "goals" && toClaim > 0 && (
+                  <span className="absolute right-0.5 top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-success px-1 text-[10px] font-bold leading-none text-white" aria-label={`${toClaim} subvention${toClaim > 1 ? "s" : ""} à encaisser`}>{toClaim}</span>
+                )}
               </button>
             ))}
           </div>
@@ -261,6 +274,13 @@ function CityBars({ city, population }: { city: CityStats; population: number })
       <Bar icon={Users} label="Logements" value={`${num(population)} / ${num(city.housing)}`} ratio={population / Math.max(1, city.housing)} tone={full ? "bg-warning" : "bg-success"} />
       <Bar icon={Briefcase} label="Emplois" value={`chômage ${pctPlain(city.unemploymentRate)}`} ratio={city.employed / Math.max(1, city.jobs)} tone={jobless ? "bg-danger" : "bg-success"} />
       <Bar icon={Smile} label="Satisfaction" value={pctPlain(city.satisfaction)} ratio={city.satisfaction} tone={city.satisfaction < 0.6 ? "bg-danger" : city.satisfaction < 0.75 ? "bg-warning" : "bg-success"} />
+      {city.factors.some((f) => f.value < 0) && (
+        <ul className="space-y-0.5 text-[11px]">
+          {city.factors.filter((f) => f.value < 0).map((f) => (
+            <li key={f.label} className="flex justify-between gap-3"><span className="text-muted">{f.label}</span><span className="font-semibold tabular text-danger">−{Math.round(-f.value * 100)} pts</span></li>
+          ))}
+        </ul>
+      )}
       <div className="flex justify-between border-t border-line pt-2 text-[12px]">
         <span className="text-muted">Croissance</span>
         <span className={`font-semibold tabular ${tone(city.growth)}`}>{city.growth >= 0 ? "+" : "−"}{num(Math.abs(city.growth))} hab. / jour</span>
@@ -277,6 +297,59 @@ function Bar({ icon: Icon, label, value, ratio, tone: barTone }: { icon: LucideI
         <span className="ml-auto tabular text-muted">{value}</span>
       </div>
       <Progress value={ratio} tone={barTone} />
+    </div>
+  );
+}
+
+/** Rang de la ville, prochain palier et objectifs (subventions à encaisser). */
+function Progression({ city, population, goals, onClaim }: { city: CityStats; population: number; goals: ReturnType<typeof goalStatuses>; onClaim: (id: string) => void }) {
+  const rank = CITY_RANKS[city.rank], next = CITY_RANKS[city.rank + 1];
+  const unlocks = next ? BUILDINGS.filter((b) => b.buildable !== false && (b.unlockPop ?? 0) > population && (b.unlockPop ?? 0) <= next.pop) : [];
+  const needs = next ? SERVICE_IDS.filter((id) => SERVICES[id].needPop > population && SERVICES[id].needPop <= next.pop) : [];
+  // À encaisser d'abord, puis en cours, puis déjà encaissés
+  const order = (g: (typeof goals)[number]) => (g.claimed ? 2 : g.done ? 0 : 1);
+  const sorted = [...goals].sort((a, b) => order(a) - order(b));
+  return (
+    <div className="space-y-4">
+      <div>
+        <div className="flex items-baseline justify-between gap-3">
+          <span className="flex items-center gap-1.5 text-[15px] font-semibold"><Trophy size={15} className="text-primary" />{rank.name}</span>
+          <span className="text-[11px] text-muted">Rang {city.rank + 1} / {CITY_RANKS.length}</span>
+        </div>
+        {next ? (
+          <>
+            <div className="mb-1 mt-2 flex justify-between text-[12px]"><span className="text-muted">Prochain rang : <b className="text-ink">{next.name}</b></span><span className="tabular text-muted">{num(population)} / {num(next.pop)} hab.</span></div>
+            <Progress value={(population - rank.pop) / (next.pop - rank.pop)} tone="bg-primary" />
+            {(unlocks.length > 0 || needs.length > 0) && (
+              <p className="mt-2 text-[12px] text-muted">
+                {unlocks.length > 0 && <>D&apos;ici là, vous débloquez : <span className="text-ink">{unlocks.map((b) => b.name).join(", ")}</span>. </>}
+                {needs.length > 0 && <>Les habitants attendront : <span className="text-ink">{needs.map((id) => SERVICES[id].label.toLowerCase()).join(", ")}</span>.</>}
+              </p>
+            )}
+          </>
+        ) : <p className="mt-2 text-[12px] text-muted">Rang maximal atteint.</p>}
+      </div>
+      <div className="border-t border-line pt-3">
+        <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted">Objectifs · {goals.filter((g) => g.claimed).length} / {goals.length}</div>
+        <ul className="space-y-2.5">
+          {sorted.map(({ goal, progress, done, claimed }) => (
+            <li key={goal.id} className={claimed ? "opacity-55" : ""}>
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-[13px] font-medium">{goal.label}</div>
+                  <div className="text-[11px] text-muted">
+                    {goal.minPop ? `Avec au moins ${num(goal.minPop)} habitants · ` : ""}subvention {compactEur(goal.reward)}
+                  </div>
+                </div>
+                {claimed ? <span className="shrink-0 text-[11px] font-semibold text-success">Encaissée</span>
+                  : done ? <Button onClick={() => onClaim(goal.id)} className="shrink-0">Encaisser</Button>
+                  : <span className="shrink-0 text-[12px] font-semibold tabular text-muted">{pctPlain(progress)}</span>}
+              </div>
+              {!claimed && !done && <div className="mt-1.5"><Progress value={progress} tone="bg-primary" /></div>}
+            </li>
+          ))}
+        </ul>
+      </div>
     </div>
   );
 }
@@ -303,6 +376,7 @@ function MoreMenu() {
         <li>60 % des habitants cherchent un emploi.</li>
         <li>Les habitants arrivent s&apos;il y a des logements libres, surtout si des emplois les attendent.</li>
         <li>Les déficits d&apos;énergie et de nourriture sont importés automatiquement, au prix fort. Les surplus sont exportés à {EXPORT_RATIO * 100} % du prix.</li>
+        <li>En grandissant, la ville attend des équipements publics (parcs, écoles, hôpitaux) : sans eux, la satisfaction baisse, donc les impôts et la croissance aussi.</li>
         <li>Entretien : {MAINTENANCE_RATE * 100} % du coût par jour. Déplacer est gratuit. Démolir rembourse {DEMOLISH_REFUND * 100} %.</li>
       </ul>
       <div className="flex flex-wrap items-center gap-3 border-t border-line pt-3">
@@ -426,21 +500,6 @@ function RenameCity() {
   );
 }
 
-/** Bouton à deux clics (les boîtes de dialogue du navigateur ne sont pas toujours disponibles). */
-function ConfirmButton({ onConfirm, confirmLabel, className, children }: { onConfirm: () => void; confirmLabel: string; className: string; children: React.ReactNode }) {
-  const [armed, setArmed] = useState(false);
-  useEffect(() => {
-    if (!armed) return;
-    const id = setTimeout(() => setArmed(false), 4000);
-    return () => clearTimeout(id);
-  }, [armed]);
-  return (
-    <button className={className} onClick={() => { if (armed) { setArmed(false); onConfirm(); } else setArmed(true); }}>
-      {armed ? confirmLabel : children}
-    </button>
-  );
-}
-
 function Effects({ b }: { b: BuildingType }) {
   const chips: { text: string; cls: string; icon?: LucideIcon }[] = [];
   if (b.housing) chips.push({ text: `+${num(b.housing)} hab.`, cls: "bg-blue-50 text-blue-700" });
@@ -448,6 +507,7 @@ function Effects({ b }: { b: BuildingType }) {
   if (b.revenue) chips.push({ text: `+${num(b.revenue)} €/j`, cls: "bg-success-soft text-emerald-700" });
   if (b.energyProd) chips.push({ text: `+${num(b.energyProd)}`, cls: "bg-amber-50 text-amber-700", icon: Zap });
   if (b.foodProd) chips.push({ text: `+${num(b.foodProd)}`, cls: "bg-lime-50 text-lime-700", icon: Wheat });
+  if (b.serves) chips.push({ text: `dessert ${num(b.serves)} hab.`, cls: "bg-emerald-50 text-emerald-700" });
   if (b.energyUse) chips.push({ text: `−${num(b.energyUse)}`, cls: "bg-danger-soft text-red-700", icon: Zap });
   return (
     <div className="flex flex-wrap gap-1">

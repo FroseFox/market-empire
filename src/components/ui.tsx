@@ -1,4 +1,5 @@
 "use client";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowDownRight, ArrowUpRight, ChevronRight } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -96,4 +97,19 @@ export function Button({ variant = "primary", className = "", ...props }: React.
 
 export function Empty({ children }: { children: React.ReactNode }) {
   return <div className="text-center text-muted text-[13px] py-8">{children}</div>;
+}
+
+/** Bouton à deux clics (les boîtes de dialogue du navigateur ne sont pas toujours disponibles). */
+export function ConfirmButton({ onConfirm, confirmLabel, className, disabled, children }: { onConfirm: () => void; confirmLabel: string; className: string; disabled?: boolean; children: React.ReactNode }) {
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    if (!armed) return;
+    const id = setTimeout(() => setArmed(false), 4000);
+    return () => clearTimeout(id);
+  }, [armed]);
+  return (
+    <button className={className} disabled={disabled} onClick={() => { if (armed) { setArmed(false); onConfirm(); } else setArmed(true); }}>
+      {armed ? confirmLabel : children}
+    </button>
+  );
 }

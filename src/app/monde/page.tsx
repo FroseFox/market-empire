@@ -1,14 +1,17 @@
 "use client";
 import { useMemo, useState } from "react";
-import { Crown, Globe2, MapPin, Trophy, Users } from "lucide-react";
+import Link from "next/link";
+import { Crown, Eye, Globe2, MapPin, Plane, Trophy, Users } from "lucide-react";
 import { useDerived } from "@/store/game";
+import { moveTo } from "@/lib/world/move";
+import CityVisit from "@/components/CityVisit";
 import { useWorld, type PublicPlayer } from "@/lib/world/players";
 import { useAuth } from "@/lib/auth";
 import { useOnline } from "@/lib/online";
 import { STATIC_MODE } from "@/lib/market/client";
-import { HUBS, PLAYABLE, pickCountry } from "@/lib/world/countries";
+import { HUBS, PLAYABLE, countryPrice, countryTier, pickCountry } from "@/lib/world/countries";
 import WorldMap, { countryName } from "@/components/WorldMap";
-import { Card, Delta, Empty, PageHeader, Segmented } from "@/components/ui";
+import { Button, Card, ConfirmButton, Delta, Empty, PageHeader, Segmented } from "@/components/ui";
 import DiscordButton from "@/components/DiscordButton";
 import { compactEur, eur, num } from "@/lib/format";
 
@@ -30,7 +33,8 @@ export default function WorldPage() {
     const others = world.status === "ready" ? world.players.filter((p) => p.country && p.id !== myId && !p.isMe) : [];
     const listed = world.status === "ready" && myId ? world.players.find((p) => p.id === myId) : undefined;
     const taken = others.map((p) => p.country);
-    const country = listed?.country ?? onlineCountry ?? pickCountry(auth.user?.id ?? game.playerName ?? "local", taken) ?? "250";
+    // Mon pays : celui réservé en ligne, sinon celui choisi dans la partie, sinon un pays libre attribué d'office
+    const country = onlineCountry ?? (game.country && PLAYABLE[game.country] && !taken.includes(game.country) ? game.country : null) ?? listed?.country ?? pickCountry(auth.user?.id ?? game.playerName ?? "local", taken) ?? "250";
     const me: PublicPlayer = {
       id: listed?.id ?? "local", cityName: game.cityName, netWorth, population: game.population, perf: portfolioCost ? portfolio / portfolioCost - 1 : 0,
       day: game.day, country, updatedAt: game.lastTick, name: auth.user?.name ?? game.playerName, avatar: auth.user?.avatar, color: "#2563EB", isMe: true,
@@ -45,6 +49,15 @@ export default function WorldPage() {
   const selId = selected ?? mine?.country ?? "250";
   const owner = byCountry.get(selId);
   const hubs = HUBS.filter((h) => h.country === selId);
+  const [visiting, setVisiting] = useState<PublicPlayer | null>(null);
+  const [moving, setMoving] = useState(false);
+  const price = PLAYABLE[selId] ? countryPrice(selId) : 0;
+  const move = async () => {
+    if (!mine || moving) return;
+    setMoving(true);
+    await moveTo(selId, mine.country, players.filter((p) => !p.isMe).map((p) => p.country));
+    setMoving(false);
+  };
 
   const ranked = [...players].sort((a, b) => sort === "Patrimoine" ? b.netWorth - a.netWorth : sort === "Population" ? b.population - a.population : b.perf - a.perf);
   const myRank = [...players].sort((a, b) => b.netWorth - a.netWorth).findIndex((p) => p.isMe) + 1;
@@ -90,10 +103,33 @@ export default function WorldPage() {
                   <Info label="Bourse" value={<Delta value={owner.perf} />} />
                   <Info label="Jour" value={num(owner.day)} />
                 </dl>
-                {owner.isMe && <p className="text-[11px] text-muted mt-3">Revenus de la ville : {eur(city.net)}/j</p>}
+                {owner.isMe ? (
+                  <>
+                    <p className="text-[11px] text-muted mt-3">Revenus de la ville : {eur(city.net)}/j</p>
+                    <Link href="/ville" className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-[10px] border border-line bg-card px-4 py-2 text-[13px] font-semibold hover:bg-slate-50"><Eye size={15} />Ouvrir ma ville</Link>
+                    <p className="text-[11px] text-muted mt-3">Pour déménager, choisissez un pays libre sur la carte.</p>
+                  </>
+                ) : (
+                  <Button onClick={() => setVisiting(owner)} className="mt-3 inline-flex w-full items-center justify-center gap-1.5"><Eye size={15} />Visiter la ville</Button>
+                )}
+              </>
+            ) : PLAYABLE[selId] ? (
+              <>
+                <p className="text-[13px] text-muted">Pays libre. Vous pouvez y installer votre ville : elle garde tous ses bâtiments et ses habitants.</p>
+                <dl className="mt-3 grid grid-cols-2 gap-2 text-[12px]">
+                  <Info label="Prix d'installation" value={compactEur(price)} />
+                  <Info label="Catégorie" value={`${countryTier(selId)} / 4`} />
+                </dl>
+                <ConfirmButton onConfirm={move} disabled={moving || game.cash < price} confirmLabel={`Confirmer : payer ${compactEur(price)}`}
+                  className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-[10px] bg-primary px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40">
+                  <Plane size={15} />{moving ? "Déménagement…" : "Déménager ici"}
+                </ConfirmButton>
+                <p className="mt-2 text-[11px] text-muted">
+                  {game.cash < price ? `Liquidités insuffisantes : il vous manque ${compactEur(price - game.cash)}.` : "Le prix est débité de vos liquidités. Votre ancien pays redevient libre."}
+                </p>
               </>
             ) : (
-              <p className="text-[13px] text-muted">{PLAYABLE[selId] ? "Pays libre : un nouveau joueur peut s'y installer." : "Pays non jouable pour l'instant."}</p>
+              <p className="text-[13px] text-muted">Pays non jouable pour l&apos;instant.</p>
             )}
             {hubs.map((h) => (
               <div key={h.name} className="mt-4 rounded-[10px] border border-line p-3">
@@ -121,7 +157,7 @@ export default function WorldPage() {
               <table className="w-full text-[13px]">
                 <thead className="text-muted text-[12px]"><tr className="border-b border-line">
                   <th className="text-left font-medium py-2 w-12">#</th><th className="text-left font-medium">Ville</th><th className="text-left font-medium hidden md:table-cell">Pays</th><th className="text-left font-medium hidden sm:table-cell">Joueur</th>
-                  <th className="text-right font-medium">Patrimoine</th><th className="text-right font-medium">Population</th><th className="text-right font-medium">Bourse</th>
+                  <th className="text-right font-medium">Patrimoine</th><th className="text-right font-medium">Population</th><th className="text-right font-medium">Bourse</th><th className="w-10"><span className="sr-only">Visiter</span></th>
                 </tr></thead>
                 <tbody>
                   {ranked.map((p, i) => (
@@ -141,6 +177,9 @@ export default function WorldPage() {
                       <td className="text-right tabular font-semibold">{eur(p.netWorth)}</td>
                       <td className="text-right tabular">{num(p.population)}</td>
                       <td className="text-right"><Delta value={p.perf} /></td>
+                      <td className="text-right">
+                        {!p.isMe && <button onClick={() => setVisiting(p)} aria-label={`Visiter ${p.cityName}`} title="Visiter la ville" className="rounded-[8px] p-1.5 text-muted hover:bg-slate-100 hover:text-primary"><Eye size={16} /></button>}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -151,6 +190,7 @@ export default function WorldPage() {
           {!STATIC_MODE && auth.status !== "in" && <div className="mt-3"><DiscordButton small /></div>}
         </Card>
       )}
+      {visiting && <CityVisit player={visiting} onClose={() => setVisiting(null)} />}
     </>
   );
 }
