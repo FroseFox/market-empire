@@ -9,7 +9,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Layers, Moon, Sun } from "lucide-react";
 import { BUILDING_BY_ID, CATEGORY_LABELS, type Category } from "@/lib/game/config";
-import { isBuildable, isRoad, MAP_SIZE, type Plot } from "@/lib/game/layout";
+import { isBuildable, isRoad, mapBounds, MAP_SIZE, MAX_MAP_SIZE, type Plot } from "@/lib/game/layout";
 
 /** Enseigne d'une entreprise implantée, affichée au-dessus de son bâtiment. */
 export interface CitySign {
@@ -121,12 +121,14 @@ function hash(x: number, y: number) {
   return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
 }
 
-export default function IsoCity({ plots, height = 440, compact = false, mode = null, selected = null, onTileClick, initialZoom = 1, markers, signs, selectedTone = "primary", padTop = 0, padBottom = 0, zoomClass = "right-3 top-3", hint = true }: {
+export default function IsoCity({ plots, height = 440, compact = false, mode = null, selected = null, onTileClick, initialZoom = 1, markers, signs, mapSize = MAP_SIZE, selectedTone = "primary", padTop = 0, padBottom = 0, zoomClass = "right-3 top-3", hint = true }: {
   plots: Plot[];
   /** Hauteur en pixels, ou "fill" pour occuper tout le parent (vue plein écran). */
   height?: number | "fill"; compact?: boolean;
   /** Indicateurs posés au-dessus des bâtiments. */
   markers?: CityMarker[];
+  /** Côté de la carte du joueur (elle grandit avec le territoire). */
+  mapSize?: number;
   /** Enseignes des entreprises implantées, par carreau (« x,y »). */
   signs?: Record<string, CitySign>;
   /** Couleur du contour du carreau sélectionné. */
@@ -230,10 +232,11 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
     const pad = interactive ? 3 : 1, span = interactive ? 6 : 3;
     let x0 = Math.min(...xs, MAP_SIZE / 2 - span) - pad, x1 = Math.max(...xs, MAP_SIZE / 2 + span) + pad;
     let y0 = Math.min(...ys, MAP_SIZE / 2 - span) - pad, y1 = Math.max(...ys, MAP_SIZE / 2 + span) + pad;
-    x0 = Math.max(0, x0); y0 = Math.max(0, y0); x1 = Math.min(MAP_SIZE - 1, x1); y1 = Math.min(MAP_SIZE - 1, y1);
+    const { lo, hi } = mapBounds(mapSize);
+    x0 = Math.max(lo, x0); y0 = Math.max(lo, y0); x1 = Math.min(hi - 1, x1); y1 = Math.min(hi - 1, y1);
     // La ville s'arrête sur une route (boulevard de ceinture), pas au milieu d'un pâté de maisons
     x0 = Math.floor(x0 / 4) * 4; y0 = Math.floor(y0 / 4) * 4;
-    x1 = Math.min(MAP_SIZE - 1, Math.ceil(x1 / 4) * 4); y1 = Math.min(MAP_SIZE - 1, Math.ceil(y1 / 4) * 4);
+    x1 = Math.min(hi - 1, Math.ceil(x1 / 4) * 4); y1 = Math.min(hi - 1, Math.ceil(y1 / 4) * 4);
 
     const byTile = new Map(plots.map((p) => [`${p.x},${p.y}`, p]));
     const SLAB = 0; // plus de socle : la ville est posée dans son paysage
@@ -306,7 +309,7 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
     // Pendant la préparation d'une image de bâtiment : pas d'effets animés, fenêtres toujours relevées
     let baking = false, vsForce = -1;
     /** Variante (0 à 2) d'un bâtiment selon son carreau : couleur des champs, fenêtres allumées. */
-    const vsOf = (x: number, y: number) => (vsForce >= 0 ? vsForce : (Math.floor(x) + Math.floor(y)) % 3);
+    const vsOf = (x: number, y: number) => (vsForce >= 0 ? vsForce : (((Math.floor(x) + Math.floor(y)) % 3) + 3) % 3);
 
     // ─── Primitives ───
     const poly = (pts: Pt[], fill: string, stroke?: string) => {
@@ -829,7 +832,7 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
     /** Dessine un bâtiment terminé : depuis son image si elle est disponible, sinon en direct. */
     function drawBuilding(p: Plot, t: number) {
       if (!useSprites) { building(p, t, 1); return; }
-      const vs = (p.x + p.y) % 3, key = `${p.id}|${vs}`;
+      const vs = (((p.x + p.y) % 3) + 3) % 3, key = `${p.id}|${vs}`;
       let sp = sprites.get(key);
       if (!sp) { sp = bake(p.id, vs); sprites.set(key, sp); }
       const [px, py] = iso(p.x, p.y);
@@ -908,13 +911,14 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
             }
           }
           // Mode construction : carreaux libres en vert
-          if (m && isBuildable(x, y) && !byTile.has(`${x},${y}`)) poly(q, "rgba(16,185,129,.10)");
+          if (m && isBuildable(x, y, mapSize) && !byTile.has(`${x},${y}`)) poly(q, "rgba(16,185,129,.10)");
         }
       }
     }
 
     // ─── Paysage autour de la ville ───
-    const COAST = MAP_SIZE + 5, CELL = 5;
+    // La côte reste au-delà du plus grand territoire possible
+    const COAST = mapBounds(MAX_MAP_SIZE).hi + 5, CELL = 5;
     /** Ligne de côte (ondulée) : la mer est au sud-ouest, au-delà de y = coast(x). */
     const coast = (x: number) => COAST + Math.sin(x * 0.45) * 0.9 + Math.sin(x * 0.17 + 1) * 1.6;
     function backdrop() {
@@ -1124,7 +1128,7 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
       if (hv && hv.x >= x0 && hv.x <= x1 && hv.y >= y0 && hv.y <= y1) {
         const q: Pt[] = [iso(hv.x, hv.y), iso(hv.x + 1, hv.y), iso(hv.x + 1, hv.y + 1), iso(hv.x, hv.y + 1)];
         const taken = byTile.has(`${hv.x},${hv.y}`);
-        const free = isBuildable(hv.x, hv.y) && !taken;
+        const free = isBuildable(hv.x, hv.y, mapSize) && !taken;
         if (m) poly(q, free || (m.kind === "move" && m.from.x === hv.x && m.from.y === hv.y) ? "rgba(16,185,129,.45)" : "rgba(239,68,68,.35)");
         else if (taken) poly(q, toneRef.current === "danger" ? "rgba(239,68,68,.28)" : "rgba(37,99,235,.22)");
       }
@@ -1156,7 +1160,7 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
           else block(cx - l / 2, cy - w / 2, cx + l / 2, cy + w / 2, 0, 5, car.color, car.color, "rgba(15,23,42,.35)");
         } });
       }
-      if (m && hv && isBuildable(hv.x, hv.y) && !byTile.has(`${hv.x},${hv.y}`)) {
+      if (m && hv && isBuildable(hv.x, hv.y, mapSize) && !byTile.has(`${hv.x},${hv.y}`)) {
         dynamic.push({ depth: hv.x + hv.y + 0.5, ax: hv.x + 0.5, ay: hv.y + 0.5, draw: (tt) => {
           g.globalAlpha = 0.6;
           building({ id: m.id, x: hv.x, y: hv.y }, tt, 1);
@@ -1336,7 +1340,7 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
       cv.removeEventListener("wheel", onWheel); cv.removeEventListener("dblclick", onDbl);
       controls.current = null;
     };
-  }, [plots, height, compact, interactive, initialZoom, padTop, padBottom]);
+  }, [plots, height, compact, interactive, initialZoom, padTop, padBottom, mapSize]);
 
   const auto = light === "auto";
 

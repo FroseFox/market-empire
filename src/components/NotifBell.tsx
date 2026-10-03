@@ -1,0 +1,70 @@
+"use client";
+// Cloche de la barre du haut : les dernières notifications du jeu.
+import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
+import { Bell, BellRing } from "lucide-react";
+import { useNotifs } from "@/lib/notifs";
+
+const DOT = { good: "bg-success", bad: "bg-danger", info: "bg-primary" } as const;
+const ago = (at: number, now: number) => {
+  const m = Math.max(0, Math.round((now - at) / 60_000));
+  return m < 1 ? "à l'instant" : m < 60 ? `il y a ${m} min` : m < 1440 ? `il y a ${Math.round(m / 60)} h` : `il y a ${Math.round(m / 1440)} j`;
+};
+
+export default function NotifBell() {
+  const { list, system, readAll, clear, enableSystem } = useNotifs();
+  const [open, setOpen] = useState(false);
+  const [now, setNow] = useState(0);
+  const box = useRef<HTMLDivElement>(null);
+  const unread = list.filter((n) => !n.read).length;
+  const canSystem = typeof Notification !== "undefined" && Notification.permission !== "denied";
+
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
+    const key = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", away); document.addEventListener("keydown", key);
+    return () => { document.removeEventListener("mousedown", away); document.removeEventListener("keydown", key); };
+  }, [open]);
+
+  const toggle = () => { setNow(Date.now()); setOpen((o) => { if (o) readAll(); return !o; }); };
+  return (
+    <div ref={box} className="relative">
+      <button onClick={toggle} aria-label={unread ? `Notifications : ${unread} non lue${unread > 1 ? "s" : ""}` : "Notifications"} aria-expanded={open}
+        className="relative grid h-9 w-9 place-items-center rounded-full text-muted hover:bg-slate-100 hover:text-ink">
+        {unread ? <BellRing size={18} className="text-primary" /> : <Bell size={18} />}
+        {unread > 0 && <span className="absolute -right-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-danger px-1 text-[10px] font-bold leading-none text-white">{unread}</span>}
+      </button>
+      {open && (
+        <div className="absolute right-0 top-11 z-40 w-[min(340px,calc(100vw-24px))] rounded-[14px] border border-line bg-card shadow-2xl appear">
+          <div className="flex items-center justify-between px-4 pb-2 pt-3">
+            <h2 className="text-[14px] font-semibold">Notifications</h2>
+            {list.length > 0 && <button onClick={clear} className="text-[11px] font-medium text-muted hover:text-ink">Tout effacer</button>}
+          </div>
+          {list.length === 0 ? <p className="px-4 pb-4 text-[12px] text-muted">Rien pour l&apos;instant. Vous serez prévenu d&apos;une subvention disponible, d&apos;un nouveau rang ou d&apos;une forte variation d&apos;un actif que vous détenez.</p> : (
+            <ul className="max-h-[52vh] divide-y divide-line overflow-y-auto">
+              {list.map((n) => (
+                <li key={n.id}>
+                  <Link href={n.href} onClick={() => { readAll(); setOpen(false); }} className={`flex gap-2.5 px-4 py-2.5 hover:bg-slate-50 ${n.read ? "" : "bg-primary-soft/40"}`}>
+                    <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${DOT[n.tone]}`} />
+                    <span className="min-w-0">
+                      <span className="block text-[13px] font-semibold">{n.title}</span>
+                      <span className="block text-[12px] text-muted">{n.text}</span>
+                      <span className="block text-[11px] text-muted">{ago(n.at, now)}</span>
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+          {canSystem && (
+            <div className="border-t border-line px-4 py-2.5 text-[11px] text-muted">
+              {system ? "Notifications du navigateur activées : vous êtes aussi prévenu quand l'onglet est en arrière-plan."
+                : <button onClick={() => void enableSystem()} className="font-semibold text-primary hover:underline">Me prévenir aussi quand l&apos;onglet est en arrière-plan</button>}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

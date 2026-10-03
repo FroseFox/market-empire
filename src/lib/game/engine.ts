@@ -5,7 +5,7 @@ import {
   EXPORT_RATIO, FOOD_PER_RESIDENT, MAINTENANCE_RATE, MAX_CATCHUP_DAYS, RESOURCE_PRICES,
   BRANCH_COST, BRANCH_EFFECTS, BRANCH_MIN_VALUE, CONTRACT_RATIO, FINANCE_FEE_FACTOR, HUB_DESK_COST, HUB_FEE_FACTOR,
   NEED_PER_RANK, POLLUTION_FACTOR, POLLUTION_MAX, PRESTIGE_PER_GOAL, PRESTIGE_PER_RANK, PROJECTS, PROJECT_BY_ID,
-  RENOVATE_RATE, WEAR_MAINTENANCE, WEAR_PER_DAY, WEAR_SATISFACTION,
+  RENOVATE_RATE, TERRITORY, WEAR_MAINTENANCE, WEAR_PER_DAY, WEAR_SATISFACTION,
   CITY_RANKS, FORECAST_DAYS, GOALS, UPGRADES, SERVICES, SERVICE_BONUS, SERVICE_IDS,
   STARTING_BUILDINGS, STARTING_CASH, STARTING_POPULATION, TAX_PER_RESIDENT, TRADE_FEE_MIN, TRADE_FEE_RATE,
   type Goal, type ServiceId, type Specialty,
@@ -104,6 +104,8 @@ export interface GameState {
   wear?: number;
   /** Grands projets achevés. */
   projects?: string[];
+  /** Agrandissements du territoire achetés (indice dans TERRITORY). */
+  territory?: number;
   /** Coûts du jour en cours, versés dans l'historique au prochain passage de jour. */
   today?: DayCosts;
   /** Total des plus-values réalisées depuis que le jeu les enregistre. */
@@ -189,7 +191,10 @@ export interface CityStats {
 
 /** Ce dont le calcul de la ville a besoin ; seuls les bâtiments et la population sont obligatoires. */
 export type CityInput = Pick<GameState, "buildings" | "population">
-  & Partial<Pick<GameState, "branches" | "holdings" | "country" | "wear" | "projects" | "contracts">>;
+  & Partial<Pick<GameState, "branches" | "holdings" | "country" | "wear" | "projects" | "contracts" | "territory">>;
+
+/** Côté de la carte du joueur (elle s'agrandit avec le territoire). */
+export const mapSize = (state: Partial<Pick<GameState, "territory">>) => TERRITORY[clamp(state.territory ?? 0, 0, TERRITORY.length - 1)].size;
 
 /** Entreprises implantées dont la participation est toujours détenue. */
 export function activeBranches(state: Partial<Pick<GameState, "branches" | "holdings">>): Branch[] {
@@ -233,6 +238,8 @@ export function computeCity(state: CityInput): CityStats {
   if (specialty === "agri") foodProd *= 1 + bonus;
   // Les grands projets comptent dans le patrimoine (pas d'entretien)
   assetValue += projects.reduce((a, p) => a + p.cost, 0);
+  // Le territoire acheté aussi
+  for (let i = 1; i <= Math.min(state.territory ?? 0, TERRITORY.length - 1); i++) assetValue += TERRITORY[i].cost;
 
   const pop = Math.min(state.population, housing);
   energyUse += pop * ENERGY_PER_RESIDENT;
@@ -580,7 +587,7 @@ export function openBranch(state: GameState, symbol: string, price: number, at: 
   if ((state.branches?.length ?? 0) >= branchLimit(state)) return { ok: false, error: "Limite atteinte : une entreprise de plus à chaque rang de ville." };
   const cost = branchCost(state);
   if (cost > state.cash) return { ok: false, error: "Liquidités insuffisantes." };
-  const tile = placeTile(state.plots, "branch");
+  const tile = placeTile(state.plots, "branch", mapSize(state));
   if (!tile) return { ok: false, error: "Plus de place sur la carte." };
   return {
     ok: true,
@@ -639,6 +646,63 @@ export function buildProject(state: GameState, id: string, at: number): ActionRe
       ...state, cash: round2(state.cash - p.cost), projects: [...(state.projects ?? []), id],
       transactions: addTx(state, { kind: "build", label: `Grand projet : ${p.name}`, amount: -p.cost, at }),
     },
+  };
+}
+
+/** Prochain agrandissement du territoire, s'il en reste un. */
+export const nextTerritory = (state: Partial<Pick<GameState, "territory">>) => TERRITORY[(state.territory ?? 0) + 1];
+
+/** Achète l'agrandissement suivant du territoire : la carte gagne 4 carreaux de chaque côté. */
+export function expandTerritory(state: GameState, at: number): ActionResult {
+  const next = nextTerritory(state);
+  if (!next) return { ok: false, error: "Territoire déjà au maximum." };
+  if (cityRank(state.population) < next.minRank) return { ok: false, error: `Réservé au rang « ${CITY_RANKS[next.minRank].name} ».` };
+  if (next.cost > state.cash) return { ok: false, error: "Liquidités insuffisantes." };
+  return {
+    ok: true,
+    state: {
+      ...state, cash: round2(state.cash - next.cost), territory: (state.territory ?? 0) + 1,
+      transactions: addTx(state, { kind: "build", label: `Territoire agrandi : ${next.size} × ${next.size}`, amount: -next.cost, at }),
+    },
+  };
+}
+
+// ─── Journal d'absence ────────────────────────────────────────
+
+export interface AbsenceReport {
+  days: number;
+  /** Ce que la ville a encaissé (ou perdu) pendant l'absence. */
+  cityFlow: number;
+  population: { from: number; to: number };
+  rank: { from: number; to: number };
+  satisfaction: { from: number; to: number };
+  /** Faits marquants, du plus important au moins important. */
+  notes: { tone: "good" | "bad" | "info"; text: string }[];
+}
+
+/** Ce qui a changé entre le départ du joueur et son retour (`before` et `after` encadrent le rattrapage des jours). */
+export function absenceReport(before: GameState, after: GameState): AbsenceReport {
+  const a = computeCity(before), b = computeCity(after);
+  const notes: AbsenceReport["notes"] = [];
+  const fmt = (n: number) => Math.round(n).toLocaleString("fr-FR");
+  if (b.rank > a.rank) notes.push({ tone: "good", text: `Votre ville est passée au rang « ${CITY_RANKS[b.rank].name} ».` });
+  const claimable = goalStatuses(after, b).filter((g) => g.done && !g.claimed);
+  if (claimable.length) notes.push({ tone: "good", text: `${claimable.length} subvention${claimable.length > 1 ? "s" : ""} à encaisser (${fmt(claimable.reduce((s, g) => s + g.goal.reward, 0))} €).` });
+  if (after.cash < 0) notes.push({ tone: "bad", text: "Vos liquidités sont passées en négatif." });
+  if (b.energy.balance < 0 && a.energy.balance >= 0) notes.push({ tone: "bad", text: "La ville manque maintenant d'énergie : elle en importe au prix fort." });
+  if (b.food.balance < 0 && a.food.balance >= 0) notes.push({ tone: "bad", text: "La ville manque maintenant de nourriture : elle en importe au prix fort." });
+  for (const id of SERVICE_IDS) if (b.services[id].needed && !a.services[id].needed && b.services[id].coverage < 1) notes.push({ tone: "bad", text: `Les habitants attendent désormais : ${SERVICES[id].label.toLowerCase()}.` });
+  if (b.freeHousing === 0 && a.freeHousing > 0) notes.push({ tone: "info", text: "Tous les logements sont occupés : la population ne grandit plus." });
+  if (b.wear >= 0.5 && a.wear < 0.5) notes.push({ tone: "bad", text: `La vétusté atteint ${Math.round(b.wear * 100)} % : pensez à rénover.` });
+  if (b.unemploymentRate >= 0.08 && a.unemploymentRate < 0.08) notes.push({ tone: "bad", text: `Le chômage est monté à ${Math.round(b.unemploymentRate * 100)} %.` });
+  const days = after.day - before.day;
+  const flow = after.history.slice(-days).reduce((s, h, i, arr) => s + dayFlow(after.history, after.history.length - arr.length + i), 0);
+  return {
+    days, cityFlow: round2(flow),
+    population: { from: before.population, to: after.population },
+    rank: { from: a.rank, to: b.rank },
+    satisfaction: { from: a.satisfaction, to: b.satisfaction },
+    notes,
   };
 }
 
@@ -718,7 +782,8 @@ export function build(state: GameState, buildingId: string, at: number, tile?: {
   if (b.unlockPop && state.population < b.unlockPop) return { ok: false, error: `Débloqué à ${b.unlockPop} habitants.` };
   if (b.cost > state.cash) return { ok: false, error: "Liquidités insuffisantes." };
   if (tile && !isTileFree(state, tile.x, tile.y)) return { ok: false, error: "Emplacement occupé ou sur une route." };
-  const plots = tile ? [...state.plots, { id: b.id, x: tile.x, y: tile.y }] : addPlot(state.plots, b.id);
+  const plots = tile ? [...state.plots, { id: b.id, x: tile.x, y: tile.y }] : addPlot(state.plots, b.id, mapSize(state));
+  if (plots.length === state.plots.length) return { ok: false, error: "Plus de place sur la carte : agrandissez le territoire." };
   return {
     ok: true,
     state: {
@@ -814,8 +879,8 @@ export function buildingAudit(buildingId: string, city: CityStats): { revenue: n
 
 // ─── Carte ────────────────────────────────────────────────────
 
-export function isTileFree(state: Pick<GameState, "plots">, x: number, y: number) {
-  return isBuildable(x, y) && !state.plots.some((p) => p.x === x && p.y === y);
+export function isTileFree(state: Pick<GameState, "plots"> & Partial<Pick<GameState, "territory">>, x: number, y: number) {
+  return isBuildable(x, y, mapSize(state)) && !state.plots.some((p) => p.x === x && p.y === y);
 }
 
 /** Déplace un bâtiment (gratuit). */
@@ -827,8 +892,8 @@ export function moveBuilding(state: GameState, from: { x: number; y: number }, t
   return { ok: true, state: { ...state, plots: state.plots.map((p) => p === plot ? { ...p, x: to.x, y: to.y } : p) } };
 }
 
-function addPlot(plots: Plot[], id: string): Plot[] {
-  const t = placeTile(plots, id);
+function addPlot(plots: Plot[], id: string, size: number): Plot[] {
+  const t = placeTile(plots, id, size);
   return t ? [...plots, { id, ...t }] : plots;
 }
 
@@ -851,14 +916,14 @@ export function normalize(input: GameState): GameState {
     const old = Array.isArray(state.plots) ? state.plots : [];
     let fixed = [...old.filter((p) => p.id !== "branch"), ...old.filter((p) => p.id === "branch").slice(0, sites)];
     const kept = fixed.filter((p) => p.id === "branch");
-    for (let i = kept.length; i < sites; i++) { const t = placeTile(fixed, "branch"); if (t) fixed = [...fixed, { id: "branch", ...t }]; }
+    for (let i = kept.length; i < sites; i++) { const t = placeTile(fixed, "branch", mapSize(state)); if (t) fixed = [...fixed, { id: "branch", ...t }]; }
     state = { ...state, buildings, plots: fixed };
   }
   const plots = Array.isArray(state.plots) ? state.plots : [];
   const counts: Record<string, number> = {};
   for (const p of plots) counts[p.id] = (counts[p.id] ?? 0) + 1;
   const same = Object.keys({ ...counts, ...state.buildings }).every((k) => (counts[k] ?? 0) === (state.buildings[k] ?? 0));
-  return same && Array.isArray(state.plots) ? state : { ...state, plots: layoutFrom(state.buildings) };
+  return same && Array.isArray(state.plots) ? state : { ...state, plots: layoutFrom(state.buildings, mapSize(state)) };
 }
 
 // ─── Recherche ────────────────────────────────────────────────

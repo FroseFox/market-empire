@@ -3,7 +3,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
-  BarChart3, Building2, Cloud, CloudOff, FlaskConical, Folder, Globe2, LineChart, Network, Newspaper, Wallet, Plus, Clock, LayoutGrid, X,
+  BarChart3, BookOpen, Building2, Cloud, CloudOff, FlaskConical, Folder, Globe2, LineChart, Network, Newspaper, Wallet, Plus, Clock, LayoutGrid, X,
 } from "lucide-react";
 import { useGame } from "@/store/game";
 import { fetchQuotes, STATIC_MODE } from "@/lib/market/client";
@@ -12,6 +12,10 @@ import { startWorldSync } from "@/lib/world/players";
 import { initAuth, useAuth } from "@/lib/auth";
 import { startOnline } from "@/lib/online";
 import AccountMenu from "@/components/AccountMenu";
+import Guide from "@/components/Guide";
+import AbsenceReport from "@/components/AbsenceReport";
+import NotifBell from "@/components/NotifBell";
+import { startNotifs } from "@/lib/notifs";
 import AuthGate, { Splash } from "@/components/AuthGate";
 import { DAY_MS } from "@/lib/game/engine";
 import { eur } from "@/lib/format";
@@ -26,6 +30,7 @@ const NAV: { href: string; label: string; icon: typeof BarChart3; soon?: boolean
   { href: "/relations", label: "Relations", icon: Network },
   { href: "/dossiers", label: "Dossiers", icon: Folder },
   { href: "/recherche", label: "Recherche", icon: FlaskConical },
+  { href: "/wiki", label: "Wiki", icon: BookOpen },
 ];
 
 export function Logo({ light = false }: { light?: boolean }) {
@@ -74,7 +79,8 @@ function useHeartbeat(enabled: boolean) {
     };
     const tick = () => {
       const days = sync();
-      if (days > 0 && alive) notify(days === 1 ? "Un nouveau jour s'est écoulé dans votre ville" : `${days} jours se sont écoulés dans votre ville`);
+      // À partir de 3 jours, le journal d'absence raconte ce qui s'est passé (voir AbsenceReport)
+      if (days > 0 && days < 3 && alive) notify(days === 1 ? "Un nouveau jour s'est écoulé dans votre ville" : `${days} jours se sont écoulés dans votre ville`);
     };
     pull(); tick();
     // Pas de requête quand l'onglet est caché
@@ -125,6 +131,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   useHeartbeat(hydrated);
   useEffect(() => {
     if (!hydrated) return;
+    startNotifs();
     if (STATIC_MODE) { startCloudSync(); startWorldSync(); return; }
     initAuth().then(startOnline);
   }, [hydrated]);
@@ -178,6 +185,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 <div className="leading-tight"><div className="text-[13px] font-semibold">{hydrated ? name : ""}</div><div className="text-[11px] text-muted">Investisseur</div></div>
               </div>
             ) : hydrated && <AccountMenu />}
+            {hydrated && <NotifBell />}
             <Link href="/ville" className="flex items-center gap-2 rounded-[12px] bg-success-soft px-3 py-1.5">
               <div className="leading-tight text-right">
                 <div className="text-[14px] font-bold text-emerald-700 tabular">{hydrated ? eur(cash) : "—"}</div>
@@ -197,6 +205,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       {/* Navigation mobile : 4 onglets principaux + « Plus » */}
       <MobileNav isActive={isActive} mode={mode} quotesAt={quotesAt} />
 
+      {hydrated && <Guide />}
+      {hydrated && <AbsenceReport />}
       {toast && (
         <div role="status" className={`fixed z-40 bottom-20 lg:bottom-6 left-1/2 -translate-x-1/2 appear rounded-[12px] px-4 py-2.5 text-[13px] font-medium shadow-lg ${toast.kind === "ok" ? "bg-navy text-white" : "bg-danger text-white"}`}>
           {toast.text}

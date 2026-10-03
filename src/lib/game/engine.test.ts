@@ -495,3 +495,53 @@ describe("ordres en euros", () => {
     expect(rest.state.holdings.AAPL).toBeUndefined();
   });
 });
+
+describe("territoire", () => {
+  it("s'agrandit contre paiement, à partir d'un certain rang, et compte dans le patrimoine", () => {
+    let g = { ...newGame(T0), cash: 15_000_000 };
+    expect(E.mapSize(g)).toBe(32);
+    expect(build(g, "house_s", T0, { x: -2, y: 5 }).ok).toBe(false);   // hors de la carte de départ
+    expect(E.expandTerritory(g, T0).ok).toBe(false);                    // village : trop tôt
+    g = { ...g, population: 20_000, buildings: { ...g.buildings, house_xl: 2 } };
+    g = normalize(g);
+    const worth = g.cash + computeCity(g).assetValue;
+    const r = E.expandTerritory(g, T0);
+    if (!r.ok) throw new Error(r.error);
+    g = r.state;
+    expect(E.mapSize(g)).toBe(40);
+    expect(g.cash + computeCity(g).assetValue).toBeCloseTo(worth, 2);
+    const ok = build(g, "house_s", T0, { x: -2, y: 5 });
+    expect(ok.ok).toBe(true);
+    expect(build(g, "house_s", T0, { x: -4, y: 5 }).ok).toBe(false);    // route de la nouvelle bordure
+    expect(build(g, "house_s", T0, { x: -6, y: 5 }).ok).toBe(false);    // au-delà du territoire acheté
+    if (ok.ok) expect(normalize(ok.state)).toBe(ok.state);
+  });
+  it("une carte pleine refuse la construction automatique au lieu de perdre le bâtiment", () => {
+    let g = { ...newGame(T0), cash: 1e9 };
+    let n = 0;
+    for (;;) { const r = build(g, "house_s", T0); if (!r.ok) { expect(r.error).toMatch(/Plus de place/); break; } g = r.state; n++; }
+    expect(g.plots.length).toBe(529);
+    expect(g.buildings.house_s).toBe(n);
+  });
+});
+
+describe("journal d'absence", () => {
+  it("résume les jours écoulés : flux encaissé, population, rang, faits marquants", () => {
+    let g = newGame(T0);
+    const b1 = build(g, "house_m", T0); // verrouillé à 500 habitants : on passe par des petits quartiers
+    expect(b1.ok).toBe(false);
+    for (let i = 0; i < 3; i++) { const r = build(g, "house_s", T0); if (r.ok) g = r.state; }
+    for (let i = 0; i < 4; i++) { const r2 = build(g, "shop", T0); if (r2.ok) g = r2.state; }
+    g = { ...g, population: 420 };
+    const before = g;
+    const { state: after, days } = catchUp(g, g.lastTick + 20 * DAY_MS, {});
+    const rep = E.absenceReport(before, after);
+    expect(rep.days).toBe(days);
+    expect(rep.days).toBe(20);
+    expect(rep.cityFlow).toBeCloseTo(after.cash - before.cash, 1);
+    expect(rep.population.to).toBeGreaterThan(rep.population.from);
+    expect(rep.rank.to).toBe(1);
+    expect(rep.notes.some((n) => n.text.includes("Bourg"))).toBe(true);
+    expect(rep.notes.some((n) => n.text.includes("subvention"))).toBe(true);
+  });
+});

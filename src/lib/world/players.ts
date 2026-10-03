@@ -10,7 +10,7 @@ import { useGame } from "@/store/game";
 import * as E from "@/lib/game/engine";
 import { pack } from "@/lib/game/pack";
 import { BUILDING_BY_ID } from "@/lib/game/config";
-import { isBuildable, type Plot } from "@/lib/game/layout";
+import { isBuildable, MAX_MAP_SIZE, type Plot } from "@/lib/game/layout";
 import { pickCountry, PLAYABLE } from "./countries";
 
 export interface PublicPlayer {
@@ -38,7 +38,7 @@ export function plotsFromCity(city: unknown): Plot[] {
     if (!BUILDING_BY_ID[id] || !Array.isArray(xy)) continue;
     for (let i = 0; i + 1 < xy.length && out.length < 900; i += 2) {
       const x = Number(xy[i]), y = Number(xy[i + 1]), k = `${x},${y}`;
-      if (!isBuildable(x, y) || seen.has(k)) continue;
+      if (!isBuildable(x, y, MAX_MAP_SIZE) || seen.has(k)) continue;
       seen.add(k);
       out.push({ id, x, y });
     }

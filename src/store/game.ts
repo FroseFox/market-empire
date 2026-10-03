@@ -20,6 +20,10 @@ interface Store {
   quotesAt: number;
   lastQuoteAt: number;
   toast: { text: string; kind: "ok" | "error" } | null;
+  /** Dernière action de construction annulable : la partie telle qu'elle était juste avant. */
+  undo: { game: E.GameState; label: string } | null;
+  /** Journal affiché au retour d'une absence de plusieurs jours. */
+  absence: E.AbsenceReport | null;
 
   prices: () => E.Prices;
   setQuotes: (q: { symbol: string; price: number; change: number; source: string }[], mode: string) => void;
@@ -29,6 +33,12 @@ interface Store {
   /** Vend pour `amount` euros de titres ; `all` vend toute la position. */
   sell: (symbol: string, amount: number, all?: boolean) => Promise<boolean>;
   build: (id: string, tile?: { x: number; y: number }) => boolean;
+  /** Construit jusqu'à `count` exemplaires, placés automatiquement. Renvoie le nombre construit. */
+  buildAuto: (id: string, count: number) => number;
+  undoLast: () => void;
+  expandTerritory: () => boolean;
+  closeAbsence: () => void;
+  reopenTutorial: () => void;
   demolish: (id: string, tile?: { x: number; y: number }) => boolean;
   moveBuilding: (from: { x: number; y: number }, to: { x: number; y: number }) => boolean;
   research: (id: string) => boolean;
@@ -67,6 +77,8 @@ export const useGame = create<Store>()(
       quotesAt: 0,
       lastQuoteAt: 0,
       toast: null,
+      undo: null,
+      absence: null,
 
       prices: () => Object.fromEntries(Object.entries(get().quotes).map(([s, q]) => [s, q.price])),
 
@@ -78,7 +90,8 @@ export const useGame = create<Store>()(
 
       sync: () => {
         const { state, days } = E.catchUp(get().game, Date.now(), get().prices());
-        if (days > 0) set({ game: state });
+        // Retour après plusieurs jours : on garde de quoi raconter ce qui s'est passé
+        if (days > 0) set({ game: state, ...(days >= 3 ? { absence: E.absenceReport(get().game, state) } : {}) });
         return days;
       },
 
@@ -111,20 +124,20 @@ export const useGame = create<Store>()(
       build: (id, tile) => {
         const r = E.build(get().game, id, Date.now(), tile);
         if (!r.ok) { get().notify(r.error, "error"); return false; }
-        set({ game: r.state });
+        set({ game: r.state, undo: { game: get().game, label: "Construction" } });
         get().notify("Construction terminée");
         return true;
       },
       demolish: (id, tile) => {
         const r = E.demolish(get().game, id, Date.now(), tile);
         if (!r.ok) { get().notify(r.error, "error"); return false; }
-        set({ game: r.state });
+        set({ game: r.state, undo: { game: get().game, label: "Démolition" } });
         return true;
       },
       moveBuilding: (from, to) => {
         const r = E.moveBuilding(get().game, from, to);
         if (!r.ok) { get().notify(r.error, "error"); return false; }
-        set({ game: r.state });
+        set({ game: r.state, undo: { game: get().game, label: "Déplacement" } });
         get().notify("Bâtiment déplacé");
         return true;
       },
@@ -166,7 +179,7 @@ export const useGame = create<Store>()(
       upgrade: (tile) => {
         const r = E.upgrade(get().game, tile, Date.now());
         if (!r.ok) { get().notify(r.error, "error"); return false; }
-        set({ game: r.state });
+        set({ game: r.state, undo: { game: get().game, label: "Amélioration" } });
         get().notify("Bâtiment amélioré");
         return true;
       },
@@ -202,6 +215,33 @@ export const useGame = create<Store>()(
         get().notify("Grand projet achevé");
         return true;
       },
+      buildAuto: (id, count) => {
+        const before = get().game;
+        let g = before, done = 0, error = "";
+        for (let i = 0; i < count; i++) {
+          const r = E.build(g, id, Date.now());
+          if (!r.ok) { error = r.error; break; }
+          g = r.state; done++;
+        }
+        if (done > 0) { set({ game: g, undo: { game: before, label: done > 1 ? `${done} constructions` : "Construction" } }); get().notify(done > 1 ? `${done} bâtiments construits` : "Construction terminée"); }
+        else get().notify(error || "Construction impossible.", "error");
+        return done;
+      },
+      undoLast: () => {
+        const u = get().undo;
+        if (!u) return;
+        set({ game: u.game, undo: null });
+        get().notify(`Annulé : ${u.label.toLowerCase()}`);
+      },
+      expandTerritory: () => {
+        const r = E.expandTerritory(get().game, Date.now());
+        if (!r.ok) { get().notify(r.error, "error"); return false; }
+        set({ game: r.state });
+        get().notify("Territoire agrandi");
+        return true;
+      },
+      closeAbsence: () => set({ absence: null }),
+      reopenTutorial: () => set({ game: { ...get().game, tutorialDone: false } }),
       closeTutorial: () => set({ game: { ...get().game, tutorialDone: true } }),
       // Outil de test : avance d'un jour de ville (sans effet sur le site publié).
       skipDay: () => {
@@ -237,6 +277,12 @@ export const useGame = create<Store>()(
     },
   ),
 );
+
+// L'annulation ne vaut que pour la toute dernière action : tout autre changement de la partie
+// (ordre de bourse, passage d'un jour, recherche…) la fait disparaître.
+useGame.subscribe((s, prev) => {
+  if (s.game !== prev.game && s.undo && s.undo === prev.undo) useGame.setState({ undo: null });
+});
 
 // Horodate chaque changement de partie
 useGame.subscribe((s, prev) => {
