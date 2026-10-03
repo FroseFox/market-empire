@@ -24,8 +24,10 @@ interface Store {
   prices: () => E.Prices;
   setQuotes: (q: { symbol: string; price: number; change: number; source: string }[], mode: string) => void;
   sync: () => number;
-  buy: (symbol: string, qty: number) => Promise<boolean>;
-  sell: (symbol: string, qty: number) => Promise<boolean>;
+  /** Achète pour `amount` euros de titres (fractions de titre permises), au cours du moment. */
+  buy: (symbol: string, amount: number) => Promise<boolean>;
+  /** Vend pour `amount` euros de titres ; `all` vend toute la position. */
+  sell: (symbol: string, amount: number, all?: boolean) => Promise<boolean>;
   build: (id: string, tile?: { x: number; y: number }) => boolean;
   demolish: (id: string, tile?: { x: number; y: number }) => boolean;
   moveBuilding: (from: { x: number; y: number }, to: { x: number; y: number }) => boolean;
@@ -81,23 +83,29 @@ export const useGame = create<Store>()(
       },
 
       // Le prix d'exécution est toujours redemandé au serveur au moment de l'ordre.
-      buy: async (symbol, qty) => {
+      buy: async (symbol, amount) => {
         const price = await fetchPrice(symbol);
         if (!price) { get().notify("Prix indisponible, réessayez.", "error"); return false; }
+        const qty = E.sharesFor(amount, price);
+        if (qty <= 0) { get().notify("Montant trop faible pour ce cours.", "error"); return false; }
         const r = E.buy(get().game, symbol, qty, price, Date.now());
         if (!r.ok) { get().notify(r.error, "error"); return false; }
         set({ game: r.state });
         get().setQuotes([{ symbol, price, change: get().quotes[symbol]?.change ?? 0, source: get().quotes[symbol]?.source ?? "" }], get().dataMode);
-        get().notify(`Achat de ${qty} ${symbol} à ${price.toLocaleString("fr-FR")} €`);
+        get().notify(`Achat de ${qty.toLocaleString("fr-FR", { maximumFractionDigits: 4 })} ${symbol} à ${price.toLocaleString("fr-FR")} €`);
         return true;
       },
-      sell: async (symbol, qty) => {
+      sell: async (symbol, amount, all = false) => {
         const price = await fetchPrice(symbol);
         if (!price) { get().notify("Prix indisponible, réessayez.", "error"); return false; }
+        const held = get().game.holdings[symbol]?.qty ?? 0;
+        // Tout vendre, ou un montant qui couvre toute la position : on vend exactement ce qui est détenu (pas de reliquat)
+        const qty = all || amount >= held * price - 0.005 ? held : E.sharesFor(amount, price);
+        if (qty <= 0) { get().notify(held > 0 ? "Montant trop faible pour ce cours." : "Vous ne détenez pas cet actif.", "error"); return false; }
         const r = E.sell(get().game, symbol, qty, price, Date.now());
         if (!r.ok) { get().notify(r.error, "error"); return false; }
         set({ game: r.state });
-        get().notify(`Vente de ${qty} ${symbol} à ${price.toLocaleString("fr-FR")} €`);
+        get().notify(`Vente de ${qty.toLocaleString("fr-FR", { maximumFractionDigits: 4 })} ${symbol} à ${price.toLocaleString("fr-FR")} €`);
         return true;
       },
       build: (id, tile) => {

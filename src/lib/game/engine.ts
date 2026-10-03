@@ -653,6 +653,15 @@ export function setContracts(state: GameState, contracts: Contract[]): GameState
   return JSON.stringify(state.contracts ?? []) === JSON.stringify(contracts) ? state : { ...state, contracts };
 }
 
+/** Nombre de titres qu'un montant en euros permet d'acheter ou de vendre (au dix-millième de titre, arrondi vers le bas). */
+export function sharesFor(amount: number, price: number): number {
+  return price > 0 && amount > 0 ? Math.floor((amount / price) * 10_000 + 1e-6) / 10_000 : 0;
+}
+/** Montant d'achat maximal avec ces liquidités, frais compris. */
+export function maxBuyAmount(cash: number, factor = 1): number {
+  return Math.max(0, Math.floor(Math.min(cash - TRADE_FEE_MIN, cash / (1 + TRADE_FEE_RATE * factor)) * 100) / 100);
+}
+
 export function buy(state: GameState, symbol: string, qty: number, price: number, at: number): ActionResult {
   if (!Number.isFinite(qty) || qty <= 0) return { ok: false, error: "Quantité invalide." };
   if (!(price > 0)) return { ok: false, error: "Prix indisponible." };
