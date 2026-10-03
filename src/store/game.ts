@@ -158,8 +158,9 @@ export const useGame = create<Store>()(
         return true;
       },
       closeTutorial: () => set({ game: { ...get().game, tutorialDone: true } }),
-      // Outil de test : avance d'un jour de ville.
+      // Outil de test : avance d'un jour de ville (sans effet sur le site publié).
       skipDay: () => {
+        if (process.env.NODE_ENV === "production") return;
         const g = get().game;
         set({ game: { ...E.tickDay(g, get().prices(), Date.now()), lastTick: g.lastTick } });
       },

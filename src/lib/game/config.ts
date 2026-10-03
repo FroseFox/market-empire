@@ -17,8 +17,11 @@ export const STARTING_POPULATION = 250;
 /** Part de la population qui cherche un emploi (population active). */
 export const ACTIVE_RATIO = 0.6;
 
-/** Impôt local par habitant et par jour (avant modificateurs). */
-export const TAX_PER_RESIDENT = 1.1;
+/** Impôt local par habitant et par jour (avant modificateurs).
+ *  Rythme calé avec le robot de lib/game/sim.ts : à 1,1 € (valeur du doc), une ville seule mettait plus de 550 jours
+ *  pour atteindre 1 500 habitants. Les impôts et les revenus des entreprises ont été relevés (× 2 environ)
+ *  pour qu'une partie tienne en 2 semaines à 1 mois. */
+export const TAX_PER_RESIDENT = 2.5;
 
 /** Entretien quotidien d'un bâtiment, en fraction de son coût. */
 export const MAINTENANCE_RATE = 0.001;
@@ -91,12 +94,12 @@ export interface Goal {
 }
 export const GOALS: Goal[] = [
   { id: "pop_500", label: "Atteindre 500 habitants", metric: "population", target: 500, reward: 5_000 },
-  { id: "net_1k", label: "Flux net de 1 000 € par jour", metric: "net", target: 1_000, reward: 10_000 },
+  { id: "net_1k", label: "Flux net de 2 500 € par jour", metric: "net", target: 2_500, reward: 10_000 },
   { id: "pop_2k", label: "Atteindre 2 000 habitants", metric: "population", target: 2_000, reward: 20_000 },
   { id: "autonomy", label: "Autonomie en énergie et en nourriture", metric: "autonomy", target: 1, minPop: 2_000, reward: 25_000 },
   { id: "happy", label: "Satisfaction de 95 %", metric: "satisfaction", target: 0.95, minPop: 5_000, reward: 50_000 },
   { id: "services", label: "Tous les équipements publics couverts", metric: "services", target: 1, minPop: 8_000, reward: 60_000 },
-  { id: "net_10k", label: "Flux net de 10 000 € par jour", metric: "net", target: 10_000, reward: 75_000 },
+  { id: "net_10k", label: "Flux net de 25 000 € par jour", metric: "net", target: 25_000, reward: 75_000 },
   { id: "pop_10k", label: "Atteindre 10 000 habitants", metric: "population", target: 10_000, reward: 100_000 },
   { id: "pop_40k", label: "Devenir une métropole (40 000 habitants)", metric: "population", target: 40_000, reward: 400_000 },
 ];
@@ -149,28 +152,28 @@ export const BUILDINGS: BuildingType[] = [
   { id: "house_tower", name: "Tour d'habitation", category: "housing", cost: 5_000_000, housing: 55_000, energyUse: 400, unlockPop: 40_000, description: "+55 000 habitants sur un seul carreau" },
 
   // 🏪 Commerce & services
-  { id: "shop", name: "Commerce", category: "commerce", cost: 15_000, jobs: 40, revenue: 120, energyUse: 5, description: "Boutiques de quartier" },
-  { id: "market", name: "Marché couvert", category: "commerce", cost: 60_000, jobs: 120, revenue: 520, energyUse: 15, unlockPop: 800, description: "Halle et commerçants" },
-  { id: "hotel", name: "Hôtel", category: "commerce", cost: 180_000, jobs: 150, revenue: 1_500, energyUse: 40, unlockPop: 2_500, description: "Peu d'emplois, beaucoup de revenus" },
-  { id: "mall", name: "Centre commercial", category: "commerce", cost: 350_000, jobs: 600, revenue: 3_200, energyUse: 90, unlockPop: 4_000, description: "Grande surface et galerie" },
-  { id: "services", name: "Entreprise de services", category: "services", cost: 100_000, jobs: 150, revenue: 600, energyUse: 15, unlockPop: 600, description: "Bureaux, conseil, santé" },
-  { id: "bank", name: "Banque", category: "services", cost: 400_000, jobs: 300, revenue: 3_000, energyUse: 40, unlockPop: 5_000, description: "Siège bancaire régional" },
-  { id: "tech", name: "Campus technologique", category: "services", cost: 1_200_000, jobs: 1_500, revenue: 11_000, energyUse: 300, unlockPop: 12_000, description: "Emplois qualifiés, très énergivore" },
+  { id: "shop", name: "Commerce", category: "commerce", cost: 15_000, jobs: 40, revenue: 240, energyUse: 5, description: "Boutiques de quartier" },
+  { id: "market", name: "Marché couvert", category: "commerce", cost: 60_000, jobs: 120, revenue: 1_040, energyUse: 15, unlockPop: 800, description: "Halle et commerçants" },
+  { id: "hotel", name: "Hôtel", category: "commerce", cost: 180_000, jobs: 150, revenue: 3_000, energyUse: 40, unlockPop: 2_500, description: "Peu d'emplois, beaucoup de revenus" },
+  { id: "mall", name: "Centre commercial", category: "commerce", cost: 350_000, jobs: 600, revenue: 6_400, energyUse: 90, unlockPop: 4_000, description: "Grande surface et galerie" },
+  { id: "services", name: "Entreprise de services", category: "services", cost: 100_000, jobs: 150, revenue: 1_200, energyUse: 15, unlockPop: 600, description: "Bureaux, conseil, santé" },
+  { id: "bank", name: "Banque", category: "services", cost: 400_000, jobs: 300, revenue: 6_000, energyUse: 40, unlockPop: 5_000, description: "Siège bancaire régional" },
+  { id: "tech", name: "Campus technologique", category: "services", cost: 1_200_000, jobs: 1_500, revenue: 22_000, energyUse: 300, unlockPop: 12_000, description: "Emplois qualifiés, très énergivore" },
 
   // 🏭 Industrie
-  { id: "factory_s", name: "Petite usine", category: "industry", cost: 50_000, jobs: 100, revenue: 350, energyUse: 30, description: "Consomme de l'énergie" },
-  { id: "warehouse", name: "Entrepôt logistique", category: "industry", cost: 120_000, jobs: 250, revenue: 700, energyUse: 20, unlockPop: 1_000, description: "Beaucoup d'emplois, peu d'énergie" },
-  { id: "factory_m", name: "Usine moyenne", category: "industry", cost: 250_000, jobs: 500, revenue: 2_000, energyUse: 150, unlockPop: 1_500, description: "Grosse consommatrice d'énergie" },
-  { id: "factory_l", name: "Complexe industriel", category: "industry", cost: 1_000_000, jobs: 2_000, revenue: 9_000, energyUse: 600, unlockPop: 6_000, description: "Pilier d'une grande ville" },
+  { id: "factory_s", name: "Petite usine", category: "industry", cost: 50_000, jobs: 100, revenue: 700, energyUse: 30, description: "Consomme de l'énergie" },
+  { id: "warehouse", name: "Entrepôt logistique", category: "industry", cost: 120_000, jobs: 250, revenue: 1_400, energyUse: 20, unlockPop: 1_000, description: "Beaucoup d'emplois, peu d'énergie" },
+  { id: "factory_m", name: "Usine moyenne", category: "industry", cost: 250_000, jobs: 500, revenue: 4_000, energyUse: 150, unlockPop: 1_500, description: "Grosse consommatrice d'énergie" },
+  { id: "factory_l", name: "Complexe industriel", category: "industry", cost: 1_000_000, jobs: 2_000, revenue: 18_000, energyUse: 600, unlockPop: 6_000, description: "Pilier d'une grande ville" },
 
-  { id: "foodplant", name: "Usine agroalimentaire", category: "industry", cost: 300_000, jobs: 350, revenue: 1_200, energyUse: 80, foodProd: 1_000, unlockPop: 3_000, description: "Revenus et +1 000 nourriture/j" },
+  { id: "foodplant", name: "Usine agroalimentaire", category: "industry", cost: 300_000, jobs: 350, revenue: 2_400, energyUse: 80, foodProd: 1_000, unlockPop: 3_000, description: "Revenus et +1 000 nourriture/j" },
 
   // 🌾 Agriculture
-  { id: "farm_s", name: "Petite exploitation", category: "agriculture", cost: 40_000, jobs: 60, revenue: 100, foodProd: 100, energyUse: 5, description: "+100 nourriture/j" },
-  { id: "greenhouse", name: "Serres", category: "agriculture", cost: 150_000, jobs: 80, revenue: 200, foodProd: 900, energyUse: 60, unlockPop: 1_000, description: "+900 nourriture/j, consomme de l'énergie" },
-  { id: "farm_m", name: "Exploitation moyenne", category: "agriculture", cost: 200_000, jobs: 200, revenue: 400, foodProd: 700, energyUse: 20, unlockPop: 1_500, description: "+700 nourriture/j" },
-  { id: "ranch", name: "Élevage", category: "agriculture", cost: 250_000, jobs: 150, revenue: 500, foodProd: 1_200, energyUse: 15, unlockPop: 2_500, description: "+1 200 nourriture/j" },
-  { id: "farm_l", name: "Grande exploitation", category: "agriculture", cost: 1_000_000, jobs: 800, revenue: 1_500, foodProd: 5_000, energyUse: 100, unlockPop: 8_000, description: "+5 000 nourriture/j" },
+  { id: "farm_s", name: "Petite exploitation", category: "agriculture", cost: 40_000, jobs: 60, revenue: 200, foodProd: 100, energyUse: 5, description: "+100 nourriture/j" },
+  { id: "greenhouse", name: "Serres", category: "agriculture", cost: 150_000, jobs: 80, revenue: 400, foodProd: 900, energyUse: 60, unlockPop: 1_000, description: "+900 nourriture/j, consomme de l'énergie" },
+  { id: "farm_m", name: "Exploitation moyenne", category: "agriculture", cost: 200_000, jobs: 200, revenue: 800, foodProd: 700, energyUse: 20, unlockPop: 1_500, description: "+700 nourriture/j" },
+  { id: "ranch", name: "Élevage", category: "agriculture", cost: 250_000, jobs: 150, revenue: 1_000, foodProd: 1_200, energyUse: 15, unlockPop: 2_500, description: "+1 200 nourriture/j" },
+  { id: "farm_l", name: "Grande exploitation", category: "agriculture", cost: 1_000_000, jobs: 800, revenue: 3_000, foodProd: 5_000, energyUse: 100, unlockPop: 8_000, description: "+5 000 nourriture/j" },
 
   // ⚡ Énergie
   { id: "power_s", name: "Petite centrale", category: "energy", cost: 50_000, jobs: 20, energyProd: 100, description: "+100 énergie/j" },
