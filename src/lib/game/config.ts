@@ -46,7 +46,7 @@ export type Category = "housing" | "commerce" | "industry" | "services" | "agric
 // ─── Équipements publics ──────────────────────────────────────
 // Une ville qui grandit attend des équipements. Chacun dessert un nombre d'habitants ;
 // la couverture (capacité / population) joue sur la satisfaction, donc sur les impôts et la croissance.
-export type ServiceId = "park" | "school" | "hospital";
+export type ServiceId = "park" | "school" | "safety" | "hospital";
 export interface ServiceRule {
   label: string;
   /** Population à partir de laquelle les habitants l'attendent. */
@@ -57,6 +57,7 @@ export interface ServiceRule {
 export const SERVICES: Record<ServiceId, ServiceRule> = {
   park: { label: "Espaces verts", needPop: 1_000, weight: 0.04 },
   school: { label: "Écoles", needPop: 2_500, weight: 0.05 },
+  safety: { label: "Sécurité", needPop: 4_000, weight: 0.05 },
   hospital: { label: "Santé", needPop: 8_000, weight: 0.06 },
 };
 export const SERVICE_IDS = Object.keys(SERVICES) as ServiceId[];
@@ -126,11 +127,14 @@ export interface BuildingType {
 
 /** Amélioration sur place (recherche « Rénovation urbaine ») : bâtiment → sa version supérieure, pour la différence de prix. */
 export const UPGRADES: Record<string, string> = {
-  house_s: "house_m", house_m: "house_l", house_l: "house_xl",
+  house_s: "house_m", house_m: "house_l", house_l: "house_xl", house_xl: "house_tower",
   factory_s: "factory_m", factory_m: "factory_l",
   farm_s: "farm_m", farm_m: "farm_l",
   power_s: "power_m", power_m: "power_l",
-  shop: "services",
+  shop: "market", market: "mall",
+  services: "bank",
+  solar: "wind",
+  park: "park_l", school: "university",
 };
 /** Nombre de jours simulés par la recherche « Prévisions de la ville ». */
 export const FORECAST_DAYS = 7;
@@ -140,30 +144,47 @@ export const BUILDINGS: BuildingType[] = [
   { id: "house_s", name: "Petit quartier", category: "housing", cost: 20_000, housing: 100, description: "+100 habitants" },
   { id: "house_m", name: "Quartier résidentiel", category: "housing", cost: 75_000, housing: 500, unlockPop: 500, description: "+500 habitants" },
   { id: "house_l", name: "Grand quartier", category: "housing", cost: 300_000, housing: 2_500, unlockPop: 2_000, description: "+2 500 habitants" },
+  { id: "house_eco", name: "Écoquartier", category: "housing", cost: 500_000, housing: 3_000, energyProd: 150, unlockPop: 4_000, description: "+3 000 habitants, toits solaires" },
   { id: "house_xl", name: "Centre résidentiel", category: "housing", cost: 1_500_000, housing: 15_000, unlockPop: 10_000, description: "+15 000 habitants" },
+  { id: "house_tower", name: "Tour d'habitation", category: "housing", cost: 5_000_000, housing: 55_000, energyUse: 400, unlockPop: 40_000, description: "+55 000 habitants sur un seul carreau" },
 
   // 🏪 Commerce & services
   { id: "shop", name: "Commerce", category: "commerce", cost: 15_000, jobs: 40, revenue: 120, energyUse: 5, description: "Boutiques de quartier" },
+  { id: "market", name: "Marché couvert", category: "commerce", cost: 60_000, jobs: 120, revenue: 520, energyUse: 15, unlockPop: 800, description: "Halle et commerçants" },
+  { id: "hotel", name: "Hôtel", category: "commerce", cost: 180_000, jobs: 150, revenue: 1_500, energyUse: 40, unlockPop: 2_500, description: "Peu d'emplois, beaucoup de revenus" },
+  { id: "mall", name: "Centre commercial", category: "commerce", cost: 350_000, jobs: 600, revenue: 3_200, energyUse: 90, unlockPop: 4_000, description: "Grande surface et galerie" },
   { id: "services", name: "Entreprise de services", category: "services", cost: 100_000, jobs: 150, revenue: 600, energyUse: 15, unlockPop: 600, description: "Bureaux, conseil, santé" },
+  { id: "bank", name: "Banque", category: "services", cost: 400_000, jobs: 300, revenue: 3_000, energyUse: 40, unlockPop: 5_000, description: "Siège bancaire régional" },
+  { id: "tech", name: "Campus technologique", category: "services", cost: 1_200_000, jobs: 1_500, revenue: 11_000, energyUse: 300, unlockPop: 12_000, description: "Emplois qualifiés, très énergivore" },
 
   // 🏭 Industrie
   { id: "factory_s", name: "Petite usine", category: "industry", cost: 50_000, jobs: 100, revenue: 350, energyUse: 30, description: "Consomme de l'énergie" },
+  { id: "warehouse", name: "Entrepôt logistique", category: "industry", cost: 120_000, jobs: 250, revenue: 700, energyUse: 20, unlockPop: 1_000, description: "Beaucoup d'emplois, peu d'énergie" },
   { id: "factory_m", name: "Usine moyenne", category: "industry", cost: 250_000, jobs: 500, revenue: 2_000, energyUse: 150, unlockPop: 1_500, description: "Grosse consommatrice d'énergie" },
   { id: "factory_l", name: "Complexe industriel", category: "industry", cost: 1_000_000, jobs: 2_000, revenue: 9_000, energyUse: 600, unlockPop: 6_000, description: "Pilier d'une grande ville" },
 
+  { id: "foodplant", name: "Usine agroalimentaire", category: "industry", cost: 300_000, jobs: 350, revenue: 1_200, energyUse: 80, foodProd: 1_000, unlockPop: 3_000, description: "Revenus et +1 000 nourriture/j" },
+
   // 🌾 Agriculture
   { id: "farm_s", name: "Petite exploitation", category: "agriculture", cost: 40_000, jobs: 60, revenue: 100, foodProd: 100, energyUse: 5, description: "+100 nourriture/j" },
+  { id: "greenhouse", name: "Serres", category: "agriculture", cost: 150_000, jobs: 80, revenue: 200, foodProd: 900, energyUse: 60, unlockPop: 1_000, description: "+900 nourriture/j, consomme de l'énergie" },
   { id: "farm_m", name: "Exploitation moyenne", category: "agriculture", cost: 200_000, jobs: 200, revenue: 400, foodProd: 700, energyUse: 20, unlockPop: 1_500, description: "+700 nourriture/j" },
+  { id: "ranch", name: "Élevage", category: "agriculture", cost: 250_000, jobs: 150, revenue: 500, foodProd: 1_200, energyUse: 15, unlockPop: 2_500, description: "+1 200 nourriture/j" },
   { id: "farm_l", name: "Grande exploitation", category: "agriculture", cost: 1_000_000, jobs: 800, revenue: 1_500, foodProd: 5_000, energyUse: 100, unlockPop: 8_000, description: "+5 000 nourriture/j" },
 
   // ⚡ Énergie
   { id: "power_s", name: "Petite centrale", category: "energy", cost: 50_000, jobs: 20, energyProd: 100, description: "+100 énergie/j" },
+  { id: "solar", name: "Parc solaire", category: "energy", cost: 120_000, jobs: 5, energyProd: 220, unlockPop: 800, description: "+220 énergie/j, presque sans personnel" },
   { id: "power_m", name: "Centrale moyenne", category: "energy", cost: 300_000, jobs: 80, energyProd: 750, unlockPop: 1_500, description: "+750 énergie/j" },
+  { id: "wind", name: "Parc éolien", category: "energy", cost: 400_000, jobs: 15, energyProd: 900, unlockPop: 3_000, description: "+900 énergie/j, presque sans personnel" },
   { id: "power_l", name: "Grande centrale", category: "energy", cost: 1_500_000, jobs: 300, energyProd: 5_000, unlockPop: 8_000, description: "+5 000 énergie/j" },
 
   // 🌳 Équipements publics (pas de revenu direct : ils soutiennent la satisfaction)
   { id: "park", name: "Parc", category: "public", cost: 25_000, jobs: 5, service: "park", serves: 1_500, unlockPop: 500, description: "Espaces verts pour 1 500 habitants" },
   { id: "school", name: "École", category: "public", cost: 120_000, jobs: 60, energyUse: 10, service: "school", serves: 4_000, unlockPop: 1_500, description: "Scolarise 4 000 habitants" },
+  { id: "fire", name: "Caserne de pompiers", category: "public", cost: 90_000, jobs: 40, energyUse: 10, service: "safety", serves: 6_000, unlockPop: 2_500, description: "Protège 6 000 habitants" },
+  { id: "park_l", name: "Grand parc", category: "public", cost: 140_000, jobs: 20, service: "park", serves: 10_000, unlockPop: 5_000, description: "Espaces verts pour 10 000 habitants" },
+  { id: "university", name: "Université", category: "public", cost: 500_000, jobs: 300, energyUse: 40, service: "school", serves: 20_000, unlockPop: 8_000, description: "Forme 20 000 habitants" },
   { id: "hospital", name: "Hôpital", category: "public", cost: 450_000, jobs: 250, energyUse: 40, service: "hospital", serves: 12_000, unlockPop: 5_000, description: "Soigne 12 000 habitants" },
 
   // 🏛️ Bâtiments de départ (non constructibles)

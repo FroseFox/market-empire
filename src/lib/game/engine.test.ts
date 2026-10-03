@@ -255,7 +255,7 @@ describe("déménagement", () => {
 describe("rénovation, prévisions, audit", () => {
   const ok = (r: E.ActionResult) => { if (!r.ok) throw new Error(r.error); return r.state; };
   it("améliore un bâtiment sur place pour la différence de prix, après la recherche", () => {
-    let g = { ...newGame(T0), cash: 500_000, population: 600 };
+    let g = { ...newGame(T0), cash: 500_000, population: 900 };
     g = ok(build(g, "house_s", T0, { x: 9, y: 9 }));
     expect(E.upgrade(g, { x: 9, y: 9 }, T0).ok).toBe(false); // recherche manquante
     g = ok(doResearch(g, "city_upgrade", T0));
@@ -285,5 +285,21 @@ describe("rénovation, prévisions, audit", () => {
     const a = E.buildingAudit("shop", c);
     expect(a.staffing).toBe(1);
     expect(a.net).toBeCloseTo(120 - 5 * 2 * 0.7 - 15, 6);
+  });
+});
+
+describe("catalogue des bâtiments", () => {
+  it("identifiants uniques, améliorations cohérentes, chaque catégorie offre un choix", async () => {
+    const { BUILDINGS, BUILDING_BY_ID, UPGRADES } = await import("./config");
+    expect(new Set(BUILDINGS.map((b) => b.id)).size).toBe(BUILDINGS.length);
+    for (const [from, to] of Object.entries(UPGRADES)) {
+      expect(BUILDING_BY_ID[from], from).toBeDefined();
+      expect(BUILDING_BY_ID[to], to).toBeDefined();
+      expect(BUILDING_BY_ID[to].category).toBe(BUILDING_BY_ID[from].category);
+      expect(BUILDING_BY_ID[to].cost).toBeGreaterThan(BUILDING_BY_ID[from].cost);
+    }
+    const perCat: Record<string, number> = {};
+    for (const b of BUILDINGS) if (b.buildable !== false) perCat[b.category] = (perCat[b.category] ?? 0) + 1;
+    for (const n of Object.values(perCat)) expect(n).toBeGreaterThanOrEqual(3);
   });
 });

@@ -160,7 +160,7 @@ export interface CityStats {
 }
 
 export function computeCity(state: Pick<GameState, "buildings" | "population">): CityStats {
-  const capacity: Record<ServiceId, number> = { park: 0, school: 0, hospital: 0 };
+  const capacity: Record<ServiceId, number> = { park: 0, school: 0, safety: 0, hospital: 0 };
   let housing = 0, jobs = 0, energyProd = 0, energyUse = 0, foodProd = 0, bRevenue = 0, cityValue = 0, assetValue = 0;
   for (const [id, count] of Object.entries(state.buildings)) {
     const b = BUILDING_BY_ID[id];
