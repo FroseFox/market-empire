@@ -630,7 +630,8 @@ function Palette({ active, onPick, onClose }: { active: string | null; onPick: (
         </div>
         <button onClick={onClose} aria-label="Fermer" className="shrink-0 rounded-[6px] p-1 text-muted hover:bg-slate-100"><X size={16} /></button>
       </div>
-      <ul className="flex gap-2 overflow-x-auto pb-1 sm:max-h-[min(38vh,270px)] sm:flex-wrap sm:overflow-x-visible sm:overflow-y-auto" onWheel={(e) => { if (e.deltaY && !e.deltaX) e.currentTarget.scrollLeft += e.deltaY; }}>
+      {/* key : changer de catégorie repart du début de la liste (le défilement ne reste pas où il était) */}
+      <ul key={cat} className="flex gap-2 overflow-x-auto pb-1 sm:max-h-[min(38vh,270px)] sm:flex-wrap sm:overflow-x-visible sm:overflow-y-auto" onWheel={(e) => { if (e.deltaY && !e.deltaX) e.currentTarget.scrollLeft += e.deltaY; }}>
         {BUILDINGS.filter((b) => b.category === cat && b.buildable !== false).map((b) => {
           const locked = !!b.unlockPop && game.population < b.unlockPop;
           const owned = game.buildings[b.id] ?? 0;
