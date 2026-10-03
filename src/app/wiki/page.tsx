@@ -1,5 +1,6 @@
 "use client";
 // Wiki du jeu. Tous les chiffres viennent de la configuration (lib/game/config) : la page reste juste quand l'équilibrage change.
+import Link from "next/link";
 import { BookOpen } from "lucide-react";
 import { useGame } from "@/store/game";
 import {
@@ -9,6 +10,7 @@ import {
   MAX_CATCHUP_DAYS, MAX_CONTRACTS, NEED_PER_RANK, POLLUTION_MAX, PROJECTS, RENOVATE_RATE, RESOURCE_PRICES, SERVICES, SERVICE_IDS, SPECIALTY_BONUS,
   STARTING_CASH, STARTING_POPULATION, TAX_PER_RESIDENT, TERRITORY, TRADE_FEE_MIN, TRADE_FEE_RATE, UPGRADES, WEAR_PER_DAY, type BranchFamily, type Category,
 } from "@/lib/game/config";
+import { GUIDE } from "@/lib/game/guide";
 import { BRANCH_COLOR, RESEARCH, RESEARCH_BY_ID } from "@/lib/game/research";
 import { HUBS, PLAYABLE, PLAYABLE_IDS, countryPrice, countryTier, specialtyText } from "@/lib/world/countries";
 import { BIG_MOVE } from "@/lib/notifs";
@@ -17,7 +19,7 @@ import Robot from "@/components/Robot";
 import { compactEur, eur, num } from "@/lib/format";
 
 const SECTIONS = [
-  ["demarrer", "Démarrer"], ["temps", "Le temps"], ["bourse", "Bourse"], ["ville", "Ville"], ["batiments", "Bâtiments"], ["equipements", "Équipements et tensions"],
+  ["demarrer", "Démarrer"], ["jouer", "Comment jouer"], ["pages", "Les pages du jeu"], ["chiffres", "Lire les chiffres"], ["soucis", "Que faire si…"], ["temps", "Le temps"], ["bourse", "Bourse"], ["ville", "Ville"], ["batiments", "Bâtiments"], ["equipements", "Équipements et tensions"],
   ["progression", "Rangs, objectifs, projets"], ["entreprises", "Entreprises implantées"], ["monde", "Monde et pays"], ["commerce", "Commerce"], ["recherche", "Recherche"], ["notifications", "Notifications"],
 ] as const;
 const CATS: Category[] = ["housing", "commerce", "services", "industry", "agriculture", "energy", "public"];
@@ -29,7 +31,7 @@ export default function WikiPage() {
   const upgradeTo = (id: string) => (UPGRADES[id] ? BUILDING_BY_ID[UPGRADES[id]].name : "");
   return (
     <>
-      <PageHeader icon={BookOpen} title="Wiki" subtitle="Toutes les règles du jeu, avec les chiffres exacts" />
+      <PageHeader icon={BookOpen} title="Wiki" subtitle="Comment jouer, à quoi sert chaque page, et toutes les règles avec les chiffres exacts" />
       <div className="grid items-start gap-4 grid-cols-1 xl:grid-cols-12">
         <nav aria-label="Sommaire" className="xl:col-span-3 xl:sticky xl:top-20">
           <Card className="!p-3">
@@ -61,10 +63,80 @@ export default function WikiPage() {
             </div>
           </Section>
 
+          <Section id="jouer" title="Comment jouer">
+            <p>Vous avez deux sources d&apos;argent, et elles se nourrissent l&apos;une l&apos;autre : la <b>bourse</b> (vous achetez des actifs réels et les revendez plus cher… ou moins cher) et la <b>ville</b> (elle verse un revenu à chaque jour de jeu). L&apos;argent gagné d&apos;un côté sert à grossir de l&apos;autre.</p>
+            <h3 className="mb-1.5 mt-4 text-[13px] font-semibold">Vos premières minutes</h3>
+            <ol className="list-decimal space-y-2 pl-5">
+              {GUIDE.map((g) => (
+                <li key={g.id}><b>{g.title}.</b> {g.text} <Link href={g.href} className="whitespace-nowrap font-medium text-primary">{g.cta} →</Link></li>
+              ))}
+            </ol>
+            <h3 className="mb-1.5 mt-4 text-[13px] font-semibold">Ensuite, à chaque visite</h3>
+            <ol className="list-decimal space-y-1.5 pl-5">
+              <li><b>Regardez la page Économie</b> : votre argent, ce que la ville rapporte par jour, la valeur de votre portefeuille.</li>
+              <li><b>Réglez les soucis de la ville</b> : sous la barre « Satisfaction », chaque ligne rouge est un problème à corriger (voir <a href="#soucis" className="font-medium text-primary">Que faire si…</a>).</li>
+              <li><b>Faites grandir la ville</b> : des logements pour accueillir des habitants, puis des emplois pour qu&apos;ils travaillent, puis l&apos;énergie et la nourriture qu&apos;ils consomment.</li>
+              <li><b>Placez ce qui reste</b> en bourse ou dans une recherche. Gardez toujours un peu d&apos;argent : la ville peut coûter certains jours.</li>
+              <li><b>Visez le prochain palier</b> : les Objectifs versent des subventions, et chaque rang de ville ouvre de nouvelles fonctions.</li>
+            </ol>
+            <p className="mt-3">Il n&apos;y a pas de fin ni de défaite : votre <b>patrimoine</b> (argent + portefeuille + valeur de la ville) vous classe face aux autres joueurs dans Monde.</p>
+          </Section>
+
+          <Section id="pages" title="Les pages du jeu : à quoi sert chacune">
+            <Table head={["Page", "À quoi elle sert", "Ce que vous y faites"]} rows={[
+              [<Link key="l" href="/" className="text-primary">Économie</Link>, "Le tableau de bord : tout votre empire en un coup d'œil.", "Rien à régler ici : vous lisez où vous en êtes."],
+              [<Link key="l" href="/marches" className="text-primary">Marchés</Link>, "La liste des actifs que vous pouvez acheter, avec leur cours réel et leur courbe.", "Choisir un actif, taper un montant en euros, acheter ou vendre."],
+              [<Link key="l" href="/portefeuille" className="text-primary">Portefeuille</Link>, "Ce que vous possédez déjà en bourse.", "Voir si chaque ligne gagne ou perd depuis l'achat, et relire vos opérations."],
+              [<Link key="l" href="/ville" className="text-primary">Ville</Link>, "Votre ville : bâtiments, habitants, satisfaction, revenu par jour.", "Construire, déplacer, démolir ; ouvrir Objectifs et Entreprises."],
+              [<Link key="l" href="/monde" className="text-primary">Monde</Link>, "La carte des pays, le classement et les autres joueurs.", "Déménager, visiter une ville, commercer, ouvrir un bureau dans une place financière."],
+              [<Link key="l" href="/actualites" className="text-primary">Actualités</Link>, "De vraies actualités économiques, reliées aux entreprises du jeu.", "Vous informer avant de décider. Le jeu ne conseille jamais."],
+              [<Link key="l" href="/relations" className="text-primary">Relations</Link>, "Les liens entre entreprises : qui fournit qui, qui concurrence qui.", "Comprendre quelles autres entreprises une nouvelle peut toucher."],
+              [<Link key="l" href="/recherche" className="text-primary">Recherche</Link>, "L'arbre de compétences.", "Payer pour ouvrir de nouveaux marchés et de nouveaux outils d'analyse."],
+              ["Wiki", "Cette page : les règles et les chiffres.", "Chercher une réponse."],
+            ]} />
+            <h3 className="mb-1.5 mt-4 text-[13px] font-semibold">Dans la Ville, trois boutons</h3>
+            <ul className="list-disc space-y-1.5 pl-5">
+              <li><b>Construire</b> : la liste des bâtiments. Chaque étiquette dit ce que le bâtiment apporte (habitants, emplois, revenu, énergie, nourriture, pollution).</li>
+              <li><b>Objectifs</b> : les paliers à atteindre et leurs subventions, puis l&apos;orientation de la ville, le territoire et les grands projets quand le rang le permet.</li>
+              <li><b>Entreprises</b> : faire ouvrir dans votre ville le site d&apos;une entreprise dont vous êtes actionnaire.</li>
+            </ul>
+          </Section>
+
+          <Section id="chiffres" title="Lire les chiffres">
+            <Table head={["Ce que vous voyez", "Où", "Ce que ça veut dire"]} rows={[
+              ["Satisfaction 82 %", "Ville", "Le moral des habitants. Elle part de 95 %. Plus elle est haute, plus les impôts rentrent et plus vite la population grandit."],
+              ["Pollution −12 pts (en rouge)", "Ville, sous la barre Satisfaction", "Ce problème retire 12 points de satisfaction. Chômage, Vétusté, Manque d'énergie… se lisent de la même façon."],
+              ["pollution +40 / pollution −25", "Étiquette d'un bâtiment", "Ce que le bâtiment émet (+) ou absorbe (−) par jour. Si le total de la ville est positif, la satisfaction baisse."],
+              ["+100 ou −30 avec un éclair", "Étiquette d'un bâtiment", "L'énergie produite (+) ou consommée (−) par jour. Même chose avec l'épi pour la nourriture."],
+              ["+240 €/j", "Étiquette d'un bâtiment", "Le revenu par jour quand tous ses emplois sont pourvus. Avec la moitié des postes occupés, il rapporte la moitié."],
+              ["Croissance +12", "Ville", "Le nombre d'habitants qui arriveront au prochain jour."],
+              ["Jour 14 · prochain jour dans 23 min", "En haut de l'écran", "Le temps de la ville. À chaque nouveau jour, elle encaisse son revenu."],
+              ["Réel / Fictif", "À côté d'un prix", "Réel : le vrai cours de marché. Fictif : aucune source gratuite pour cet actif, le prix est simulé par le jeu."],
+              ["PRU", "Portefeuille", "Prix de revient unitaire : le prix moyen auquel vous avez acheté."],
+              ["Plus-value", "Portefeuille", "Ce que vous gagneriez (vert) ou perdriez (rouge) en vendant maintenant, par rapport au prix d'achat."],
+            ]} />
+            <p className="mt-3"><b>Si vos actions ne bougent pas</b> : la bourse est fermée. Les actions ne cotent ni la nuit ni le week-end, leur cours reste donc figé jusqu&apos;à la réouverture, même si les jours de la ville continuent de passer. Seules les cryptomonnaies bougent jour et nuit.</p>
+          </Section>
+
+          <Section id="soucis" title="Que faire si…">
+            <Table head={["Le souci", "Pourquoi", "La solution"]} rows={[
+              ["Chômage", "Plus d'habitants qui cherchent un emploi que de postes.", "Construire des commerces, des services ou des usines."],
+              ["Logements saturés", "Presque plus un logement libre : personne ne peut s'installer.", "Construire des logements."],
+              ["Manque d'énergie", "La ville consomme plus qu'elle ne produit ; le manque est importé au prix fort.", "Construire une centrale, un parc solaire ou éolien."],
+              ["Manque de nourriture", "Même chose pour la nourriture.", "Construire une exploitation, des serres ou un élevage."],
+              ["Pollution", "Usines et centrales émettent plus que la ville n'absorbe.", "Construire des parcs, un écoquartier ou des exploitations agricoles."],
+              ["Vétusté", "Les bâtiments vieillissent à partir du rang « Bourg ».", "Lancer une rénovation dans la Ville."],
+              [SERVICE_IDS.map((id) => SERVICES[id].label).join(", "), "La ville est assez grande pour attendre cet équipement public.", `Construire l'équipement correspondant (catégorie ${CATEGORY_LABELS.public}).`],
+              ["La population ne grandit plus", "Il n'y a plus de logement libre, ou trop peu d'emplois et de satisfaction.", "D'abord des logements, puis des emplois."],
+              ["Le revenu de la ville est négatif", "L'entretien et les importations dépassent les impôts et les revenus.", "Pourvoir les emplois vides (il faut des habitants), produire votre énergie et votre nourriture."],
+              ["Le portefeuille ne bouge pas", "Bourse fermée (nuit, week-end).", "Attendre la réouverture ; les cours sont relus chaque heure."],
+            ]} />
+          </Section>
+
           <Section id="temps" title="Le temps">
             <ul className="list-disc space-y-1.5 pl-5">
               <li>Un <b>jour de ville</b> dure <b>{DAY_LENGTH_MINUTES} minutes réelles</b>. À chaque jour, la ville encaisse son flux net et sa population évolue.</li>
-              <li>La bourse suit le <b>temps réel</b> : les cours sont relus toutes les heures.</li>
+              <li>La bourse suit le <b>temps réel</b> : les cours sont relus toutes les heures. Quand les marchés sont fermés (nuit, week-end), les actions ne bougent pas ; les cryptomonnaies, si.</li>
               <li>En votre absence la ville continue : à votre retour, jusqu&apos;à <b>{MAX_CATCHUP_DAYS} jours</b> sont rattrapés d&apos;un coup, et un journal résume ce qui s&apos;est passé.</li>
             </ul>
           </Section>
