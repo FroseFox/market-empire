@@ -209,7 +209,7 @@ export default function CityPage() {
       {/* Bas : outils à gauche, état de la ville à droite */}
       <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex items-end gap-3 p-3">
         <div className="flex min-w-0 flex-1 flex-col items-start gap-2">
-          {dock && <div className="pointer-events-auto w-full max-w-[720px]">{dock}</div>}
+          {dock && <div className="pointer-events-auto w-full max-w-[900px]">{dock}</div>}
           <div className="hud pointer-events-auto flex max-w-full gap-1 overflow-x-auto no-scrollbar p-1.5" role="toolbar" aria-label="Outils de la ville">
             {TOOLS.map(({ id, label, icon: Icon, on, cls = "" }) => (
               <button key={id} onClick={() => pickTool(id)} aria-pressed={on} title={label}
@@ -424,7 +424,7 @@ function Palette({ active, onPick, onClose }: { active: string | null; onPick: (
         </div>
         <button onClick={onClose} aria-label="Fermer" className="shrink-0 rounded-[6px] p-1 text-muted hover:bg-slate-100"><X size={16} /></button>
       </div>
-      <ul className="flex gap-2 overflow-x-auto pb-1">
+      <ul className="flex gap-2 overflow-x-auto pb-1 sm:max-h-[min(38vh,270px)] sm:flex-wrap sm:overflow-x-visible sm:overflow-y-auto" onWheel={(e) => { if (e.deltaY && !e.deltaX) e.currentTarget.scrollLeft += e.deltaY; }}>
         {BUILDINGS.filter((b) => b.category === cat && b.buildable !== false).map((b) => {
           const locked = !!b.unlockPop && game.population < b.unlockPop;
           const owned = game.buildings[b.id] ?? 0;
@@ -432,7 +432,7 @@ function Palette({ active, onPick, onClose }: { active: string | null; onPick: (
           const isActive = active === b.id;
           const Icon = CAT_ICON[b.category];
           return (
-            <li key={b.id} className="w-[212px] shrink-0">
+            <li key={b.id} className="w-[212px] shrink-0 sm:w-[calc(50%-4px)] md:w-[calc(33.333%-6px)] xl:w-[calc(25%-6px)]">
               <button disabled={locked || b.cost > game.cash} onClick={() => onPick(b.id)}
                 className={`flex h-full w-full flex-col gap-1.5 rounded-[12px] border p-2.5 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-55 ${isActive ? "border-primary bg-primary-soft" : "border-line hover:border-slate-300 hover:bg-slate-50"}`}>
                 <span className="flex items-center gap-2">

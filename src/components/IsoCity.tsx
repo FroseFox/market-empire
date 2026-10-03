@@ -50,6 +50,8 @@ const TOP: Record<string, number> = {
   village: 24, house_s: 22, house_m: 40, house_l: 64, house_xl: 108, shop: 22, services: 56, townhall: 42,
   factory_s: 40, factory_m: 46, factory_l: 56, farm_s: 14, farm_m: 24, farm_l: 32, power_s: 52, power_m: 50, power_l: 48,
   park: 22, school: 26, hospital: 44,
+  market: 18, hotel: 70, mall: 30, bank: 32, tech: 30, warehouse: 16, foodplant: 34, greenhouse: 10, ranch: 16,
+  solar: 10, wind: 64, house_eco: 38, house_tower: 150, park_l: 26, university: 40, fire: 34,
 };
 
 /** Calque « Quartiers » : une couleur par catégorie, pour lire la ville d'un coup d'œil. */
@@ -527,6 +529,145 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
           coolingTower(x + 0.3, y + 0.35, 11, H(40));
           coolingTower(x + 0.7, y + 0.72, 11, H(40));
           break;
+        case "market": {
+          const h = H(11);
+          block(x + 0.1, y + 0.16, x + 0.9, y + 0.84, 0, h, "#FDF2E9", C.wallL, C.wallR);
+          // Toit rayé de la halle
+          for (let i = 0; i < 6; i++) {
+            const a = x + 0.1 + i * (0.8 / 6), b = a + 0.8 / 6;
+            poly([iso(a, y + 0.16, h + 0.3), iso(b, y + 0.16, h + 0.3), iso(b, y + 0.84, h + 0.3), iso(a, y + 0.84, h + 0.3)], i % 2 ? "#FDF2E9" : "#EF6B5B");
+          }
+          poly([iso(x + 0.2, y + 0.84, 1), iso(x + 0.8, y + 0.84, 1), iso(x + 0.8, y + 0.84, h * 0.6), iso(x + 0.2, y + 0.84, h * 0.6)], "rgba(71,85,105,.45)");
+          break;
+        }
+        case "hotel": {
+          const h = H(58);
+          block(x + 0.24, y + 0.16, x + 0.74, y + 0.62, 0, h, "#FBE3BF", "#FDEBD0", "#DDB37F");
+          windows(x + 0.24, y + 0.16, x + 0.74, y + 0.62, 0, h, 7);
+          block(x + 0.14, y + 0.62, x + 0.86, y + 0.9, 0, H(9), "#F8FAFC", "#FFFFFF", "#D7DEE7");
+          poly([iso(x + 0.24, y + 0.62, h - 7), iso(x + 0.74, y + 0.62, h - 7), iso(x + 0.74, y + 0.62, h - 2), iso(x + 0.24, y + 0.62, h - 2)], "#DC2626");
+          break;
+        }
+        case "mall": {
+          const h = H(19);
+          block(x + 0.06, y + 0.1, x + 0.94, y + 0.9, 0, h, "#E2E8F0", "#F8FAFC", "#CBD5E1");
+          poly([iso(x + 0.12, y + 0.9, 2), iso(x + 0.88, y + 0.9, 2), iso(x + 0.88, y + 0.9, h * 0.55), iso(x + 0.12, y + 0.9, h * 0.55)], "rgba(147,197,253,.7)");
+          poly([iso(x + 0.06, y + 0.9, h * 0.68), iso(x + 0.94, y + 0.9, h * 0.68), iso(x + 0.94, y + 0.9, h * 0.92), iso(x + 0.06, y + 0.9, h * 0.92)], C.violet);
+          block(x + 0.2, y + 0.25, x + 0.42, y + 0.5, h, H(5), "#F1F5F9", "#CBD5E1", "#94A3B8");
+          block(x + 0.55, y + 0.3, x + 0.82, y + 0.7, h, H(8), C.glassTop, C.glassL, C.glassR);
+          break;
+        }
+        case "bank": {
+          const h = H(22);
+          block(x + 0.12, y + 0.14, x + 0.88, y + 0.86, 0, h, "#E8C766", "#F8FAFC", "#D7DEE7");
+          for (let i = 0; i < 5; i++) {
+            const u = x + 0.18 + i * 0.145;
+            poly([iso(u, y + 0.86, 0), iso(u + 0.06, y + 0.86, 0), iso(u + 0.06, y + 0.86, h - 3), iso(u, y + 0.86, h - 3)], "#CBD5E1");
+          }
+          block(x + 0.34, y + 0.34, x + 0.66, y + 0.66, h, H(8), "#D9B44A", "#F1F5F9", "#CBD5E1");
+          break;
+        }
+        case "tech": {
+          block(x + 0.08, y + 0.08, x + 0.56, y + 0.48, 0, H(26), C.glassTop, C.glassL, C.glassR);
+          windows(x + 0.08, y + 0.08, x + 0.56, y + 0.48, 0, H(26), 7);
+          poly([iso(x + 0.6, y + 0.1), iso(x + 0.92, y + 0.1), iso(x + 0.92, y + 0.5), iso(x + 0.6, y + 0.5)], "#8FD27C");
+          block(x + 0.12, y + 0.56, x + 0.9, y + 0.9, 0, H(15), "#DBEAFE", "#93C5FD", "#60A5FA");
+          windows(x + 0.12, y + 0.56, x + 0.9, y + 0.9, 0, H(15), 7);
+          if (grow >= 1) tree(x + 0.76, y + 0.3, 0.8, false);
+          break;
+        }
+        case "warehouse": {
+          const h = H(12);
+          block(x + 0.08, y + 0.14, x + 0.92, y + 0.86, 0, h, C.indTop, "#E5EAF0", "#B4BFCD");
+          poly([iso(x + 0.08, y + 0.86, h * 0.62), iso(x + 0.92, y + 0.86, h * 0.62), iso(x + 0.92, y + 0.86, h * 0.86), iso(x + 0.08, y + 0.86, h * 0.86)], C.primary);
+          for (let i = 0; i < 4; i++) {
+            const u = x + 0.16 + i * 0.19;
+            poly([iso(u, y + 0.86, 0), iso(u + 0.11, y + 0.86, 0), iso(u + 0.11, y + 0.86, h * 0.5), iso(u, y + 0.86, h * 0.5)], "#64748B");
+          }
+          break;
+        }
+        case "foodplant": {
+          block(x + 0.12, y + 0.08, x + 0.28, y + 0.24, 0, H(30), "#F8FAFC", "#E2E8F0", "#B4BFCD");
+          block(x + 0.34, y + 0.08, x + 0.5, y + 0.24, 0, H(30), "#F8FAFC", "#E2E8F0", "#B4BFCD");
+          const h = H(15);
+          block(x + 0.1, y + 0.3, x + 0.9, y + 0.9, 0, h, "#E7EDD9", "#F3F6EA", "#C6D0AE");
+          poly([iso(x + 0.1, y + 0.9, h * 0.55), iso(x + 0.9, y + 0.9, h * 0.55), iso(x + 0.9, y + 0.9, h * 0.8), iso(x + 0.1, y + 0.9, h * 0.8)], "#84CC16");
+          break;
+        }
+        case "greenhouse":
+          for (let i = 0; i < 3; i++) {
+            const u = x + 0.1 + i * 0.28;
+            block(u, y + 0.1, u + 0.24, y + 0.9, 0, H(6), "rgba(214,245,236,.95)", "rgba(178,228,214,.95)", "rgba(140,205,188,.95)");
+            poly([iso(u + 0.12, y + 0.1, H(6) + 0.3), iso(u + 0.13, y + 0.1, H(6) + 0.3), iso(u + 0.13, y + 0.9, H(6) + 0.3), iso(u + 0.12, y + 0.9, H(6) + 0.3)], "rgba(255,255,255,.9)");
+          }
+          break;
+        case "ranch": {
+          poly([iso(x + 0.06, y + 0.06), iso(x + 0.94, y + 0.06), iso(x + 0.94, y + 0.94), iso(x + 0.06, y + 0.94)], "#9BD47E", "#B08A63");
+          house(x + 0.58, y + 0.1, x + 0.9, y + 0.4, H(11), "#B4463B", "#8E362E");
+          for (let i = 0; i < 5; i++) {
+            const [px, py] = iso(x + 0.16 + hash(i, 3) * 0.36, y + 0.3 + hash(i, 8) * 0.56);
+            g.fillStyle = i % 2 ? "#F8FAFC" : "#7A5A3C";
+            g.beginPath(); g.ellipse(px, py - 1.5 * scale, 2.6 * scale, 1.7 * scale, 0, 0, Math.PI * 2); g.fill();
+          }
+          break;
+        }
+        case "solar":
+          for (let i = 0; i < 4; i++) {
+            const v = y + 0.1 + i * 0.21;
+            poly([iso(x + 0.1, v, 2), iso(x + 0.9, v, 2), iso(x + 0.9, v + 0.15, 6 * grow), iso(x + 0.1, v + 0.15, 6 * grow)], i % 2 ? C.panelHi : C.panel, "rgba(255,255,255,.25)");
+          }
+          break;
+        case "wind":
+          block(x + 0.42, y + 0.44, x + 0.58, y + 0.6, 0, H(5), "#F1F5F9", "#CBD5E1", "#94A3B8");
+          break;
+        case "house_eco": {
+          block(x + 0.1, y + 0.1, x + 0.5, y + 0.52, 0, H(30), "#86C86A", "#F3F7EE", "#D3DDC4");
+          windows(x + 0.1, y + 0.1, x + 0.5, y + 0.52, 0, H(30), 8);
+          block(x + 0.52, y + 0.5, x + 0.9, y + 0.9, 0, H(22), "#86C86A", "#F3F7EE", "#D3DDC4");
+          windows(x + 0.52, y + 0.5, x + 0.9, y + 0.9, 0, H(22), 8);
+          poly([iso(x + 0.58, y + 0.56, H(22) + 0.4), iso(x + 0.84, y + 0.56, H(22) + 0.4), iso(x + 0.84, y + 0.74, H(22) + 0.4), iso(x + 0.58, y + 0.74, H(22) + 0.4)], C.panel);
+          if (grow >= 1) tree(x + 0.74, y + 0.26, 0.85, false);
+          break;
+        }
+        case "house_tower": {
+          block(x + 0.08, y + 0.08, x + 0.92, y + 0.92, 0, H(20), "#E2E8F0", "#CBD5E1", "#94A3B8");
+          block(x + 0.2, y + 0.2, x + 0.8, y + 0.8, H(20), H(88), C.glassTop, C.glassL, C.glassR);
+          windows(x + 0.2, y + 0.2, x + 0.8, y + 0.8, H(20), H(88), 7);
+          block(x + 0.32, y + 0.32, x + 0.68, y + 0.68, H(108), H(28), "#DBEAFE", "#93C5FD", "#60A5FA");
+          windows(x + 0.32, y + 0.32, x + 0.68, y + 0.68, H(108), H(28), 7);
+          break;
+        }
+        case "park_l": {
+          poly([iso(x + 0.04, y + 0.04), iso(x + 0.96, y + 0.04), iso(x + 0.96, y + 0.96), iso(x + 0.04, y + 0.96)], "#86CC72");
+          poly([iso(x + 0.04, y + 0.45), iso(x + 0.96, y + 0.45), iso(x + 0.96, y + 0.55), iso(x + 0.04, y + 0.55)], "#EADFC4");
+          poly([iso(x + 0.45, y + 0.04), iso(x + 0.55, y + 0.04), iso(x + 0.55, y + 0.96), iso(x + 0.45, y + 0.96)], "#EADFC4");
+          const [wx, wy] = iso(x + 0.5, y + 0.5);
+          g.fillStyle = "#EADFC4"; g.beginPath(); g.ellipse(wx, wy, 11 * scale, 5.5 * scale, 0, 0, Math.PI * 2); g.fill();
+          g.fillStyle = "#7CC4F0"; g.beginPath(); g.ellipse(wx, wy, 7.5 * scale, 3.8 * scale, 0, 0, Math.PI * 2); g.fill();
+          if (grow >= 1) {
+            for (const [tx, ty, pine] of [[0.2, 0.2, 0], [0.8, 0.18, 1], [0.22, 0.8, 1], [0.8, 0.8, 0], [0.3, 0.32, 0], [0.72, 0.7, 0]] as const) tree(x + tx, y + ty, 0.9, !!pine);
+          }
+          break;
+        }
+        case "university": {
+          poly([iso(x + 0.06, y + 0.06), iso(x + 0.94, y + 0.06), iso(x + 0.94, y + 0.94), iso(x + 0.06, y + 0.94)], "#8FD27C");
+          block(x + 0.12, y + 0.12, x + 0.3, y + 0.3, 0, H(34), "#F1F5F9", "#D9906F", "#B56F52");
+          const h = H(18);
+          block(x + 0.12, y + 0.34, x + 0.88, y + 0.7, 0, h, "#8E4F3A", "#D9906F", "#B56F52");
+          windows(x + 0.12, y + 0.34, x + 0.88, y + 0.7, 0, h, 7);
+          if (grow >= 1) { tree(x + 0.6, y + 0.18, 0.8, false); tree(x + 0.8, y + 0.84, 0.8, false); }
+          break;
+        }
+        case "fire": {
+          block(x + 0.12, y + 0.1, x + 0.28, y + 0.26, 0, H(30), "#F1F5F9", "#E5574A", "#C2433A");
+          const h = H(14);
+          block(x + 0.12, y + 0.3, x + 0.88, y + 0.84, 0, h, "#F1F5F9", "#E5574A", "#C2433A");
+          for (let i = 0; i < 3; i++) {
+            const u = x + 0.2 + i * 0.22;
+            poly([iso(u, y + 0.84, 0), iso(u + 0.16, y + 0.84, 0), iso(u + 0.16, y + 0.84, h * 0.7), iso(u, y + 0.84, h * 0.7)], "#F8FAFC");
+          }
+          break;
+        }
         case "park": {
           poly([iso(x + 0.06, y + 0.06), iso(x + 0.94, y + 0.06), iso(x + 0.94, y + 0.94), iso(x + 0.06, y + 0.94)], "#8FD27C");
           poly([iso(x + 0.06, y + 0.44), iso(x + 0.94, y + 0.44), iso(x + 0.94, y + 0.56), iso(x + 0.06, y + 0.56)], "#EADFC4");
@@ -572,6 +713,12 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
           break;
         }
         case "power_s": turbine(x + 0.8, y + 0.5, reduce ? 0 : t + x * 97); break;
+        case "wind":
+          turbine(x + 0.25, y + 0.25, reduce ? 0 : t + x * 97);
+          turbine(x + 0.72, y + 0.42, reduce ? 0 : t * 1.15 + y * 61);
+          turbine(x + 0.36, y + 0.78, reduce ? 0 : t * 0.9 + x * 31);
+          break;
+        case "foodplant": if (!reduce) smoke(x + 0.2, y + 0.16, 32, t + x * 300); break;
         case "power_m": if (!reduce) smoke(x + 0.83, y + 0.17, 46, t + y * 200); break;
         case "power_l": if (!reduce) { smoke(x + 0.3, y + 0.35, 42, t); smoke(x + 0.7, y + 0.72, 42, t + 1300); } break;
       }
@@ -692,7 +839,7 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
             const p = byTile.get(`${x},${y}`);
             const cat = p ? BUILDING_BY_ID[p.id]?.category : undefined;
             if (cat && layersRef.current) poly(q, CAT_COLOR[cat], "rgba(255,255,255,.7)");
-            else if (cat && cat !== "agriculture" && p!.id !== "park") {
+            else if (cat && cat !== "agriculture" && p!.id !== "park" && p!.id !== "park_l" && p!.id !== "solar" && p!.id !== "wind") {
               poly([iso(x + 0.04, y + 0.04), iso(x + 0.96, y + 0.04), iso(x + 0.96, y + 0.96), iso(x + 0.04, y + 0.96)], C.sidewalk);
             }
           }
