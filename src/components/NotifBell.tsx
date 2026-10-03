@@ -36,7 +36,7 @@ export default function NotifBell() {
         {unread > 0 && <span className="absolute -right-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-danger px-1 text-[10px] font-bold leading-none text-white">{unread}</span>}
       </button>
       {open && (
-        <div className="absolute right-0 top-11 z-40 w-[min(340px,calc(100vw-24px))] rounded-[14px] border border-line bg-card shadow-2xl appear">
+        <div className="fixed inset-x-3 top-[68px] z-40 sm:absolute sm:inset-x-auto sm:right-0 sm:top-11 sm:w-[340px] rounded-[14px] border border-line bg-card shadow-2xl appear">
           <div className="flex items-center justify-between px-4 pb-2 pt-3">
             <h2 className="text-[14px] font-semibold">Notifications</h2>
             {list.length > 0 && <button onClick={clear} className="text-[11px] font-medium text-muted hover:text-ink">Tout effacer</button>}

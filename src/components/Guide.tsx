@@ -13,6 +13,7 @@ import { GUIDE, guideIndex } from "@/lib/game/guide";
 import { nextActions } from "@/lib/game/insights";
 import Robot from "@/components/Robot";
 import { play } from "@/lib/sound";
+import { useMedia } from "@/lib/useMedia";
 
 const KEY = "market-empire-tic";
 const readFold = (): boolean | null => { try { const v = localStorage.getItem(KEY); return v === "folded" ? true : v === "open" ? false : null; } catch { return null; } };
@@ -24,7 +25,16 @@ export default function Guide() {
   const onCity = path.startsWith("/ville");
   // Replié ou ouvert : le choix du joueur, mémorisé ; sinon ouvert pendant le guide, replié ensuite et sur la ville
   const [choice, setChoice] = useState<boolean | null>(readFold);
-  const fold = (v: boolean) => { setChoice(v); try { localStorage.setItem(KEY, v ? "folded" : "open"); } catch { /* non mémorisé */ } };
+  // Téléphone : la carte ouverte prend la moitié de l'écran. Elle ne reste donc ouverte que sur la page où le joueur
+  // l'a ouverte (elle se replie en changeant de page), et son état n'y est pas mémorisé.
+  const phone = useMedia("(max-width: 639px)");
+  const [phoneOpen, setPhoneOpen] = useState<boolean | null>(null);
+  const [lastPath, setLastPath] = useState(path);
+  if (path !== lastPath) { setLastPath(path); setPhoneOpen(null); }
+  const fold = (v: boolean) => {
+    if (phone) { setPhoneOpen(!v); return; }
+    setChoice(v); try { localStorage.setItem(KEY, v ? "folded" : "open"); } catch { /* non mémorisé */ }
+  };
 
   const index = guideIndex(game), stepsDone = index < 0;
   const tutorial = !game.tutorialDone;          // le guide de démarrage est en cours (ou vient de se terminer)
@@ -37,7 +47,11 @@ export default function Guide() {
     seen.current = index;
   }, [index, stepsDone, tutorial]);
 
-  const folded = choice ?? (onCity || !tutorial);
+  // Sur la page de l'étape en cours, il se replie tout seul : il ne doit jamais cacher le bouton qu'il demande d'utiliser
+  const atStep = !!step && (step.href === "/" ? path === "/" : path.startsWith(step.href));
+  const folded = phone
+    ? (phoneOpen !== null ? !phoneOpen : !(tutorial && path === "/" && !atStep)) // ouverte d'elle-même seulement sur l'accueil, pendant le guide
+    : choice ?? (onCity || !tutorial || atStep);
   const worried = !tutorial && todo.some((a) => a.tone === "bad");
   const mood = tutorial ? (stepsDone ? "cheer" : "happy") : worried ? "think" : "happy";
   // Sur la ville : en haut au centre, sous les indicateurs et le bandeau d'aide (les coins sont pris par les panneaux) ; ailleurs : en bas à droite
@@ -48,7 +62,7 @@ export default function Guide() {
     const label = step ? `Étape ${index + 1} / ${GUIDE.length} · ${step.title}` : tutorial ? "Guide terminé" : todo[0]?.title ?? "Tout va bien";
     return (
       <button onClick={() => fold(false)} aria-label={`Ouvrir Tic, le guide : ${label}`}
-        className={`fixed z-30 flex max-w-[calc(100vw-24px)] items-center gap-2 rounded-full border bg-card py-1 pl-1 pr-3.5 shadow-lg ${worried ? "border-red-200" : "border-primary/30"} ${place}`}>
+        className={`fixed z-[25] flex max-w-[calc(100vw-24px)] items-center gap-2 rounded-full border bg-card py-1 pl-1 pr-3.5 shadow-lg ${worried ? "border-red-200" : "border-primary/30"} ${onCity ? place : "bottom-[84px] right-3 lg:bottom-6 lg:left-[256px] lg:right-auto"}`}>
         <Robot size={34} mood={mood} />
         <span className="truncate text-[12px] font-semibold">{label}</span>
       </button>
@@ -56,7 +70,7 @@ export default function Guide() {
   }
 
   return (
-    <section aria-label="Tic, le guide" className={`fixed z-30 w-[min(360px,calc(100vw-24px))] rounded-[16px] border border-primary/30 bg-card p-4 shadow-2xl appear ${place}`}>
+    <section aria-label="Tic, le guide" className={`fixed z-[25] w-[min(360px,calc(100vw-24px))] rounded-[16px] border border-primary/30 bg-card p-4 shadow-2xl appear ${place}`}>
       <div className="flex items-start gap-3">
         <Robot size={52} mood={mood} />
         <div className="min-w-0 flex-1">

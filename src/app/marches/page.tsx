@@ -12,7 +12,7 @@ import { useNews } from "@/lib/news";
 import CompanyLogo from "@/components/CompanyLogo";
 import NewsList from "@/components/NewsList";
 import { fetchHistory } from "@/lib/market/client";
-import { Button, Card, Delta, Empty, PageHeader, Segmented } from "@/components/ui";
+import { Button, Card, Delta, Empty, PageHeader, Segmented, LockTag } from "@/components/ui";
 import { Sparkline, WealthChart } from "@/components/charts";
 import { eur, eur2, pctPlain, qtyFmt, signedEur } from "@/lib/format";
 import PriceStatus from "@/components/PriceStatus";
@@ -107,6 +107,20 @@ export default function MarketsPage() {
   // Sur petit écran, la fiche s'ouvre par-dessus la liste
   const [sheet, setSheet] = useState(false);
   const open = (sym: string) => { setSelected(sym); if (small) setSheet(true); };
+  // Fiche ouverte (téléphone) : le bouton Retour et la touche Échap la ferment, au lieu de quitter la page
+  useEffect(() => {
+    if (!sheet) return;
+    history.pushState({ ...(history.state ?? {}), sheet: true }, "");
+    const close = () => setSheet(false);
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
+    window.addEventListener("popstate", close);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("popstate", close);
+      window.removeEventListener("keydown", onKey);
+      if (history.state?.sheet) history.back(); // fermée par la croix : on retire l'entrée ajoutée
+    };
+  }, [sheet]);
   /** Clic sur un en-tête de colonne : trie, puis inverse le sens. */
   const sortBy = (col: "name" | "price" | "change") => setSort((cur) =>
     col === "name" ? "name" : cur === `${col}-desc` ? `${col}-asc` : `${col}-desc`);
@@ -124,7 +138,7 @@ export default function MarketsPage() {
             <div className="min-w-0">
               <div className="font-semibold flex flex-wrap items-center gap-x-1.5 gap-y-0.5">{a.name}
                 {game.holdings[a.symbol] && <span className="text-[10px] rounded bg-primary-soft text-primary px-1.5 py-0.5 font-semibold">Détenu</span>}
-                {!hasResearch(game, a.research) && <span title={`Achat après la recherche « ${RESEARCH_BY_ID[a.research]?.name} »`} className="text-slate-400"><Lock size={11} /></span>}
+                {!hasResearch(game, a.research) && <span title={`Achat après la recherche « ${RESEARCH_BY_ID[a.research]?.name} »`}><LockTag className="!px-1.5 !text-[10px]">Verrouillé</LockTag></span>}
               </div>
               <div className="text-[11px] text-muted flex items-center gap-1.5">{a.symbol} · {flag(a.country)}{a.kind === "crypto" ? " · 24 h/24" : ""}<PriceStatus symbol={a.symbol} /></div>
             </div>
@@ -326,7 +340,7 @@ function AssetPanel({ symbol, onSelect }: { symbol: string; onSelect: (s: string
       <div className="flex justify-between items-center mb-2">
         <div className="flex items-center gap-2">
           <Segmented options={ranges} value={range} onChange={setRange} />
-          {!longHistory && <Link href="/recherche" className="inline-flex items-center gap-1 text-[11px] text-muted hover:text-primary"><Lock size={11} />1A</Link>}
+          {!longHistory && <Link href="/recherche" title="Historique 1 an : à débloquer dans Recherche"><LockTag>1A</LockTag></Link>}
         </div>
         {hist?.source === "simulé" && dataMode !== "simulé" && <span className="text-[11px] text-muted" title="Historique réel indisponible pour cette action ou cette période">Courbe simulée</span>}
       </div>
@@ -363,10 +377,14 @@ function AssetPanel({ symbol, onSelect }: { symbol: string; onSelect: (s: string
           <div className="flex justify-between"><span>Liquidités disponibles</span><span>{eur(game.cash)}</span></div>
         </div>
         {!unlocked && (
-          <p className="text-[12px] text-muted mb-2 flex items-center gap-1.5"><Lock size={12} />Achat disponible après la recherche « {RESEARCH_BY_ID[asset.research]?.name} ». <Link href="/recherche" className="text-primary font-medium">Voir →</Link></p>
+          <div className="mb-2 flex items-center gap-2.5 rounded-[10px] border border-amber-200 bg-amber-50 p-2.5 text-[12px] text-amber-900">
+            <Lock size={16} strokeWidth={2.2} className="shrink-0" />
+            <span className="min-w-0 flex-1"><b className="font-semibold">Achat verrouillé.</b> Débloquez la recherche « {RESEARCH_BY_ID[asset.research]?.name} ».</span>
+            <Link href="/recherche" className="shrink-0 rounded-[8px] bg-amber-600 px-2.5 py-1.5 font-semibold text-white hover:bg-amber-700">Débloquer</Link>
+          </div>
         )}
         <div className="grid grid-cols-2 gap-2">
-          <Button disabled={busy || !unlocked || n <= 0 || gross + fee > game.cash} onClick={() => run(() => buy(symbol, typed))}>Acheter</Button>
+          <Button disabled={busy || !unlocked || n <= 0 || gross + fee > game.cash} onClick={() => run(() => buy(symbol, typed))}>{unlocked ? "Acheter" : <span className="inline-flex items-center gap-1.5"><Lock size={14} />Verrouillé</span>}</Button>
           <Button variant="secondary" disabled={busy || !held || (!sellAll && (n <= 0 || n > held.qty))} onClick={() => run(() => sell(symbol, typed, sellAll))}>{sellAll ? "Tout vendre" : "Vendre"}</Button>
         </div>
       </div>
@@ -402,7 +420,7 @@ function UnlockHint({ kind }: { kind: AssetKind }) {
     : "Un indice, un pays ou un secteur entier en un seul achat.";
   return (
     <p className="text-[11px] text-muted flex items-center gap-1.5 pb-1">
-      {!hasResearch(game, need) && <><Lock size={11} /><span>Achat après « {RESEARCH_BY_ID[need]?.name} ».</span></>}
+      {!hasResearch(game, need) && <LockTag>Achat après « {RESEARCH_BY_ID[need]?.name} »</LockTag>}
       <span>{text}</span>
     </p>
   );

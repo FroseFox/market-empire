@@ -20,7 +20,7 @@ import { startSoundEvents } from "@/lib/soundEvents";
 import SoundButton from "@/components/SoundButton";
 import AuthGate, { Splash } from "@/components/AuthGate";
 import { DAY_MS } from "@/lib/game/engine";
-import { eur } from "@/lib/format";
+import { compactEur, eur } from "@/lib/format";
 
 const NAV: { href: string; label: string; icon: typeof BarChart3; soon?: boolean }[] = [
   { href: "/", label: "Économie", icon: BarChart3 },
@@ -44,7 +44,7 @@ export function Logo({ light = false }: { light?: boolean }) {
         <path d="M3 14 L12 8 L17 11 L28 3" stroke={light ? "#fff" : "#0F172A"} strokeWidth="2.4" fill="none" strokeLinecap="round" strokeLinejoin="round" />
         <path d="M23 3 H28 V8" stroke={light ? "#fff" : "#0F172A"} strokeWidth="2.4" fill="none" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
-      <div className={`leading-[0.95] font-extrabold tracking-wide text-[15px] ${light ? "text-white" : "text-navy"}`}>
+      <div className={`leading-[0.95] font-extrabold tracking-wide text-[15px] ${light ? "text-white" : "hidden min-[480px]:block text-navy"}`}>
         MARKET<br />EMPIRE
       </div>
     </div>
@@ -171,10 +171,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
       <div className="flex-1 min-w-0 flex flex-col">
         {/* Barre du haut */}
-        <header className="h-16 bg-card border-b border-line flex items-center gap-4 px-4 md:px-8 sticky top-0 z-20">
+        <header className="h-16 bg-card border-b border-line flex items-center gap-2 sm:gap-4 px-3 sm:px-4 md:px-8 sticky top-0 z-20">
           <div className="lg:hidden"><Logo /></div>
           {hydrated && <NextDay />}
-          <div className="ml-auto flex items-center gap-3">
+          <div className="ml-auto flex min-w-0 items-center gap-1.5 sm:gap-3">
             <span className={`hidden sm:inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium ${mode === "simulé" ? "bg-warning-soft text-amber-700" : "bg-success-soft text-emerald-700"}`}
               title={mode === "simulé" ? "Cours simulés : aucune source de cours configurée" : `Cours réels, rafraîchis une fois par heure. Dernière mise à jour : ${new Date(quotesAt).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}`}>
               <span className={`h-1.5 w-1.5 rounded-full ${mode === "simulé" ? "bg-warning" : "bg-success"}`} />
@@ -189,9 +189,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             ) : hydrated && <AccountMenu />}
             {hydrated && <SoundButton />}
             {hydrated && <NotifBell />}
-            <Link href="/ville" className="flex items-center gap-2 rounded-[12px] bg-success-soft px-3 py-1.5">
+            <Link href="/ville" className="flex shrink-0 items-center gap-2 rounded-[12px] bg-success-soft px-2.5 sm:px-3 py-1.5">
               <div className="leading-tight text-right">
-                <div className="text-[14px] font-bold text-emerald-700 tabular">{hydrated ? eur(cash) : "—"}</div>
+                {/* Téléphone : montant abrégé à partir du million, pour que la barre ne déborde jamais */}
+                <div className="whitespace-nowrap text-[14px] font-bold text-emerald-700 tabular">{!hydrated ? "—" : <><span className="sm:hidden">{cash >= 1_000_000 ? compactEur(cash) : eur(cash)}</span><span className="hidden sm:inline">{eur(cash)}</span></>}</div>
                 <div className="text-[10px] text-emerald-700/70">Liquidités</div>
               </div>
               <span className="h-6 w-6 rounded-full bg-success text-white grid place-items-center"><Plus size={14} /></span>

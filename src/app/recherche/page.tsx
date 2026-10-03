@@ -7,7 +7,7 @@ import type { LucideIcon } from "lucide-react";
 import { useGame } from "@/store/game";
 import { BRANCH_COLOR, RESEARCH, RESEARCH_BY_ID, type Branch, type ResearchNode } from "@/lib/game/research";
 import { useMedia } from "@/lib/useMedia";
-import { Button, Card, PageHeader } from "@/components/ui";
+import { Button, Card, PageHeader, LockTag } from "@/components/ui";
 import { compactEur, eur } from "@/lib/format";
 
 const ICONS: Record<string, LucideIcon> = {
@@ -80,7 +80,7 @@ export default function ResearchPage() {
                             </span>
                           </span>
                           <span className={`text-[12px] tabular font-semibold shrink-0 ${st === "done" ? "text-success" : st === "open" ? "text-primary" : "text-muted"}`}>
-                            {st === "done" ? <Check size={16} /> : st === "locked" ? <span className="inline-flex items-center gap-1"><Lock size={12} />{compactEur(n.cost)}</span> : n.cost === 0 ? "Gratuite" : compactEur(n.cost)}
+                            {st === "done" ? <Check size={16} /> : st === "locked" ? <LockTag className="tabular">{compactEur(n.cost)}</LockTag> : n.cost === 0 ? "Gratuite" : compactEur(n.cost)}
                           </span>
                         </button>
                       </li>
@@ -145,7 +145,7 @@ export default function ResearchPage() {
                         </span>
                       )}
                       {st === "locked" && (
-                        <span className="absolute -right-1 -bottom-1 h-5 w-5 rounded-full bg-white border-2 border-slate-300 grid place-items-center"><Lock size={10} className="text-slate-400" /></span>
+                        <span className="absolute -right-1.5 -bottom-1.5 h-6 w-6 rounded-full bg-amber-50 border-2 border-amber-300 grid place-items-center"><Lock size={12} strokeWidth={2.4} className="text-amber-700" /></span>
                       )}
                     </span>
                     <span className={`text-[12px] font-semibold leading-tight text-center ${st === "locked" ? "text-muted" : "text-ink"} ${isSel ? "underline decoration-2 underline-offset-4" : ""}`}
@@ -189,7 +189,7 @@ export default function ResearchPage() {
                   {sel.requires.map((r) => (
                     <li key={r}>
                       <button onClick={() => setSelected(r)} className="flex items-center gap-2 text-[13px] hover:text-primary">
-                        {done.has(r) ? <Check size={14} className="text-success" /> : <Lock size={13} className="text-muted" />}
+                        {done.has(r) ? <Check size={14} className="text-success" /> : <Lock size={14} strokeWidth={2.2} className="text-amber-600" />}
                         {RESEARCH_BY_ID[r].name}
                       </button>
                     </li>

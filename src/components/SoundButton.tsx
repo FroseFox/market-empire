@@ -21,7 +21,7 @@ export default function SoundButton() {
       <button onClick={() => setOpen((o) => !o)} aria-label={on ? "Son activé : régler" : "Son coupé : régler"} aria-expanded={open}
         className="grid h-9 w-9 place-items-center rounded-full text-muted hover:bg-slate-100 hover:text-ink"><Icon size={18} /></button>
       {open && (
-        <div className="absolute right-0 top-11 z-40 w-[230px] rounded-[14px] border border-line bg-card p-4 shadow-2xl appear">
+        <div className="fixed inset-x-3 top-[68px] z-40 sm:absolute sm:inset-x-auto sm:right-0 sm:top-11 sm:w-[230px] rounded-[14px] border border-line bg-card p-4 shadow-2xl appear">
           <div className="flex items-center justify-between">
             <span className="text-[14px] font-semibold">Sons du jeu</span>
             <button role="switch" aria-checked={on} aria-label="Activer les sons" data-sfx="none" onClick={() => setOn(!on)}

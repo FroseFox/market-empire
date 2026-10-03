@@ -1,11 +1,11 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
-import { History, Lock, PieChart, TrendingUp, Wallet } from "lucide-react";
+import { History, PieChart, TrendingUp, Wallet } from "lucide-react";
 import { useDerived } from "@/store/game";
 import { hasResearch } from "@/lib/game/engine";
 import { ASSET_BY_SYMBOL, KIND_LABEL, familyOf, regionOf } from "@/lib/market/universe";
-import { Card, Delta, Empty, PageHeader, Segmented, StatCard } from "@/components/ui";
+import { Card, Delta, Empty, PageHeader, Segmented, StatCard, LockTag } from "@/components/ui";
 import CompanyLogo from "@/components/CompanyLogo";
 import { Donut } from "@/components/charts";
 import { eur, eur2, pctPlain, signedEur, tone, qtyFmt } from "@/lib/format";
@@ -23,7 +23,7 @@ function groupOf(sym: string, split: Split): string {
 }
 
 const LockLink = ({ label }: { label: string }) => (
-  <Link href="/recherche" className="inline-flex items-center gap-1 text-[11px] text-muted hover:text-primary"><Lock size={11} />{label}</Link>
+  <Link href="/recherche" title="À débloquer dans Recherche"><LockTag>{label}</LockTag></Link>
 );
 
 export default function PortfolioPage() {
