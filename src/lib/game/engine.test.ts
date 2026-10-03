@@ -436,3 +436,34 @@ describe("fin de partie : grands projets et prestige", () => {
     expect(E.goalStatuses(g).find((s) => s.goal.id === "project_1")?.done).toBe(true);
   });
 });
+
+describe("ordres en euros", () => {
+  it("un montant donne un nombre de titres fractionnaire, jamais plus que le montant", () => {
+    expect(E.sharesFor(10_000, 4_000)).toBe(2.5);
+    expect(E.sharesFor(1_000, 205)).toBe(4.878);        // 4,878 × 205 = 999,99 €
+    expect(E.sharesFor(1_000, 205) * 205).toBeLessThanOrEqual(1_000);
+    expect(E.sharesFor(0.001, 60_000)).toBe(0);         // trop peu pour un dix-millième de titre
+    expect(E.sharesFor(100, 0)).toBe(0);
+  });
+  it("le montant maximal passe toujours, frais compris", () => {
+    const g = newGame(T0);
+    const max = E.maxBuyAmount(g.cash);
+    const r = buy(g, "AAPL", E.sharesFor(max, 205), 205, T0);
+    if (!r.ok) throw new Error(r.error);
+    expect(r.state.cash).toBeGreaterThanOrEqual(0);
+    expect(r.state.cash).toBeLessThan(205 * 0.0001 + 1.01); // presque tout est investi
+    expect(buy(g, "AAPL", E.sharesFor(g.cash, 205), 205, T0).ok).toBe(false); // sans la place des frais : refusé
+    expect(E.maxBuyAmount(0.5)).toBe(0);
+  });
+  it("on peut vendre une fraction puis tout le reste, sans reliquat", () => {
+    let g = newGame(T0);
+    const bought = buy(g, "AAPL", E.sharesFor(10_000, 205), 205, T0);
+    if (!bought.ok) throw new Error(bought.error);
+    g = bought.state;
+    const part = sell(g, "AAPL", E.sharesFor(3_000, 205), 205, T0);
+    if (!part.ok) throw new Error(part.error);
+    const rest = sell(part.state, "AAPL", part.state.holdings.AAPL.qty, 205, T0);
+    if (!rest.ok) throw new Error(rest.error);
+    expect(rest.state.holdings.AAPL).toBeUndefined();
+  });
+});

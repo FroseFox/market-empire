@@ -3,9 +3,9 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ChevronRight, Layers, LineChart, Lock, Search, Wallet, X } from "lucide-react";
 import { useDerived, useGame } from "@/store/game";
-import { ASSETS, ASSET_BY_SYMBOL, FAMILIES, KIND_LABEL, familyOf, flag, fractional, regionOf, type Asset, type AssetKind, type Family, type Region } from "@/lib/market/universe";
+import { ASSETS, ASSET_BY_SYMBOL, FAMILIES, KIND_LABEL, familyOf, flag, regionOf, type Asset, type AssetKind, type Family, type Region } from "@/lib/market/universe";
 import { simulatedHistory, type Range } from "@/lib/market/simulate";
-import { feeFactor, hasResearch, tradeFee } from "@/lib/game/engine";
+import { feeFactor, hasResearch, maxBuyAmount, sharesFor, tradeFee } from "@/lib/game/engine";
 import { RESEARCH_BY_ID } from "@/lib/game/research";
 import { neighbors } from "@/lib/market/relations";
 import { useNews } from "@/lib/news";
@@ -276,7 +276,9 @@ function AssetPanel({ symbol, onSelect }: { symbol: string; onSelect: (s: string
   const q = quotes[symbol];
   const [range, setRange] = useState<Range>("1M");
   const [hist, setHist] = useState<{ points: { t: number; p: number }[]; source: "réel" | "simulé" } | null>(null);
-  const [qty, setQty] = useState("1");
+  // L'ordre se passe en euros : le jeu calcule le nombre de titres (fractions permises)
+  const [amount, setAmount] = useState("1000");
+  const [all, setAll] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -286,21 +288,22 @@ function AssetPanel({ symbol, onSelect }: { symbol: string; onSelect: (s: string
   }, [symbol, range]);
 
   const held = game.holdings[symbol];
-  const frac = fractional(symbol);
-  const typed = Number(qty.replace(",", ".")) || 0;
-  const n = Math.max(0, frac ? Math.floor(typed * 10_000) / 10_000 : Math.floor(typed));
   const price = q?.price ?? 0;
-  const gross = n * price;
+  const positionValue = held ? held.qty * price : 0;
+  const typed = Math.max(0, Number(amount.replace(/\s/g, "").replace(",", ".")) || 0);
   // Frais réduits par le pays, un bureau dans la place financière ou un grand projet
   const feeRate = feeFactor(game, symbol);
+  const maxBuy = maxBuyAmount(game.cash, feeRate);
+  const sellAll = !!held && (all || typed >= positionValue - 0.005);
+  const n = sharesFor(typed, price);
+  const gross = n * price;
   const fee = n > 0 ? tradeFee(gross, feeRate) : 0;
-  const maxRaw = price > 0 ? (game.cash - 1) / (price * 1.001) : 0;
-  const maxBuy = frac ? Math.floor(maxRaw * 10_000) / 10_000 : Math.floor(maxRaw);
+  const unit = asset.kind === "stock" ? "action" : asset.kind === "crypto" ? "unité" : "part";
   const first = hist?.points[0]?.p;
   const rangeChange = first && price ? price / first - 1 : q?.change ?? 0;
-  const positionValue = held ? held.qty * price : 0;
 
-  const run = async (fn: typeof buy) => { setBusy(true); await fn(symbol, n); setBusy(false); };
+  const run = async (fn: () => Promise<boolean>) => { setBusy(true); await fn(); setBusy(false); setAll(false); };
+  const pick = (v: number, everything = false) => { setAmount(String(Math.floor(v * 100) / 100)); setAll(everything); };
   const unlocked = hasResearch(game, asset.research);
   const longHistory = hasResearch(game, "history_1y");
   const ranges = (longHistory ? ["1J", "1S", "1M", "1A"] : ["1J", "1S", "1M"]) as Range[];
@@ -335,7 +338,7 @@ function AssetPanel({ symbol, onSelect }: { symbol: string; onSelect: (s: string
 
       {held && (
         <div className="grid grid-cols-3 gap-2 mt-4 text-[12px]">
-          <Info label="Détenu" value={frac ? qtyFmt(held.qty) : `${qtyFmt(held.qty)} ${asset.kind === "stock" ? "actions" : "parts"}`} />
+          <Info label="Détenu" value={`${qtyFmt(held.qty)} ${unit}${held.qty >= 2 ? "s" : ""} · ${eur(positionValue)}`} />
           <Info label="Prix de revient" value={eur2(held.avgCost)} />
           <Info label="Plus-value" value={signedEur(positionValue - held.qty * held.avgCost)} tone={positionValue >= held.qty * held.avgCost ? "text-success" : "text-danger"} />
         </div>
@@ -343,17 +346,21 @@ function AssetPanel({ symbol, onSelect }: { symbol: string; onSelect: (s: string
       {held && portfolio > 0 && <p className="text-[11px] text-muted mt-2">{pctPlain(positionValue / portfolio)} de votre portefeuille</p>}
 
       <div className="mt-4 rounded-[12px] border border-line p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <label htmlFor="qty" className="text-[13px] font-medium">Quantité</label>
-          <input id="qty" inputMode={frac ? "decimal" : "numeric"} value={qty} onChange={(e) => setQty(e.target.value)}
-            className="w-24 rounded-[8px] border border-line px-2.5 py-1.5 text-[14px] tabular outline-none focus:border-primary" />
-          <div className="flex gap-1 ml-auto">
-            {(frac ? [0.01, 0.1, 1] : [1, 10]).map((k) => <button key={k} onClick={() => setQty(String(k))} className="text-[11px] px-2 py-1 rounded-[6px] bg-slate-100 text-muted hover:text-ink">{qtyFmt(k)}</button>)}
-            <button onClick={() => setQty(String(Math.max(0, maxBuy)))} className="text-[11px] px-2 py-1 rounded-[6px] bg-slate-100 text-muted hover:text-ink">Max</button>
+        <div className="flex flex-wrap items-center gap-2 mb-3">
+          <label htmlFor="amount" className="text-[13px] font-medium">Montant</label>
+          <div className="relative">
+            <input id="amount" inputMode="decimal" value={amount} onChange={(e) => { setAmount(e.target.value); setAll(false); }}
+              className="w-32 rounded-[8px] border border-line py-1.5 pl-2.5 pr-7 text-[14px] tabular outline-none focus:border-primary" />
+            <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[13px] text-muted">€</span>
+          </div>
+          <div className="flex flex-wrap gap-1 ml-auto">
+            {[1_000, 10_000].map((k) => <button key={k} onClick={() => pick(k)} className="text-[11px] px-2 py-1 rounded-[6px] bg-slate-100 text-muted hover:text-ink">{eur(k)}</button>)}
+            <button onClick={() => pick(maxBuy)} title="Tout ce que vos liquidités permettent d'acheter, frais compris" className="text-[11px] px-2 py-1 rounded-[6px] bg-slate-100 text-muted hover:text-ink">Max</button>
+            {held && <button onClick={() => pick(positionValue, true)} title="Montant de toute votre position, pour la vendre" className="text-[11px] px-2 py-1 rounded-[6px] bg-slate-100 text-muted hover:text-ink">Tout</button>}
           </div>
         </div>
         <div className="text-[12px] text-muted space-y-0.5 mb-3 tabular">
-          <div className="flex justify-between"><span>Montant estimé</span><span className="text-ink font-medium">{eur2(gross)}</span></div>
+          <div className="flex justify-between"><span>Soit environ</span><span className="text-ink font-medium">{qtyFmt(sellAll && all ? held!.qty : n)} {unit}{n >= 2 ? "s" : ""} à {eur2(price)}</span></div>
           <div className="flex justify-between"><span>Frais ({(0.1 * feeRate).toLocaleString("fr-FR", { maximumFractionDigits: 3 })} %{feeRate < 1 ? ", réduits" : ""})</span><span>{eur2(fee)}</span></div>
           <div className="flex justify-between"><span>Liquidités disponibles</span><span>{eur(game.cash)}</span></div>
         </div>
@@ -361,8 +368,8 @@ function AssetPanel({ symbol, onSelect }: { symbol: string; onSelect: (s: string
           <p className="text-[12px] text-muted mb-2 flex items-center gap-1.5"><Lock size={12} />Achat disponible après la recherche « {RESEARCH_BY_ID[asset.research]?.name} ». <Link href="/recherche" className="text-primary font-medium">Voir →</Link></p>
         )}
         <div className="grid grid-cols-2 gap-2">
-          <Button disabled={busy || !unlocked || n <= 0 || gross + fee > game.cash} onClick={() => run(buy)}>Acheter</Button>
-          <Button variant="secondary" disabled={busy || n <= 0 || !held || n > held.qty} onClick={() => run(sell)}>Vendre</Button>
+          <Button disabled={busy || !unlocked || n <= 0 || gross + fee > game.cash} onClick={() => run(() => buy(symbol, typed))}>Acheter</Button>
+          <Button variant="secondary" disabled={busy || !held || (!sellAll && (n <= 0 || n > held.qty))} onClick={() => run(() => sell(symbol, typed, sellAll))}>{sellAll ? "Tout vendre" : "Vendre"}</Button>
         </div>
       </div>
 
