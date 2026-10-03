@@ -49,7 +49,7 @@ export default function AccountMenu() {
         <ChevronDown size={14} className="text-muted hidden sm:block" />
       </button>
       {open && (
-        <div role="menu" className="absolute right-0 top-full mt-2 w-64 card p-1.5 shadow-xl z-40 appear">
+        <div role="menu" className="fixed inset-x-3 top-[68px] card p-1.5 shadow-xl z-40 appear sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-64">
           <div className="px-3 py-2 text-[11px] text-muted leading-relaxed">
             Votre partie est sauvegardée en ligne : retrouvez-la sur n&apos;importe quel appareil.
           </div>

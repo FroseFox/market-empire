@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowDownRight, ArrowUpRight, ChevronRight } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, ChevronRight, Lock } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { pct } from "@/lib/format";
 
@@ -17,6 +17,15 @@ export function PageHeader({ icon: Icon, title, subtitle, children }: { icon: Lu
       </div>
       {children && <div className="sm:ml-auto flex flex-wrap gap-2">{children}</div>}
     </div>
+  );
+}
+
+/** Pastille « verrouillé » : même apparence partout (cadenas + texte sur fond ambre), lisible d'un coup d'œil. */
+export function LockTag({ children = "Verrouillé", className = "" }: { children?: React.ReactNode; className?: string }) {
+  return (
+    <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800 ${className}`}>
+      <Lock size={12} strokeWidth={2.4} />{children}
+    </span>
   );
 }
 
@@ -74,7 +83,7 @@ export function Progress({ value, tone = "bg-success" }: { value: number; tone?:
 
 export function Segmented<T extends string>({ options, value, onChange }: { options: T[]; value: T; onChange: (v: T) => void }) {
   return (
-    <div className="inline-flex rounded-[10px] bg-slate-100 p-0.5">
+    <div className="inline-flex max-w-full overflow-x-auto no-scrollbar rounded-[10px] bg-slate-100 p-0.5 [&>button]:shrink-0">
       {options.map((o) => (
         <button key={o} onClick={() => onChange(o)}
           className={`px-3 py-1 text-[12px] font-medium rounded-[8px] transition-colors ${o === value ? "bg-card text-primary shadow-sm" : "text-muted hover:text-ink"}`}>

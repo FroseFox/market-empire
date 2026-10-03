@@ -239,6 +239,17 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
     x1 = Math.min(hi - 1, Math.ceil(x1 / 4) * 4); y1 = Math.min(hi - 1, Math.ceil(y1 / 4) * 4);
 
     const byTile = new Map(plots.map((p) => [`${p.x},${p.y}`, p]));
+    // Routes goudronnées : seulement autour des îlots bâtis, plus les deux axes qui relient la ville à l'extérieur.
+    // Le reste du territoire reste en herbe : un village ressemble à un village, et la ville s'étend à vue d'œil.
+    // (En mode construction ou déplacement, tout le quadrillage s'affiche pour montrer où l'on peut bâtir.)
+    const builtBlocks = new Set(plots.map((p) => `${Math.floor(p.x / 4)},${Math.floor(p.y / 4)}`));
+    const paved = (x: number, y: number) => {
+      if (!isRoad(x, y)) return false;
+      if (x === MAP_SIZE / 2 || y === MAP_SIZE / 2) return true;
+      const bxs = x % 4 === 0 ? [x / 4 - 1, x / 4] : [Math.floor(x / 4)];
+      const bys = y % 4 === 0 ? [y / 4 - 1, y / 4] : [Math.floor(y / 4)];
+      return bxs.some((bx) => bys.some((by) => builtBlocks.has(`${bx},${by}`)));
+    };
     const SLAB = 0; // plus de socle : la ville est posée dans son paysage
     let scale = 1, ox = 0, oy = 0, W = 0, H = 0, dpr = 1, base = { scale: 1, ox: 0, oy: 0 };
 
@@ -298,7 +309,7 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
     let lights: Pt[][] = [];
     // Lampadaires : un par carrefour
     const lamps: Pt[] = [];
-    for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) if (x % 4 === 0 && y % 4 === 0) lamps.push([x + 0.1, y + 0.1]);
+    for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) if (x % 4 === 0 && y % 4 === 0 && paved(x, y)) lamps.push([x + 0.1, y + 0.1]);
     /** Le point d'ancrage (carreau) est-il à l'écran ? Marge pour la hauteur des tours et les ombres. */
     const onScreenAt = (ax: number, ay: number) => {
       const sx = ox + (ax - ay) * (TW / 2) * scale, sy = oy + (ax + ay) * (TH / 2) * scale;
@@ -876,7 +887,7 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
           const sx = ox + (x - y) * (TW / 2) * scale, sy = oy + (x + y + 1) * (TH / 2) * scale;
           if (sx < -mx || sx > W + mx || sy < -my || sy > H + my) continue;
           const q: Pt[] = [iso(x, y), iso(x + 1, y), iso(x + 1, y + 1), iso(x, y + 1)];
-          if (isRoad(x, y)) {
+          if (isRoad(x, y) && (m || paved(x, y))) {
             poly(q, C.road);
             const rx = x % 4 === 0, ry = y % 4 === 0;
             // Trottoirs le long de l'herbe
@@ -1165,6 +1176,7 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
         const lane = car.dir > 0 ? 0.32 : 0.68;
         const cx = car.line.axis === "x" ? car.line.k + lane : pos;
         const cy = car.line.axis === "x" ? pos : car.line.k + lane;
+        if (!paved(Math.floor(cx), Math.floor(cy))) continue; // pas de voiture dans l'herbe
         dynamic.push({ depth: cx + cy, ax: cx, ay: cy, draw: () => {
           const w = 0.12, l = 0.26;
           if (car.line.axis === "x") block(cx - w / 2, cy - l / 2, cx + w / 2, cy + l / 2, 0, 5, car.color, car.color, "rgba(15,23,42,.35)");
@@ -1178,6 +1190,7 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
         if (w.dir < 0) u = 1 - u;
         const pos = (w.line.axis === "x" ? y0 : x0) + u * len;
         const wx = w.line.axis === "x" ? w.line.k + w.side : pos, wy = w.line.axis === "x" ? pos : w.line.k + w.side;
+        if (!paved(Math.floor(wx), Math.floor(wy))) continue;
         dynamic.push({ depth: wx + wy, ax: wx, ay: wy, draw: (tt) => {
           const [px, py] = iso(wx, wy);
           const step = reduce ? 0 : Math.sin(tt / 110 + w.off * 40) * 0.6 * scale; // petit balancement de la marche

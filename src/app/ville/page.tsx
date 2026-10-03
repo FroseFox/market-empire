@@ -6,7 +6,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { useDerived, useGame } from "@/store/game";
 import { BUILDINGS, BUILDING_BY_ID, CATEGORY_LABELS, CITY_RANKS, SERVICES, SERVICE_IDS, DEMOLISH_REFUND, EXPORT_RATIO, MAINTENANCE_RATE, RESOURCE_PRICES, type BuildingType, type Category } from "@/lib/game/config";
-import { Button, ConfirmButton, Progress } from "@/components/ui";
+import { Button, ConfirmButton, Progress, LockTag } from "@/components/ui";
 import IsoCity, { type CityMarker, type CityMode, type CitySign, type MarkerKind } from "@/components/IsoCity";
 import CompanyLogo, { companyBadge } from "@/components/CompanyLogo";
 import { useMedia } from "@/lib/useMedia";
@@ -502,7 +502,7 @@ function Progression({ city, population, goals, onClaim }: { city: CityStats; po
         <div className="border-t border-line pt-3">
           <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">À venir avec les prochains rangs</div>
           <ul className="space-y-1 text-[12px]">
-            {toCome.map((f) => <li key={f.id} className="flex items-center justify-between gap-3 text-muted"><span className="inline-flex items-center gap-1.5"><Lock size={11} />{f.label}</span><span className="shrink-0">{CITY_RANKS[f.rank].name}</span></li>)}
+            {toCome.map((f) => <li key={f.id} className="flex items-center justify-between gap-3 text-slate-600"><span className="inline-flex items-center gap-1.5"><Lock size={13} strokeWidth={2.2} className="text-amber-600" />{f.label}</span><LockTag className="shrink-0">{CITY_RANKS[f.rank].name}</LockTag></li>)}
           </ul>
         </div>
       )}
@@ -514,7 +514,7 @@ function Progression({ city, population, goals, onClaim }: { city: CityStats; po
             {!land ? "Taille maximale atteinte." : city.rank < land.minRank ? `Agrandissement à ${land.size} × ${land.size} au rang « ${CITY_RANKS[land.minRank].name} ».` : `Agrandir à ${land.size} × ${land.size} : 4 carreaux de plus de chaque côté.`}
           </div>
         </div>
-        {land && (city.rank < land.minRank ? <span className="inline-flex shrink-0 items-center gap-1 text-[12px] font-semibold tabular text-muted"><Lock size={12} />{compactEur(land.cost)}</span>
+        {land && (city.rank < land.minRank ? <LockTag className="shrink-0 tabular">{compactEur(land.cost)}</LockTag>
           : <ConfirmButton onConfirm={expandTerritory} disabled={land.cost > game.cash} confirmLabel="Confirmer"
               className="shrink-0 rounded-[10px] bg-primary px-3 py-2 text-[13px] font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40">{compactEur(land.cost)}</ConfirmButton>)}
       </div>
@@ -532,7 +532,7 @@ function Progression({ city, population, goals, onClaim }: { city: CityStats; po
                   <div className="text-[11px] text-muted">{p.description} +{num(p.prestige)} prestige{locked ? ` · rang « ${CITY_RANKS[p.minRank].name} »` : ""}</div>
                 </div>
                 {done ? <span className="shrink-0 text-[11px] font-semibold text-success">Achevé</span>
-                  : locked ? <span className="inline-flex shrink-0 items-center gap-1 text-[12px] font-semibold tabular text-muted"><Lock size={12} />{compactEur(p.cost)}</span>
+                  : locked ? <LockTag className="shrink-0 tabular">{compactEur(p.cost)}</LockTag>
                   : <ConfirmButton onConfirm={() => buildProject(p.id)} disabled={p.cost > game.cash} confirmLabel="Confirmer"
                       className="shrink-0 rounded-[10px] bg-primary px-3 py-2 text-[13px] font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40">{compactEur(p.cost)}</ConfirmButton>}
               </li>
@@ -641,10 +641,10 @@ function Palette({ active, onPick, onClose }: { active: string | null; onPick: (
           return (
             <li key={b.id} className="w-[212px] shrink-0 sm:w-[calc(50%-4px)] md:w-[calc(33.333%-6px)] xl:w-[calc(25%-6px)]">
               <button disabled={locked || b.cost > game.cash} onClick={() => onPick(b.id)}
-                className={`flex h-full w-full flex-col gap-1.5 rounded-[12px] border p-2.5 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-55 ${isActive ? "border-primary bg-primary-soft" : "border-line hover:border-slate-300 hover:bg-slate-50"}`}>
+                className={`flex h-full w-full flex-col gap-1.5 rounded-[12px] border p-2.5 text-left transition-colors disabled:cursor-not-allowed ${locked ? "border-dashed border-slate-300 bg-slate-50" : "disabled:opacity-55"} ${isActive ? "border-primary bg-primary-soft" : locked ? "" : "border-line hover:border-slate-300 hover:bg-slate-50"}`}>
                 <span className="flex items-center gap-2">
-                  <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-[9px] ${CAT_TINT[b.category]}`}><Icon size={16} /></span>
-                  <span className="min-w-0 flex-1">
+                  <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-[9px] ${locked ? "bg-slate-200 text-slate-500" : CAT_TINT[b.category]}`}>{locked ? <Lock size={15} strokeWidth={2.2} /> : <Icon size={16} />}</span>
+                  <span className={`min-w-0 flex-1 ${locked ? "text-slate-500" : ""}`}>
                     <span className="block truncate text-[13px] font-semibold">{b.name}{owned > 0 && <span className="ml-1.5 text-[11px] text-primary">×{owned}</span>}</span>
                     <span className="block text-[12px] font-bold tabular">{compactEur(b.cost)}</span>
                   </span>
@@ -659,7 +659,7 @@ function Palette({ active, onPick, onClose }: { active: string | null; onPick: (
                   </span>
                 )}
                 <span className="mt-auto block text-[11px] text-muted">
-                  {locked ? <span className="inline-flex items-center gap-1"><Lock size={11} />Débloqué à {num(b.unlockPop!)} habitants</span>
+                  {locked ? <LockTag>Dès {num(b.unlockPop!)} habitants</LockTag>
                     : b.cost > game.cash ? "Liquidités insuffisantes"
                     : isActive ? "Choisissez un carreau sur la carte"
                     : b.category !== "housing" && net > 0 ? `Rentabilisé en ~${Math.round(b.cost / net)} jours`

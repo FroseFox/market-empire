@@ -176,7 +176,7 @@ export default function RelationsPage() {
               </div>
             </div>
           ) : (
-            <Link href="/recherche" className="flex items-center gap-1.5 text-[11px] text-muted hover:text-primary mb-4"><Lock size={11} />Exposition à cette chaîne : à débloquer dans Recherche</Link>
+            <Link href="/recherche" className="mb-4 flex items-center gap-2 rounded-[10px] border border-amber-200 bg-amber-50 px-2.5 py-2 text-[12px] font-medium text-amber-900 hover:bg-amber-100"><Lock size={14} strokeWidth={2.2} className="shrink-0" />Exposition à cette chaîne : à débloquer dans Recherche</Link>
           )}
           {list.length === 0 ? <p className="text-[13px] text-muted">Aucune relation saisie pour cette entreprise pour l&apos;instant.</p> : (
             <div className="space-y-4">
