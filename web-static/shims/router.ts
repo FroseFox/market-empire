@@ -1,7 +1,7 @@
 // Mini-routeur en mémoire pour la version autonome (remplace le routeur de Next.js).
 import { useSyncExternalStore } from "react";
 
-const ROUTES = ["/", "/marches", "/portefeuille", "/ville", "/monde", "/actualites", "/relations", "/dossiers", "/recherche", "/wiki"];
+const ROUTES = ["/", "/marches", "/portefeuille", "/ville", "/monde", "/actualites", "/relations", "/recherche", "/wiki"];
 function fromHash(): string {
   try {
     const h = window.location.hash.replace(/^#/, "");

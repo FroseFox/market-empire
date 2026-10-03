@@ -4,9 +4,12 @@ import { compactEur, eur, eur2 } from "@/lib/format";
 
 const axis = { fontSize: 11, fill: "#64748b" };
 
-export function WealthChart({ data, color = "#2563EB", height = 220, money2 = false, xFormat }: {
+export function WealthChart({ data, color = "#2563EB", height = 220, money2 = false, xFormat, unit }: {
   data: { x: string | number; y: number }[]; color?: string; height?: number; money2?: boolean; xFormat?: (v: number | string) => string;
+  /** Pour une courbe qui n'est pas en euros (ex. « hab. »). */
+  unit?: string;
 }) {
+  const plain = (v: number) => `${Math.round(v).toLocaleString("fr-FR")} ${unit}`;
   const id = `g-${color.slice(1)}`;
   const ys = data.map((d) => d.y);
   const min = Math.min(...ys), max = Math.max(...ys);
@@ -23,9 +26,9 @@ export function WealthChart({ data, color = "#2563EB", height = 220, money2 = fa
           </defs>
           <CartesianGrid stroke="#eef1f5" vertical={false} />
           <XAxis dataKey="x" tick={axis} tickLine={false} axisLine={false} minTickGap={40} tickFormatter={xFormat} />
-          <YAxis tick={axis} tickLine={false} axisLine={false} width={62} domain={[min - pad, max + pad]} tickFormatter={(v) => money2 ? `${Math.round(v)} €` : max - min < 20_000 ? eur(v) : compactEur(v)} />
+          <YAxis tick={axis} tickLine={false} axisLine={false} width={62} domain={[min - pad, max + pad]} tickFormatter={(v) => unit ? plain(v) : money2 ? `${Math.round(v)} €` : max - min < 20_000 ? eur(v) : compactEur(v)} />
           <Tooltip
-            formatter={(v) => [money2 ? eur2(Number(v)) : eur(Number(v)), ""]}
+            formatter={(v) => [unit ? plain(Number(v)) : money2 ? eur2(Number(v)) : eur(Number(v)), ""]}
             labelFormatter={(l) => (xFormat ? xFormat(l as string | number) : String(l))}
             contentStyle={{ borderRadius: 10, border: "1px solid #e7ebf1", fontSize: 12 }} separator="" />
           <Area type="monotone" dataKey="y" stroke={color} strokeWidth={2} fill={`url(#${id})`} isAnimationActive={false} dot={false} />

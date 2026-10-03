@@ -9,7 +9,6 @@ import { feeFactor, hasResearch, maxBuyAmount, sharesFor, tradeFee } from "@/lib
 import { RESEARCH_BY_ID } from "@/lib/game/research";
 import { neighbors } from "@/lib/market/relations";
 import { useNews } from "@/lib/news";
-import AddToFolder from "@/components/AddToFolder";
 import CompanyLogo from "@/components/CompanyLogo";
 import NewsList from "@/components/NewsList";
 import { fetchHistory } from "@/lib/market/client";
@@ -319,7 +318,6 @@ function AssetPanel({ symbol, onSelect }: { symbol: string; onSelect: (s: string
           <div className="text-[18px] font-semibold leading-tight">{asset.name}</div>
           <div className="text-[12px] text-muted flex flex-wrap items-center gap-1.5">{symbol} · {asset.sector} · {flag(asset.country)}<PriceStatus symbol={symbol} large /></div>
         </div>
-        <AddToFolder symbols={[symbol]} label="Dossier" />
       </div>
       <div className="flex items-baseline gap-3 mt-3 mb-3">
         <div className="text-[32px] font-bold tabular">{q ? eur2(price) : "—"}</div>

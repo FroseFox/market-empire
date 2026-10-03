@@ -7,7 +7,6 @@ import { ASSETS, ASSET_BY_SYMBOL } from "@/lib/market/universe";
 import { neighbors, type Neighbor } from "@/lib/market/relations";
 import { hasResearch } from "@/lib/game/engine";
 import { Card, Delta, PageHeader } from "@/components/ui";
-import AddToFolder from "@/components/AddToFolder";
 import { eur, pctPlain } from "@/lib/format";
 
 const ROLE_STYLE: Record<Neighbor["role"], { color: string; label: string }> = {
@@ -165,7 +164,7 @@ export default function RelationsPage() {
         </Card>
         </div>
 
-        <Card title={asset.name} className="xl:col-span-3" extra={<AddToFolder symbols={[center]} label="Dossier" />}>
+        <Card title={asset.name} className="xl:col-span-3">
           <div className="flex items-center gap-2 text-[12px] text-muted mb-4">{asset.sector} · {center} {quotes[center] && <Delta value={quotes[center].change} />}</div>
           {exposure ? (
             <div className="rounded-[12px] bg-slate-50 p-3 mb-4">
@@ -203,7 +202,6 @@ export default function RelationsPage() {
                   </div>
                 );
               })}
-              <AddToFolder symbols={[center, ...new Set(list.map((n) => n.symbol))]} label="Tout ajouter à un dossier" />
             </div>
           )}
         </Card>

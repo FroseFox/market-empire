@@ -8,19 +8,21 @@ import { useDerived } from "@/store/game";
 import { Card, Delta, PageHeader, Progress, Segmented, StatCard } from "@/components/ui";
 import { IncomeBars, WealthChart } from "@/components/charts";
 import IsoCity from "@/components/IsoCity";
-import { computeAlerts, computeObjectives, type AlertLevel } from "@/lib/game/insights";
+import { computeAlerts, computeObjectives, nextActions, type AlertLevel } from "@/lib/game/insights";
+import Robot from "@/components/Robot";
 import { compactEur, eur, num, pctPlain, signedEur, tone } from "@/lib/format";
 import { DAY_LENGTH_MINUTES } from "@/lib/game/config";
 import { CITY_RANKS } from "@/lib/game/config";
 import { periodReport, type Snapshot } from "@/lib/game/engine";
 
 type Period = "7 jours" | "30 jours" | "Tout";
-type Series = "Patrimoine" | "Liquidités" | "Bourse" | "Ville";
-const SERIES: Record<Series, { key: keyof Pick<Snapshot, "netWorth" | "cash" | "portfolio" | "city">; color: string }> = {
-  Patrimoine: { key: "netWorth", color: "#2563EB" },
-  Liquidités: { key: "cash", color: "#64748B" },
-  Bourse: { key: "portfolio", color: "#2563EB" },
-  Ville: { key: "city", color: "#10B981" },
+type Series = "Patrimoine" | "Liquidités" | "Bourse" | "Ville" | "Habitants";
+const SERIES: Record<Series, { key: keyof Pick<Snapshot, "netWorth" | "cash" | "portfolio" | "city" | "population">; color: string; money: boolean }> = {
+  Patrimoine: { key: "netWorth", color: "#2563EB", money: true },
+  Liquidités: { key: "cash", color: "#64748B", money: true },
+  Bourse: { key: "portfolio", color: "#2563EB", money: true },
+  Ville: { key: "city", color: "#10B981", money: true },
+  Habitants: { key: "population", color: "#8B5CF6", money: false },
 };
 
 const ALERT_STYLE: Record<AlertLevel, { icon: typeof Info; cls: string }> = {
@@ -38,7 +40,8 @@ export default function EconomyPage() {
   const hist = game.history;
   const n = period === "7 jours" ? 8 : period === "30 jours" ? 31 : hist.length;
   const slice = hist.slice(-n);
-  const now = { netWorth, cash: game.cash, portfolio, city: city.assetValue };
+  const now = { netWorth, cash: game.cash, portfolio, city: city.assetValue, population: game.population };
+  const todo = nextActions(game, city, prices);
   const wealthData = [...slice.map((s) => ({ x: `J${s.day}`, y: s[SERIES[series].key] })), { x: "Maint.", y: now[SERIES[series].key] }];
   const report = periodReport(game, netWorth, n);
   const ref = slice[0]?.netWorth ?? netWorth;
@@ -61,6 +64,26 @@ export default function EconomyPage() {
     <>
       <PageHeader icon={BarChart3} title="Économie" subtitle={`Vue d'ensemble de votre empire · ${game.cityName}`} />
 
+      {/* À faire maintenant : les gestes les plus utiles, du plus pressant au moins pressant */}
+      {todo.length > 0 && (
+        <section aria-label="À faire maintenant" className="card mb-4 flex flex-col gap-3 p-4 appear md:flex-row md:items-center">
+          <div className="flex shrink-0 items-center gap-3 md:w-[190px]">
+            <Robot size={48} mood={todo.some((a) => a.tone === "bad") ? "think" : "happy"} />
+            <div><div className="text-[15px] font-semibold leading-tight">À faire maintenant</div><div className="text-[11px] text-muted">Le plus utile d&apos;abord</div></div>
+          </div>
+          <ol className="grid flex-1 gap-2 md:grid-cols-3">
+            {todo.map((a, i) => (
+              <li key={a.id}>
+                <Link href={a.href} className={`flex h-full gap-2.5 rounded-[12px] border p-3 transition-colors hover:border-slate-300 hover:bg-slate-50 ${a.tone === "bad" ? "border-red-200" : a.tone === "good" ? "border-emerald-200" : "border-line"}`}>
+                  <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-[12px] font-bold text-white ${a.tone === "bad" ? "bg-danger" : a.tone === "good" ? "bg-success" : "bg-primary"}`}>{i + 1}</span>
+                  <span className="min-w-0"><span className="block text-[13px] font-semibold">{a.title}</span><span className="block text-[12px] text-muted">{a.text}</span></span>
+                </Link>
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
+
       {/* Chiffres clés */}
       <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 mb-4">
         <StatCard icon={Coins} tint="bg-amber-50 text-amber-500" label="Patrimoine total" value={eur(netWorth)}>
@@ -81,7 +104,7 @@ export default function EconomyPage() {
         {/* Patrimoine */}
         <Card title="Évolution du patrimoine" className="xl:col-span-5" extra={<Segmented options={["7 jours", "30 jours", "Tout"] as Period[]} value={period} onChange={setPeriod} />}>
           <div className="mb-3"><Segmented options={Object.keys(SERIES) as Series[]} value={series} onChange={setSeries} /></div>
-          <WealthChart data={wealthData} color={SERIES[series].color} />
+          <WealthChart data={wealthData} color={SERIES[series].color} unit={SERIES[series].money ? undefined : "hab."} />
           <p className="text-[11px] text-muted mt-2">1 jour de ville = {DAY_LENGTH_MINUTES} min réelles. La bourse suit le temps réel.</p>
         </Card>
 

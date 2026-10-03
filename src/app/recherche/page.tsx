@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import {
-  Bitcoin, Building2, ChartPie, ClipboardCheck, Telescope, LineChart, Link2, Check, Crosshair, DollarSign, Receipt, Rss, Earth, Euro, Gem, FlaskConical, Folder, FolderPlus, Filter, History, Landmark, LayoutGrid, Lock, Network, Newspaper, PieChart, Workflow,
+  Bitcoin, Building2, ChartPie, ClipboardCheck, Telescope, Check, Crosshair, DollarSign, Receipt, Rss, Earth, Euro, Gem, FlaskConical, Filter, History, Landmark, LayoutGrid, Lock, Network, Newspaper, PieChart, Workflow,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useGame } from "@/store/game";
@@ -12,8 +12,8 @@ import { compactEur, eur } from "@/lib/format";
 
 const ICONS: Record<string, LucideIcon> = {
   hq: Landmark, us_stocks: DollarSign, eu_stocks: Euro, world_stocks: Earth, crypto: Bitcoin, commodities: Gem, etf: PieChart, history_1y: History, sector_view: LayoutGrid,
-  relations_1: Network, supply_chain: Workflow, news_1: Newspaper, news_filters: Filter, folders_1: Folder, folders_plus: FolderPlus,
-  realized_pnl: Receipt, portfolio_breakdown: ChartPie, chain_exposure: Crosshair, chain_news: Rss, folder_tracking: LineChart, folder_links: Link2,
+  relations_1: Network, supply_chain: Workflow, news_1: Newspaper, news_filters: Filter,
+  realized_pnl: Receipt, portfolio_breakdown: ChartPie, chain_exposure: Crosshair, chain_news: Rss, 
   city_upgrade: Building2, city_forecast: Telescope, city_audit: ClipboardCheck,
 };
 

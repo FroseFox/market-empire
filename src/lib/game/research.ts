@@ -2,7 +2,7 @@
 // jamais de bonus artificiel sur les gains (doc Projet §7).
 // Chaque nœud a une position dans l'arbre (colonne, niveau) et peut
 // demander plusieurs prérequis : les branches se rejoignent.
-export type Branch = "Racine" | "Marchés" | "Entreprises" | "Relations" | "Actualités" | "Dossiers" | "Ville";
+export type Branch = "Racine" | "Marchés" | "Entreprises" | "Relations" | "Actualités" | "Ville";
 
 export interface ResearchNode {
   id: string;
@@ -11,7 +11,7 @@ export interface ResearchNode {
   description: string;
   cost: number;
   requires: string[];
-  /** Position dans l'arbre : colonne (0 à 6, fractions permises) et niveau. */
+  /** Position dans l'arbre : colonne (0 à 5, fractions permises) et niveau. */
   col: number;
   row: number;
 }
@@ -38,22 +38,19 @@ export const RESEARCH: ResearchNode[] = [
   { id: "chain_exposure", branch: "Relations", name: "Exposition aux chaînes", description: "Dans Relations, voyez ce que vous détenez dans la chaîne affichée : montant et part de votre portefeuille.", cost: 40_000, requires: ["supply_chain"], col: 3, row: 3 },
 
   { id: "news_1", branch: "Actualités", name: "Flux d'actualités", description: "Les actualités économiques liées aux entreprises.", cost: 0, requires: ["hq"], col: 4, row: 1 },
-  { id: "folders_1", branch: "Dossiers", name: "Dossiers", description: "Jusqu'à 2 dossiers d'analyse.", cost: 0, requires: ["hq"], col: 5, row: 1 },
-  { id: "folders_plus", branch: "Dossiers", name: "Dossiers illimités", description: "Autant de dossiers que vous voulez.", cost: 12_000, requires: ["folders_1"], col: 5, row: 2 },
-  { id: "folder_tracking", branch: "Dossiers", name: "Suivi de thèse", description: "Chaque dossier affiche l'évolution de ses entreprises depuis le jour où vous les y avez ajoutées.", cost: 18_000, requires: ["folders_plus"], col: 5, row: 3 },
-  { id: "folder_links", branch: "Dossiers", name: "Entreprises liées au dossier", description: "Le dossier liste les fournisseurs, clients et concurrents de ses entreprises qui n'y figurent pas encore.", cost: 25_000, requires: ["folder_tracking"], col: 5, row: 4 },
-  { id: "news_filters", branch: "Actualités", name: "Filtres avancés", description: "Filtrer les actualités par dossier, par thème et par pays.", cost: 8_000, requires: ["news_1", "folders_1"], col: 4.5, row: 2.6 },
-  { id: "chain_news", branch: "Actualités", name: "Actualités de mes chaînes", description: "Un filtre pour les nouvelles qui touchent les fournisseurs, clients et concurrents de vos positions.", cost: 35_000, requires: ["news_filters", "supply_chain"], col: 4, row: 3.6 },
+  { id: "news_filters", branch: "Actualités", name: "Filtres avancés", description: "Filtrer les actualités par thème et par pays.", cost: 8_000, requires: ["news_1"], col: 4, row: 2 },
+  { id: "chain_news", branch: "Actualités", name: "Actualités de mes chaînes", description: "Un filtre pour les nouvelles qui touchent les fournisseurs, clients et concurrents de vos positions.", cost: 35_000, requires: ["news_filters", "supply_chain"], col: 4, row: 3 },
 
   // Ville : des outils de gestion, jamais de revenu en plus
-  { id: "city_upgrade", branch: "Ville", name: "Rénovation urbaine", description: "Améliorez un bâtiment sur place vers sa version supérieure en payant seulement la différence de prix, sans le démolir.", cost: 15_000, requires: ["hq"], col: 6, row: 1 },
-  { id: "city_forecast", branch: "Ville", name: "Prévisions de la ville", description: "La Ville affiche la population et le flux net attendus dans 7 jours si rien ne change.", cost: 20_000, requires: ["city_upgrade"], col: 6, row: 2 },
-  { id: "city_audit", branch: "Ville", name: "Audit des bâtiments", description: "La fiche de chaque bâtiment montre ce qu'il rapporte et coûte réellement par jour, selon le personnel disponible et vos ressources.", cost: 30_000, requires: ["city_forecast"], col: 6, row: 3 },
+  { id: "city_upgrade", branch: "Ville", name: "Rénovation urbaine", description: "Améliorez un bâtiment sur place vers sa version supérieure en payant seulement la différence de prix, sans le démolir.", cost: 15_000, requires: ["hq"], col: 5, row: 1 },
+  { id: "city_forecast", branch: "Ville", name: "Prévisions de la ville", description: "La Ville affiche la population et le flux net attendus dans 7 jours si rien ne change.", cost: 20_000, requires: ["city_upgrade"], col: 5, row: 2 },
+  { id: "city_audit", branch: "Ville", name: "Audit des bâtiments", description: "La fiche de chaque bâtiment montre ce qu'il rapporte et coûte réellement par jour, selon le personnel disponible et vos ressources.", cost: 30_000, requires: ["city_forecast"], col: 5, row: 3 },
 ];
 
 export const RESEARCH_BY_ID: Record<string, ResearchNode> = Object.fromEntries(RESEARCH.map((n) => [n.id, n]));
 export const STARTING_RESEARCH = RESEARCH.filter((n) => n.cost === 0).map((n) => n.id);
-export const FOLDER_LIMIT_BASE = 2;
+/** Recherches retirées du jeu (les dossiers d'analyse) et leur prix : remboursées aux joueurs qui les avaient. */
+export const RETIRED_RESEARCH: Record<string, number> = { folders_1: 0, folders_plus: 12_000, folder_tracking: 18_000, folder_links: 25_000 };
 
 export const BRANCH_COLOR: Record<Branch, string> = {
   Racine: "#0F172A",
@@ -61,6 +58,5 @@ export const BRANCH_COLOR: Record<Branch, string> = {
   Entreprises: "#0EA5E9",
   Relations: "#8B5CF6",
   "Actualités": "#F59E0B",
-  Dossiers: "#10B981",
   Ville: "#EC4899",
 };

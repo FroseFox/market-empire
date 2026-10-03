@@ -7,7 +7,7 @@
 import { create } from "zustand";
 import { useGame } from "@/store/game";
 import * as E from "@/lib/game/engine";
-import { CITY_RANKS } from "@/lib/game/config";
+import { CITY_RANKS, FEATURES } from "@/lib/game/config";
 import { ASSET_BY_SYMBOL } from "@/lib/market/universe";
 import { play } from "@/lib/sound";
 
@@ -84,6 +84,7 @@ export function startNotifs() {
         if (!st.claimed) push({ id: `goal-${g.createdAt}-${st.goal.id}`, tone: "good", title: "Subvention à encaisser", text: `${st.goal.label} : ${fmt(st.goal.reward)} € vous attendent dans Ville › Objectifs.`, href: "/ville" });
       }
       if (city.rank > rank) push({ id: `rank-${g.createdAt}-${city.rank}`, tone: "good", title: `Nouveau rang : ${CITY_RANKS[city.rank].name}`, text: `Votre ville compte ${fmt(g.population)} habitants.`, href: "/ville" });
+      for (const f of FEATURES) if (f.rank > rank && f.rank <= city.rank) push({ id: `feature-${g.createdAt}-${f.id}`, tone: "info", title: `Nouveau : ${f.label}`, text: f.text, href: f.href });
       rank = city.rank;
       if (city.wear >= 0.5 && !wearHigh) push({ id: `wear-${g.createdAt}-${g.day}`, tone: "bad", title: "Votre ville vieillit", text: `Vétusté de ${Math.round(city.wear * 100)} % : l'entretien augmente jusqu'à la prochaine rénovation.`, href: "/ville" });
       wearHigh = city.wear >= 0.5;

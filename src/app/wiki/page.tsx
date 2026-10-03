@@ -5,6 +5,7 @@ import { useGame } from "@/store/game";
 import {
   ACTIVE_RATIO, BRANCH_COST, BRANCH_EFFECTS, BRANCH_MIN_VALUE, BUILDINGS, BUILDING_BY_ID, CATEGORY_LABELS, CITY_RANKS, CONTRACT_RATIO, COUNTRY_PRICES,
   DAY_LENGTH_MINUTES, DEMOLISH_REFUND, ENERGY_PER_RESIDENT, EXPORT_RATIO, FOOD_PER_RESIDENT, GOALS, HUB_DESK_COST, HUB_FEE_FACTOR, MAINTENANCE_RATE,
+  FEATURES, ORIENTATIONS, ORIENTATION_CHANGE_COST, ORIENTATION_MIN_RANK,
   MAX_CATCHUP_DAYS, MAX_CONTRACTS, NEED_PER_RANK, POLLUTION_MAX, PROJECTS, RENOVATE_RATE, RESOURCE_PRICES, SERVICES, SERVICE_IDS, SPECIALTY_BONUS,
   STARTING_CASH, STARTING_POPULATION, TAX_PER_RESIDENT, TERRITORY, TRADE_FEE_MIN, TRADE_FEE_RATE, UPGRADES, WEAR_PER_DAY, type BranchFamily, type Category,
 } from "@/lib/game/config";
@@ -117,6 +118,11 @@ export default function WikiPage() {
 
           <Section id="progression" title="Rangs, territoire, objectifs et grands projets">
             <Table head={["Rang", "Population"]} rows={CITY_RANKS.map((r, i) => [`${i + 1}. ${r.name}`, r.pop ? `${num(r.pop)} habitants` : "départ"])} />
+            <h3 className="mb-1.5 mt-4 text-[13px] font-semibold">Ce qui s&apos;ouvre avec les rangs</h3>
+            <Table head={["Fonction", "À partir du rang", "À quoi ça sert"]} rows={FEATURES.map((f) => [f.label, CITY_RANKS[f.rank].name, f.text])} />
+            <h3 className="mb-1.5 mt-4 text-[13px] font-semibold">Orientation de la ville</h3>
+            <p>À partir du rang « {CITY_RANKS[ORIENTATION_MIN_RANK].name} », la ville choisit une orientation, une seule à la fois. Le premier choix est gratuit ; en changer coûte {compactEur(ORIENTATION_CHANGE_COST)} × le rang de la ville.</p>
+            <Table head={["Orientation", "Avantage", "Revers"]} rows={ORIENTATIONS.map((o) => [o.name, o.pro, o.con])} />
             <h3 className="mb-1.5 mt-4 text-[13px] font-semibold">Territoire</h3>
             <Table head={["Carte", "Prix", "Rang requis"]} rows={TERRITORY.map((t) => [`${t.size} × ${t.size} carreaux`, t.cost ? compactEur(t.cost) : "départ", CITY_RANKS[t.minRank].name])} />
             <h3 className="mb-1.5 mt-4 text-[13px] font-semibold">Objectifs (subvention versée une fois)</h3>

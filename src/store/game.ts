@@ -6,6 +6,7 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import * as E from "@/lib/game/engine";
 import { fetchQuotes } from "@/lib/market/client";
+import type { OrientationId } from "@/lib/game/config";
 
 export interface QuoteView { price: number; change: number; source: string }
 
@@ -37,14 +38,12 @@ interface Store {
   buildAuto: (id: string, count: number) => number;
   undoLast: () => void;
   expandTerritory: () => boolean;
+  chooseOrientation: (id: OrientationId) => boolean;
   closeAbsence: () => void;
   reopenTutorial: () => void;
   demolish: (id: string, tile?: { x: number; y: number }) => boolean;
   moveBuilding: (from: { x: number; y: number }, to: { x: number; y: number }) => boolean;
   research: (id: string) => boolean;
-  createFolder: (name: string, symbols?: string[]) => string | null;
-  updateFolder: (id: string, patch: Partial<Omit<E.Folder, "id" | "added">>) => void;
-  deleteFolder: (id: string) => void;
   renameCity: (name: string) => boolean;
   claimGoal: (id: string) => boolean;
   upgrade: (tile: { x: number; y: number }) => boolean;
@@ -148,20 +147,6 @@ export const useGame = create<Store>()(
         get().notify("Recherche débloquée");
         return true;
       },
-      createFolder: (name, symbols = []) => {
-        const r = E.createFolder(get().game, name, Date.now(), symbols, get().prices());
-        if (!r.ok) { get().notify(r.error, "error"); return null; }
-        set({ game: r.state });
-        return r.state.folders[r.state.folders.length - 1].id;
-      },
-      updateFolder: (id, patch) => {
-        const r = E.updateFolder(get().game, id, patch, Date.now(), get().prices());
-        if (r.ok) set({ game: r.state });
-      },
-      deleteFolder: (id) => {
-        const r = E.deleteFolder(get().game, id);
-        if (r.ok) set({ game: r.state });
-      },
       renameCity: (name) => {
         const r = E.renameCity(get().game, name);
         if (!r.ok) { get().notify(r.error, "error"); return false; }
@@ -238,6 +223,12 @@ export const useGame = create<Store>()(
         if (!r.ok) { get().notify(r.error, "error"); return false; }
         set({ game: r.state });
         get().notify("Territoire agrandi");
+        return true;
+      },
+      chooseOrientation: (id) => {
+        const r = E.chooseOrientation(get().game, id, Date.now());
+        if (!r.ok) { get().notify(r.error, "error"); return false; }
+        set({ game: r.state });
         return true;
       },
       closeAbsence: () => set({ absence: null }),
