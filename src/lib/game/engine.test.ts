@@ -14,9 +14,9 @@ describe("ville de départ (doc Équilibrage §2)", () => {
     expect(c.housing).toBe(250);
     expect(c.jobs).toBe(150);
   });
-  it("≈ 500 €/jour de revenus locaux", () => {
-    expect(c.income.total).toBeGreaterThan(420);
-    expect(c.income.total).toBeLessThan(620);
+  it("≈ 1 100 €/jour de revenus locaux (rythme relevé par rapport au doc, voir config)", () => {
+    expect(c.income.total).toBeGreaterThan(950);
+    expect(c.income.total).toBeLessThan(1250);
   });
   it("énergie et nourriture suffisantes", () => {
     expect(c.energy.balance).toBeGreaterThanOrEqual(0);
@@ -284,7 +284,7 @@ describe("rénovation, prévisions, audit", () => {
     const c = computeCity(newGame(T0));
     const a = E.buildingAudit("shop", c);
     expect(a.staffing).toBe(1);
-    expect(a.net).toBeCloseTo(120 - 5 * 2 * 0.7 - 15, 6);
+    expect(a.net).toBeCloseTo(240 - 5 * 2 * 0.7 - 15, 6);
   });
 });
 

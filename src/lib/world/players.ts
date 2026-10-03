@@ -84,7 +84,9 @@ type Row = { id: string; name: string; avatar: string | null; country: string | 
 
 /** Site publié : classement lu dans Supabase (mis en cache 5 min, seulement quand la page Monde est ouverte). */
 async function loadOnline(fresh = false) {
-  const rows = await rest<Row[]>("players?select=id,name,avatar,country,city_name,net_worth,population,perf,day,updated_at&order=net_worth.desc&limit=300", fresh ? 0 : undefined);
+  // « ranking » = classement sans les sauvegardes signalées comme impossibles ; tant que la vue n'existe pas, on lit la table
+  const query = "select=id,name,avatar,country,city_name,net_worth,population,perf,day,updated_at&order=net_worth.desc&limit=300";
+  const rows = (await rest<Row[]>(`ranking?${query}`, fresh ? 0 : undefined)) ?? (await rest<Row[]>(`players?${query}`, fresh ? 0 : undefined));
   if (!rows) { emit({ status: "offline", players: [], me: null }); return; }
   const me = useAuth.getState().user?.id ?? null;
   emit({

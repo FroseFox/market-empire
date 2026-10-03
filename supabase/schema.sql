@@ -45,13 +45,18 @@ create table public.players (             -- profil public : classement et carte
   city_name text not null default 'Ma ville', net_worth bigint not null default 0,
   population integer not null default 0, perf real not null default 0, day integer not null default 1,
   updated_at timestamptz not null default now(),
-  city jsonb check (city is null or pg_column_size(city) <= 16384)  -- plan public de la ville (visites)
+  city jsonb check (city is null or pg_column_size(city) <= 16384),  -- plan public de la ville (visites)
+  flagged boolean not null default false, flag_reason text,          -- sauvegarde impossible : retiré du classement
+  nw_ref bigint, nw_ref_at timestamptz                               -- référence du garde-fou (migrations/20261003b_ranking_guard.sql)
 );
 create table public.saves (               -- sauvegarde privée, une ligne par joueur
   id uuid primary key references auth.users(id) on delete cascade,
   data jsonb not null check (pg_column_size(data) <= 131072),
   saved_at bigint not null, updated_at timestamptz not null default now()
 );
+
+-- Vue public.ranking : players sans les joueurs signalés et sans le plan de ville (c'est elle que lit le classement).
+-- Déclencheur players_guard : signale les sauvegardes impossibles (jours en avance, population ou patrimoine impossibles).
 
 -- ─── Droits ───
 -- Lecture publique : assets, asset_prices, market_series, news, players.

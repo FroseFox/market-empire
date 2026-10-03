@@ -22,6 +22,7 @@ const CAT_TINT: Record<Category, string> = {
   industry: "bg-slate-100 text-slate-600", agriculture: "bg-lime-50 text-lime-700", energy: "bg-amber-50 text-amber-600", public: "bg-emerald-50 text-emerald-600", civic: "bg-indigo-50 text-indigo-600",
 };
 type Tile = { x: number; y: number };
+const DEV = process.env.NODE_ENV !== "production";
 /** Outil actif de la barre du bas. */
 type Tool = "build" | "move" | "demolish" | "goals" | "list" | "stats" | "more" | null;
 const BUILD_CATS: Category[] = ["housing", "commerce", "services", "industry", "agriculture", "energy", "public"];
@@ -390,7 +391,8 @@ function MoreMenu() {
         <li>Entretien : {MAINTENANCE_RATE * 100} % du coût par jour. Déplacer est gratuit. Démolir rembourse {DEMOLISH_REFUND * 100} %.</li>
       </ul>
       <div className="flex flex-wrap items-center gap-3 border-t border-line pt-3">
-        <Button variant="secondary" onClick={skipDay} title="Outil de test du prototype" className="inline-flex items-center gap-1.5"><FastForward size={15} />Avancer d&apos;un jour</Button>
+        {/* Outil de test : absent du site publié */}
+        {DEV && <Button variant="secondary" onClick={skipDay} title="Outil de test (développement uniquement)" className="inline-flex items-center gap-1.5"><FastForward size={15} />Avancer d&apos;un jour</Button>}
         <ConfirmButton onConfirm={reset} confirmLabel="Confirmer : tout effacer"
           className="inline-flex items-center gap-1 text-[12px] text-danger hover:underline"><RotateCcw size={13} />Recommencer la partie</ConfirmButton>
       </div>
