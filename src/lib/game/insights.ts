@@ -30,6 +30,13 @@ export function computeAlerts(state: GameState, city: CityStats, prices: Prices)
   if (missing.length) {
     out.push({ id: "services", level: "warning", title: "Il manque des équipements publics", detail: `${missing.map((id) => SERVICES[id].label).join(", ")} : la satisfaction baisse.`, href: "/ville" });
   }
+  if (city.wear >= 0.5) {
+    out.push({ id: "wear", level: "warning", title: "Votre ville vieillit", detail: `Vétusté de ${Math.round(city.wear * 100)} % : l'entretien augmente. Rénovez depuis la page Ville.`, href: "/ville" });
+  }
+  const asleep = (state.branches?.length ?? 0) - city.branches;
+  if (asleep > 0) {
+    out.push({ id: "branches", level: "info", title: `${asleep} entreprise${asleep > 1 ? "s" : ""} implantée${asleep > 1 ? "s" : ""} en sommeil`, detail: "Leur site ne tourne plus : vous ne détenez plus la participation de départ.", href: "/ville" });
+  }
   const toClaim = goalStatuses(state, city).filter((g) => g.done && !g.claimed);
   if (toClaim.length) {
     out.push({ id: "goals", level: "success", title: `${toClaim.length} subvention${toClaim.length > 1 ? "s" : ""} à encaisser`, detail: `${fmt(toClaim.reduce((a, g) => a + g.goal.reward, 0))} € vous attendent dans Ville › Objectifs.`, href: "/ville" });

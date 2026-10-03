@@ -72,11 +72,11 @@ const Countries = memo(function Countries({ owners, selected, onEnter, onSelect 
 }) {
   return (
     <g>
-      {SHAPES.map((s) => {
+      {SHAPES.map((s, i) => {
         const o = owners.get(s.id);
         const fill = o?.isMe ? "url(#me-fill)" : o ? tint(s.id) : PLAYABLE[s.id] ? C.playable : C.land;
         return (
-          <path key={s.id} d={s.d} fill={fill} data-id={s.id}
+          <path key={`${s.id}-${i}`} d={s.d} fill={fill} data-id={s.id}
             stroke={o?.isMe ? C.meEdge : C.edge} strokeWidth={o?.isMe ? 1.2 : 0.6} vectorEffect="non-scaling-stroke"
             className="country cursor-pointer" onPointerEnter={() => onEnter(s.id)} onClick={() => onSelect(s.id)} />
         );

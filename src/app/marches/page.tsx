@@ -5,7 +5,7 @@ import { ChevronRight, Layers, LineChart, Lock, Search, Wallet, X } from "lucide
 import { useDerived, useGame } from "@/store/game";
 import { ASSETS, ASSET_BY_SYMBOL, FAMILIES, KIND_LABEL, familyOf, flag, fractional, regionOf, type Asset, type AssetKind, type Family, type Region } from "@/lib/market/universe";
 import { simulatedHistory, type Range } from "@/lib/market/simulate";
-import { hasResearch, tradeFee } from "@/lib/game/engine";
+import { feeFactor, hasResearch, tradeFee } from "@/lib/game/engine";
 import { RESEARCH_BY_ID } from "@/lib/game/research";
 import { neighbors } from "@/lib/market/relations";
 import { useNews } from "@/lib/news";
@@ -291,7 +291,9 @@ function AssetPanel({ symbol, onSelect }: { symbol: string; onSelect: (s: string
   const n = Math.max(0, frac ? Math.floor(typed * 10_000) / 10_000 : Math.floor(typed));
   const price = q?.price ?? 0;
   const gross = n * price;
-  const fee = n > 0 ? tradeFee(gross) : 0;
+  // Frais réduits par le pays, un bureau dans la place financière ou un grand projet
+  const feeRate = feeFactor(game, symbol);
+  const fee = n > 0 ? tradeFee(gross, feeRate) : 0;
   const maxRaw = price > 0 ? (game.cash - 1) / (price * 1.001) : 0;
   const maxBuy = frac ? Math.floor(maxRaw * 10_000) / 10_000 : Math.floor(maxRaw);
   const first = hist?.points[0]?.p;
@@ -352,7 +354,7 @@ function AssetPanel({ symbol, onSelect }: { symbol: string; onSelect: (s: string
         </div>
         <div className="text-[12px] text-muted space-y-0.5 mb-3 tabular">
           <div className="flex justify-between"><span>Montant estimé</span><span className="text-ink font-medium">{eur2(gross)}</span></div>
-          <div className="flex justify-between"><span>Frais (0,1 %)</span><span>{eur2(fee)}</span></div>
+          <div className="flex justify-between"><span>Frais ({(0.1 * feeRate).toLocaleString("fr-FR", { maximumFractionDigits: 3 })} %{feeRate < 1 ? ", réduits" : ""})</span><span>{eur2(fee)}</span></div>
           <div className="flex justify-between"><span>Liquidités disponibles</span><span>{eur(game.cash)}</span></div>
         </div>
         {!unlocked && (

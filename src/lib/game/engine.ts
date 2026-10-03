@@ -3,13 +3,16 @@
 import {
   ACTIVE_RATIO, BUILDING_BY_ID, DAY_LENGTH_MINUTES, DEMOLISH_REFUND, ENERGY_PER_RESIDENT,
   EXPORT_RATIO, FOOD_PER_RESIDENT, MAINTENANCE_RATE, MAX_CATCHUP_DAYS, RESOURCE_PRICES,
+  BRANCH_COST, BRANCH_EFFECTS, BRANCH_MIN_VALUE, CONTRACT_RATIO, FINANCE_FEE_FACTOR, HUB_DESK_COST, HUB_FEE_FACTOR,
+  NEED_PER_RANK, POLLUTION_FACTOR, POLLUTION_MAX, PRESTIGE_PER_GOAL, PRESTIGE_PER_RANK, PROJECTS, PROJECT_BY_ID,
+  RENOVATE_RATE, WEAR_MAINTENANCE, WEAR_PER_DAY, WEAR_SATISFACTION,
   CITY_RANKS, FORECAST_DAYS, GOALS, UPGRADES, SERVICES, SERVICE_BONUS, SERVICE_IDS,
   STARTING_BUILDINGS, STARTING_CASH, STARTING_POPULATION, TAX_PER_RESIDENT, TRADE_FEE_MIN, TRADE_FEE_RATE,
-  type Goal, type ServiceId,
+  type Goal, type ServiceId, type Specialty,
 } from "./config";
-import { PLAYABLE, countryPrice } from "../world/countries";
 import { isBuildable, layoutFrom, placeTile, type Plot } from "./layout";
-import { ASSET_BY_SYMBOL } from "../market/universe";
+import { HUBS, HUB_BY_NAME, PLAYABLE, countryBonus, countryPrice, countrySpecialty, type Hub } from "../world/countries";
+import { ASSET_BY_SYMBOL, familyOf, regionOf, type Asset } from "../market/universe";
 import { FOLDER_LIMIT_BASE, RESEARCH_BY_ID, STARTING_RESEARCH } from "./research";
 
 export interface Holding { qty: number; avgCost: number }
@@ -91,6 +94,16 @@ export interface GameState {
   goals?: string[];
   /** Pays choisi par le joueur (code ISO numérique) ; absent tant qu'il n'a pas déménagé. */
   country?: string;
+  /** Entreprises implantées dans la ville : actives tant que le joueur détient au moins `minQty` titres. */
+  branches?: Branch[];
+  /** Places financières où le joueur a ouvert un bureau. */
+  hubs?: string[];
+  /** Contrats de commerce avec d'autres joueurs (copie de ce que le serveur connaît). */
+  contracts?: Contract[];
+  /** Vétusté de la ville, de 0 à 1 : monte chaque jour, retombe à 0 à la rénovation. */
+  wear?: number;
+  /** Grands projets achevés. */
+  projects?: string[];
   /** Coûts du jour en cours, versés dans l'historique au prochain passage de jour. */
   today?: DayCosts;
   /** Total des plus-values réalisées depuis que le jeu les enregistre. */
@@ -98,6 +111,9 @@ export interface GameState {
   transactions: Transaction[];
   history: Snapshot[];
 }
+
+export interface Branch { symbol: string; minQty: number }
+export interface Contract { id: string; resource: "energy" | "food"; qty: number; side: "buy" | "sell"; partner: string }
 
 export type Prices = Record<string, number>;
 
@@ -145,6 +161,17 @@ export interface CityStats {
   factors: { label: string; value: number }[];
   /** Rang de la ville (indice dans CITY_RANKS). */
   rank: number;
+  /** Pollution émise et absorbée par jour, et points de satisfaction perdus. */
+  pollution: { emitted: number; absorbed: number; penalty: number };
+  /** Vétusté (0 à 1). */
+  wear: number;
+  /** Spécialité du pays où la ville est installée, et son bonus. */
+  specialty: Specialty | null;
+  bonus: number;
+  /** Nombre d'entreprises implantées actives. */
+  branches: number;
+  /** Quantités réellement échangées par contrat aujourd'hui. */
+  contracts: { energySold: number; energyBought: number; foodSold: number; foodBought: number };
   income: { taxes: number; buildings: number; exports: number; total: number };
   expenses: { maintenance: number; imports: number; total: number };
   exportsValue: number;
@@ -159,9 +186,25 @@ export interface CityStats {
   growth: number;
 }
 
-export function computeCity(state: Pick<GameState, "buildings" | "population">): CityStats {
+/** Ce dont le calcul de la ville a besoin ; seuls les bâtiments et la population sont obligatoires. */
+export type CityInput = Pick<GameState, "buildings" | "population">
+  & Partial<Pick<GameState, "branches" | "holdings" | "country" | "wear" | "projects" | "contracts">>;
+
+/** Entreprises implantées dont la participation est toujours détenue. */
+export function activeBranches(state: Partial<Pick<GameState, "branches" | "holdings">>): Branch[] {
+  return (state.branches ?? []).filter((b) => (state.holdings?.[b.symbol]?.qty ?? 0) >= b.minQty - 1e-9);
+}
+
+export function computeCity(state: CityInput): CityStats {
   const capacity: Record<ServiceId, number> = { park: 0, school: 0, safety: 0, hospital: 0 };
-  let housing = 0, jobs = 0, energyProd = 0, energyUse = 0, foodProd = 0, bRevenue = 0, cityValue = 0, assetValue = 0;
+  const specialty = state.country && PLAYABLE[state.country] ? countrySpecialty(state.country) : null;
+  const bonus = specialty && state.country ? countryBonus(state.country) : 0;
+  const projects = (state.projects ?? []).map((id) => PROJECT_BY_ID[id]).filter(Boolean);
+  // Revenus d'une catégorie : spécialité du pays et grands projets
+  const revBoost = (cat: string) => 1 + (specialty === cat ? bonus : 0)
+    + projects.reduce((a, p) => a + (p.perk.kind === "revenue" && p.perk.category === cat ? p.perk.bonus : 0), 0);
+
+  let housing = 0, jobs = 0, energyProd = 0, energyUse = 0, foodProd = 0, bRevenue = 0, cityValue = 0, assetValue = 0, emitted = 0, absorbed = 0;
   for (const [id, count] of Object.entries(state.buildings)) {
     const b = BUILDING_BY_ID[id];
     if (!b || count <= 0) continue;
@@ -170,11 +213,26 @@ export function computeCity(state: Pick<GameState, "buildings" | "population">):
     energyProd += (b.energyProd ?? 0) * count;
     energyUse += (b.energyUse ?? 0) * count;
     foodProd += (b.foodProd ?? 0) * count;
-    bRevenue += (b.revenue ?? 0) * count;
+    bRevenue += (b.revenue ?? 0) * count * revBoost(b.category);
     if (b.service) capacity[b.service] += (b.serves ?? 0) * count;
+    if ((b.pollution ?? 0) > 0) emitted += b.pollution! * count; else absorbed -= (b.pollution ?? 0) * count;
     cityValue += b.cost * count;
     assetValue += b.cost * Math.max(0, count - (STARTING_BUILDINGS[id] ?? 0));
   }
+  // Entreprises implantées (actives tant que la participation est détenue)
+  const branches = activeBranches(state);
+  for (const br of branches) {
+    const asset = ASSET_BY_SYMBOL[br.symbol];
+    if (!asset) continue;
+    const e = BRANCH_EFFECTS[familyOf(asset)];
+    jobs += e.jobs; bRevenue += e.revenue; energyUse += e.energyUse ?? 0; energyProd += e.energyProd ?? 0; foodProd += e.foodProd ?? 0;
+    if (e.service) capacity[e.service] += e.serves ?? 0;
+  }
+  if (specialty === "energy") energyProd *= 1 + bonus;
+  if (specialty === "agri") foodProd *= 1 + bonus;
+  // Les grands projets comptent dans le patrimoine (pas d'entretien)
+  assetValue += projects.reduce((a, p) => a + p.cost, 0);
+
   const pop = Math.min(state.population, housing);
   energyUse += pop * ENERGY_PER_RESIDENT;
   const foodUse = pop * FOOD_PER_RESIDENT;
@@ -188,23 +246,29 @@ export function computeCity(state: Pick<GameState, "buildings" | "population">):
 
   const energyBalance = energyProd - energyUse;
   const foodBalance = foodProd - foodUse;
+  const rank = cityRank(state.population);
+  const wear = clamp(state.wear ?? 0, 0, 1);
+  const pollutionPenalty = Math.min(POLLUTION_MAX, POLLUTION_FACTOR * Math.max(0, emitted - absorbed) / Math.max(10, pop / 100));
 
-  // Satisfaction : une seule statistique (doc §7)
+  // Satisfaction : une seule statistique (doc §7), expliquée par ses facteurs
   const factors: CityStats["factors"] = [];
   const factor = (label: string, value: number) => { if (Math.abs(value) >= 0.0005) factors.push({ label, value }); };
   factor("Chômage", -unemploymentRate * 1.2);
   if (housing > 0 && freeHousing / housing < 0.02) factor("Logements saturés", -0.05);
   if (energyBalance < 0) factor("Manque d'énergie", -0.08);
   if (foodBalance < 0) factor("Manque de nourriture", -0.08);
-  // Équipements publics : un bonus quand ils sont là, une pénalité quand la ville les attend et ne les a pas
+  factor("Pollution", -pollutionPenalty);
+  factor("Vétusté", -wear * WEAR_SATISFACTION);
+  // Équipements publics : un bonus quand ils sont là, une pénalité (qui monte avec le rang) quand la ville les attend
   const services = {} as CityStats["services"];
   for (const id of SERVICE_IDS) {
     const rule = SERVICES[id];
     const coverage = pop > 0 ? Math.min(1, capacity[id] / pop) : capacity[id] > 0 ? 1 : 0;
     const needed = pop >= rule.needPop;
     services[id] = { capacity: capacity[id], coverage, needed };
-    factor(rule.label, SERVICE_BONUS * coverage - (needed ? rule.weight * (1 - coverage) : 0));
+    factor(rule.label, SERVICE_BONUS * coverage - (needed ? rule.weight * (1 + NEED_PER_RANK * rank) * (1 - coverage) : 0));
   }
+  for (const p of projects) if (p.perk.kind === "satisfaction") factor(p.name, p.perk.bonus);
   const satisfaction = clamp(0.95 + factors.reduce((a, f) => a + f.value, 0), 0.1, 1);
 
   // Revenus
@@ -213,12 +277,23 @@ export function computeCity(state: Pick<GameState, "buildings" | "population">):
   const staffing = jobs > 0 ? employed / jobs : 0;
   const buildingsIncome = bRevenue * staffing;
 
-  const exportsValue = Math.max(0, energyBalance) * RESOURCE_PRICES.energy * EXPORT_RATIO
-    + Math.max(0, foodBalance) * RESOURCE_PRICES.food * EXPORT_RATIO;
-  const importsValue = Math.max(0, -energyBalance) * RESOURCE_PRICES.energy
-    + Math.max(0, -foodBalance) * RESOURCE_PRICES.food;
+  // Commerce : les contrats entre joueurs passent d'abord (meilleur prix des deux côtés), le reste au prix du marché
+  const contracted = (resource: Contract["resource"], side: Contract["side"]) =>
+    (state.contracts ?? []).reduce((a, c) => a + (c.resource === resource && c.side === side ? c.qty : 0), 0);
+  const trade = (balance: number, resource: Contract["resource"], price: number) => {
+    const surplus = Math.max(0, balance), deficit = Math.max(0, -balance);
+    const sold = Math.min(surplus, contracted(resource, "sell")), bought = Math.min(deficit, contracted(resource, "buy"));
+    return {
+      exports: (sold * CONTRACT_RATIO + (surplus - sold) * EXPORT_RATIO) * price,
+      imports: (bought * CONTRACT_RATIO + (deficit - bought)) * price,
+      sold, bought,
+    };
+  };
+  const te = trade(energyBalance, "energy", RESOURCE_PRICES.energy), tf = trade(foodBalance, "food", RESOURCE_PRICES.food);
+  const exportsValue = te.exports + tf.exports;
+  const importsValue = te.imports + tf.imports;
 
-  const maintenance = cityValue * MAINTENANCE_RATE;
+  const maintenance = cityValue * MAINTENANCE_RATE * (1 + wear * WEAR_MAINTENANCE);
   const incomeTotal = taxes + buildingsIncome + exportsValue;
   const expensesTotal = maintenance + importsValue;
 
@@ -237,7 +312,10 @@ export function computeCity(state: Pick<GameState, "buildings" | "population">):
     housing, freeHousing, jobs, active, employed, unemployed, unemploymentRate, openJobs,
     energy: { prod: energyProd, use: energyUse, balance: energyBalance },
     food: { prod: foodProd, use: foodUse, balance: foodBalance },
-    satisfaction, services, factors, rank: cityRank(state.population),
+    satisfaction, services, factors, rank,
+    pollution: { emitted, absorbed, penalty: pollutionPenalty },
+    wear, specialty, bonus, branches: branches.length,
+    contracts: { energySold: te.sold, energyBought: te.bought, foodSold: tf.sold, foodBought: tf.bought },
     income: { taxes, buildings: buildingsIncome, exports: exportsValue, total: incomeTotal },
     expenses: { maintenance, imports: importsValue, total: expensesTotal },
     exportsValue, importsValue,
@@ -248,6 +326,9 @@ export function computeCity(state: Pick<GameState, "buildings" | "population">):
     growth,
   };
 }
+
+/** La vétusté n'apparaît qu'à partir du rang « Bourg » : un village n'a pas encore ce souci. */
+const nextWear = (wear = 0, population: number) => (cityRank(population) >= 1 ? Math.min(1, wear + WEAR_PER_DAY) : wear);
 
 /** Rang atteint pour une population donnée (indice dans CITY_RANKS). */
 export function cityRank(population: number): number {
@@ -260,7 +341,7 @@ export function cityRank(population: number): number {
 
 export interface GoalStatus { goal: Goal; value: number; progress: number; done: boolean; claimed: boolean }
 
-function goalValue(goal: Goal, state: Pick<GameState, "population">, c: CityStats): number {
+function goalValue(goal: Goal, state: Pick<GameState, "population"> & Partial<Pick<GameState, "projects">>, c: CityStats): number {
   const big = state.population >= (goal.minPop ?? 0);
   switch (goal.metric) {
     case "population": return state.population;
@@ -268,11 +349,13 @@ function goalValue(goal: Goal, state: Pick<GameState, "population">, c: CityStat
     case "satisfaction": return big ? c.satisfaction : 0;
     case "autonomy": return big && c.energy.balance >= 0 && c.food.balance >= 0 ? 1 : 0;
     case "services": return big ? Math.min(...SERVICE_IDS.map((id) => c.services[id].coverage)) : 0;
+    case "projects": return state.projects?.length ?? 0;
+    case "branches": return c.branches;
   }
 }
 
 /** Avancement de chaque objectif de ville. */
-export function goalStatuses(state: Pick<GameState, "buildings" | "population" | "goals">, city = computeCity(state)): GoalStatus[] {
+export function goalStatuses(state: CityInput & Partial<Pick<GameState, "goals">>, city = computeCity(state)): GoalStatus[] {
   return GOALS.map((goal) => {
     const value = goalValue(goal, state, city);
     return { goal, value, progress: clamp(value / goal.target, 0, 1), done: value >= goal.target - 1e-9, claimed: !!state.goals?.includes(goal.id) };
@@ -350,6 +433,7 @@ export function tickDay(state: GameState, prices: Prices, at: number): GameState
     day: state.day + 1,
     cash: round2(state.cash + c.net),
     population: Math.max(0, state.population + c.growth),
+    wear: nextWear(state.wear, state.population),
   };
   delete next.today;
   const t = state.today ?? NO_COSTS;
@@ -425,8 +509,131 @@ export function catchUp(state: GameState, now: number, prices: Prices): { state:
 
 export type ActionResult = { ok: true; state: GameState } | { ok: false; error: string };
 
-export function tradeFee(amount: number): number {
-  return Math.max(TRADE_FEE_MIN, round2(amount * TRADE_FEE_RATE));
+export function tradeFee(amount: number, factor = 1): number {
+  return Math.max(TRADE_FEE_MIN, round2(amount * TRADE_FEE_RATE * factor));
+}
+
+const HUB_COVERS: Record<Hub["scope"], (a: Asset) => boolean> = {
+  us: (a) => a.kind === "stock" && regionOf(a) === "États-Unis",
+  europe: (a) => a.kind === "stock" && regionOf(a) === "Europe",
+  asia: (a) => a.kind === "stock" && regionOf(a) === "Asie",
+  world: (a) => a.kind === "stock" && regionOf(a) === "Autres",
+  etf: (a) => a.kind === "etf",
+  commodity: (a) => a.kind === "commodity",
+};
+type FeeInput = Partial<Pick<GameState, "country" | "hubs" | "projects">>;
+/** Le joueur a-t-il un bureau dans cette place ? (gratuit quand sa ville est dans le pays de la place) */
+export const hasDesk = (state: FeeInput, hub: Hub) => hub.country === state.country || !!state.hubs?.includes(hub.name);
+/** Place financière qui couvre un actif, s'il y en a une. */
+export const hubFor = (symbol: string): Hub | undefined => {
+  const a = ASSET_BY_SYMBOL[symbol];
+  return a ? HUBS.find((h) => HUB_COVERS[h.scope](a)) : undefined;
+};
+/** Ce qui réduit les frais de courtage sur un actif : spécialité « Finance » du pays, bureau dans la place, grand projet. */
+export function feeFactor(state: FeeInput, symbol: string): number {
+  let f = 1;
+  if (state.country && PLAYABLE[state.country] && countrySpecialty(state.country) === "finance") f *= 1 - countryBonus(state.country) * FINANCE_FEE_FACTOR;
+  const hub = hubFor(symbol);
+  if (hub && hasDesk(state, hub)) f *= HUB_FEE_FACTOR;
+  for (const id of state.projects ?? []) { const p = PROJECT_BY_ID[id]; if (p?.perk.kind === "fees") f *= p.perk.factor; }
+  return f;
+}
+
+/** Ouvre un bureau dans une place financière. */
+export function openDesk(state: GameState, hubName: string, at: number): ActionResult {
+  const hub = HUB_BY_NAME[hubName];
+  if (!hub) return { ok: false, error: "Place financière inconnue." };
+  if (hasDesk(state, hub)) return { ok: false, error: "Vous y avez déjà un bureau." };
+  if (HUB_DESK_COST > state.cash) return { ok: false, error: "Liquidités insuffisantes." };
+  return {
+    ok: true,
+    state: {
+      ...state,
+      cash: round2(state.cash - HUB_DESK_COST),
+      hubs: [...(state.hubs ?? []), hub.name],
+      today: spend(state, "fees", HUB_DESK_COST),
+      transactions: addTx(state, { kind: "research", label: `Bureau à ${hub.name}`, amount: -HUB_DESK_COST, at }),
+    },
+  };
+}
+
+// ─── Entreprises implantées ───────────────────────────────────
+
+/** Nombre maximal d'entreprises implantées : une par rang de ville atteint. */
+export const branchLimit = (state: Pick<GameState, "population">) => cityRank(state.population) + 1;
+export const branchCost = (state: Partial<Pick<GameState, "branches">>) => BRANCH_COST * ((state.branches?.length ?? 0) + 1);
+
+/** Propose à une entreprise dont le joueur est actionnaire d'ouvrir un site dans la ville. */
+export function openBranch(state: GameState, symbol: string, price: number, at: number): ActionResult {
+  const asset = ASSET_BY_SYMBOL[symbol], h = state.holdings[symbol];
+  if (!asset || asset.kind !== "stock") return { ok: false, error: "Seules les entreprises cotées peuvent s'implanter." };
+  if (state.branches?.some((b) => b.symbol === symbol)) return { ok: false, error: "Cette entreprise est déjà implantée." };
+  if (!(price > 0) || !h || h.qty * price < BRANCH_MIN_VALUE) return { ok: false, error: `Il faut détenir au moins ${BRANCH_MIN_VALUE.toLocaleString("fr-FR")} € de cette entreprise.` };
+  if ((state.branches?.length ?? 0) >= branchLimit(state)) return { ok: false, error: "Limite atteinte : une entreprise de plus à chaque rang de ville." };
+  const cost = branchCost(state);
+  if (cost > state.cash) return { ok: false, error: "Liquidités insuffisantes." };
+  return {
+    ok: true,
+    state: {
+      ...state,
+      cash: round2(state.cash - cost),
+      branches: [...(state.branches ?? []), { symbol, minQty: BRANCH_MIN_VALUE / price }],
+      today: spend(state, "extra", -cost),
+      transactions: addTx(state, { kind: "build", label: `Implantation : ${asset.name}`, amount: -cost, at }),
+    },
+  };
+}
+
+/** Ferme le site d'une entreprise (sans remboursement). */
+export function closeBranch(state: GameState, symbol: string): ActionResult {
+  if (!state.branches?.some((b) => b.symbol === symbol)) return { ok: false, error: "Cette entreprise n'est pas implantée." };
+  return { ok: true, state: { ...state, branches: state.branches.filter((b) => b.symbol !== symbol) } };
+}
+
+// ─── Tensions et fin de partie ────────────────────────────────
+
+export const renovateCost = (state: CityInput) => Math.round((state.wear ?? 0) * computeCity(state).cityValue * RENOVATE_RATE);
+
+/** Rénove toute la ville : la vétusté retombe à zéro. */
+export function renovate(state: GameState, at: number): ActionResult {
+  const cost = renovateCost(state);
+  if (cost <= 0) return { ok: false, error: "La ville est en bon état." };
+  if (cost > state.cash) return { ok: false, error: "Liquidités insuffisantes." };
+  return {
+    ok: true,
+    state: {
+      ...state, cash: round2(state.cash - cost), wear: 0,
+      today: spend(state, "extra", -cost),
+      transactions: addTx(state, { kind: "build", label: "Rénovation de la ville", amount: -cost, at }),
+    },
+  };
+}
+
+/** Lance un grand projet (compté dans le patrimoine). */
+export function buildProject(state: GameState, id: string, at: number): ActionResult {
+  const p = PROJECT_BY_ID[id];
+  if (!p) return { ok: false, error: "Projet inconnu." };
+  if (state.projects?.includes(id)) return { ok: false, error: "Projet déjà achevé." };
+  if (cityRank(state.population) < p.minRank) return { ok: false, error: `Réservé au rang « ${CITY_RANKS[p.minRank].name} ».` };
+  if (p.cost > state.cash) return { ok: false, error: "Liquidités insuffisantes." };
+  return {
+    ok: true,
+    state: {
+      ...state, cash: round2(state.cash - p.cost), projects: [...(state.projects ?? []), id],
+      transactions: addTx(state, { kind: "build", label: `Grand projet : ${p.name}`, amount: -p.cost, at }),
+    },
+  };
+}
+
+/** Prestige : ce que la ville a accompli (rang, objectifs, grands projets). */
+export function prestige(state: Pick<GameState, "population"> & Partial<Pick<GameState, "goals" | "projects">>): number {
+  return cityRank(state.population) * PRESTIGE_PER_RANK + (state.goals?.length ?? 0) * PRESTIGE_PER_GOAL
+    + PROJECTS.reduce((a, p) => a + (state.projects?.includes(p.id) ? p.prestige : 0), 0);
+}
+
+/** Remplace la liste des contrats par celle du serveur. */
+export function setContracts(state: GameState, contracts: Contract[]): GameState {
+  return JSON.stringify(state.contracts ?? []) === JSON.stringify(contracts) ? state : { ...state, contracts };
 }
 
 export function buy(state: GameState, symbol: string, qty: number, price: number, at: number): ActionResult {
@@ -435,7 +642,7 @@ export function buy(state: GameState, symbol: string, qty: number, price: number
   const need = ASSET_BY_SYMBOL[symbol]?.research;
   if (need && !hasResearch(state, need)) return { ok: false, error: `Débloquez d'abord « ${RESEARCH_BY_ID[need]?.name ?? need} » dans Recherche.` };
   const gross = round2(qty * price);
-  const fee = tradeFee(gross);
+  const fee = tradeFee(gross, feeFactor(state, symbol));
   const total = gross + fee;
   if (total > state.cash + 1e-6) return { ok: false, error: "Liquidités insuffisantes." };
   const prev = state.holdings[symbol] ?? { qty: 0, avgCost: 0 };
@@ -459,7 +666,7 @@ export function sell(state: GameState, symbol: string, qty: number, price: numbe
   if (!Number.isFinite(qty) || qty <= 0 || qty > h.qty + 1e-9) return { ok: false, error: "Quantité invalide." };
   if (!(price > 0)) return { ok: false, error: "Prix indisponible." };
   const gross = round2(qty * price);
-  const fee = tradeFee(gross);
+  const fee = tradeFee(gross, feeFactor(state, symbol));
   const holdings = { ...state.holdings };
   const left = h.qty - qty;
   const gain = round2(gross - fee - qty * h.avgCost);
@@ -555,14 +762,15 @@ export function upgrade(state: GameState, tile: { x: number; y: number }, at: nu
 }
 
 /** Population et flux net attendus dans quelques jours si rien ne change (recherche « Prévisions de la ville »). */
-export function forecast(state: Pick<GameState, "buildings" | "population">, days = FORECAST_DAYS): { population: number; net: number; cash: number } {
-  let population = state.population, cash = 0;
+export function forecast(state: CityInput, days = FORECAST_DAYS): { population: number; net: number; cash: number } {
+  let population = state.population, cash = 0, wear = state.wear ?? 0;
   for (let i = 0; i < days; i++) {
-    const c = computeCity({ buildings: state.buildings, population });
+    const c = computeCity({ ...state, population, wear });
     cash += c.net;
     population = Math.max(0, population + c.growth);
+    wear = nextWear(wear, population);
   }
-  return { population, net: computeCity({ buildings: state.buildings, population }).net, cash };
+  return { population, net: computeCity({ ...state, population, wear }).net, cash };
 }
 
 /** Ce qu'un bâtiment rapporte et coûte réellement par jour dans la ville actuelle (recherche « Audit des bâtiments »). */

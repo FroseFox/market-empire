@@ -74,7 +74,7 @@ async function flush(keepalive = false) {
   try {
     const ok = await rpc<boolean>("save_game", { p_data: data, p_saved_at: s.savedAt || Date.now(), ...fig }, { keepalive });
     if (ok === false) { dirty = true; schedule(); } // le serveur limite à une écriture toutes les 20 s
-    else { lastWrite = Date.now(); lastSent = body; setCloud("saved"); if (!keepalive) void publishCity(data.pl); }
+    else { lastWrite = Date.now(); lastSent = body; setCloud("saved"); if (!keepalive) { void publishCity(data.pl); void publishOffer(); } }
   } catch {
     dirty = true;
     setCloud("error");
@@ -93,6 +93,50 @@ function setPlayerName(name: string) {
   if (name && g.playerName !== name) useGame.setState({ game: { ...g, playerName: name } });
 }
 
+/** Le pays réservé côté serveur fait foi : la partie le reprend (c'est lui qui donne la spécialité de la ville). */
+function adoptCountry() {
+  const country = useOnline.getState().country, g = useGame.getState().game;
+  if (country && g.country !== country) useGame.setState({ game: { ...g, country } });
+}
+
+/** Dernier surplus annoncé aux autres joueurs. */
+let lastOffer = "";
+async function publishOffer() {
+  const c = E.computeCity(useGame.getState().game);
+  const offer = { p_energy: Math.max(0, Math.floor(c.energy.balance)), p_food: Math.max(0, Math.floor(c.food.balance)) };
+  const key = JSON.stringify(offer);
+  if (key === lastOffer) return;
+  const before = lastOffer;
+  lastOffer = key;
+  try { if (!(await rpc<boolean>("publish_offer", offer)) && lastOffer === key) lastOffer = before; }
+  catch { if (lastOffer === key) lastOffer = before; /* commerce indisponible : la partie n'en dépend pas */ }
+}
+
+type ContractRow = { id: string; seller: string; buyer: string; resource: "energy" | "food"; qty: number };
+/** Relit ses contrats sur le serveur et les applique à la partie. `false` si le commerce n'est pas disponible. */
+export async function syncContracts(): Promise<boolean> {
+  const uid = active;
+  if (!uid) return false;
+  const rows = await restAsUser<ContractRow[]>("contracts?select=id,seller,buyer,resource,qty&order=created_at.asc");
+  if (!rows || active !== uid) return false;
+  const contracts: E.Contract[] = rows.map((r) => ({ id: r.id, resource: r.resource, qty: r.qty, side: r.buyer === uid ? "buy" : "sell", partner: r.buyer === uid ? r.seller : r.buyer }));
+  const g = useGame.getState().game, next = E.setContracts(g, contracts);
+  if (next !== g) useGame.setState({ game: next });
+  return true;
+}
+
+/** Signe un contrat d'achat. `null` = refusé (surplus déjà pris, trop de contrats). Lève une erreur si le serveur ne répond pas. */
+export async function signContract(seller: string, resource: "energy" | "food", qty: number): Promise<boolean> {
+  const id = await rpc<string | null>("sign_contract", { p_seller: seller, p_resource: resource, p_qty: Math.floor(qty) });
+  await syncContracts();
+  return !!id;
+}
+export async function cancelContract(id: string): Promise<boolean> {
+  const ok = await rpc<boolean>("cancel_contract", { p_id: id });
+  await syncContracts();
+  return !!ok;
+}
+
 /** Le compte est ouvert : on mémorise l'appareil et on sauvegarde à chaque changement. */
 function finish(uid: string, name: string) {
   try { localStorage.setItem(LINK_KEY, uid); } catch { /* stockage indisponible */ }
@@ -105,7 +149,10 @@ function finish(uid: string, name: string) {
     schedule();
   });
   useOnline.setState({ phase: "ready" });
+  adoptCountry();
   void publishCity(pack(useGame.getState().game).pl);
+  void publishOffer();
+  void syncContracts();
 }
 
 async function connect(uid: string, name: string) {
@@ -198,6 +245,7 @@ function disconnect() {
   dirty = false;
   lastSent = "";
   lastCity = "";
+  lastOffer = "";
   useOnline.setState({ country: null, phase: "idle" });
   setCloud("local");
 }

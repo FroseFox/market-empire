@@ -5,17 +5,21 @@ import { Crown, Eye, Globe2, MapPin, Plane, Trophy, Users } from "lucide-react";
 import { useDerived } from "@/store/game";
 import { moveTo } from "@/lib/world/move";
 import CityVisit from "@/components/CityVisit";
+import TradePanel from "@/components/TradePanel";
+import { useGame } from "@/store/game";
+import { hasDesk } from "@/lib/game/engine";
+import { HUB_DESK_COST, HUB_FEE_FACTOR } from "@/lib/game/config";
 import { useWorld, type PublicPlayer } from "@/lib/world/players";
 import { useAuth } from "@/lib/auth";
 import { useOnline } from "@/lib/online";
 import { STATIC_MODE } from "@/lib/market/client";
-import { HUBS, PLAYABLE, countryPrice, countryTier, pickCountry } from "@/lib/world/countries";
+import { HUBS, PLAYABLE, countryPrice, countryTier, pickCountry, specialtyText } from "@/lib/world/countries";
 import WorldMap, { countryName } from "@/components/WorldMap";
 import { Button, Card, ConfirmButton, Delta, Empty, PageHeader, Segmented } from "@/components/ui";
 import DiscordButton from "@/components/DiscordButton";
 import { compactEur, eur, num } from "@/lib/format";
 
-type Tab = "Carte" | "Classement";
+type Tab = "Carte" | "Commerce" | "Classement";
 type Sort = "Patrimoine" | "Population" | "Bourse";
 
 export default function WorldPage() {
@@ -51,6 +55,10 @@ export default function WorldPage() {
   const hubs = HUBS.filter((h) => h.country === selId);
   const [visiting, setVisiting] = useState<PublicPlayer | null>(null);
   const [moving, setMoving] = useState(false);
+  const openDesk = useGame((s) => s.openDesk);
+  // Pour les frais de courtage et la spécialité, c'est le pays affiché ici qui compte
+  const me = { ...game, country: mine?.country ?? game.country };
+  const specialty = PLAYABLE[selId] ? specialtyText(selId) : null;
   const price = PLAYABLE[selId] ? countryPrice(selId) : 0;
   const move = async () => {
     if (!mine || moving) return;
@@ -65,11 +73,12 @@ export default function WorldPage() {
   return (
     <>
       <PageHeader icon={Globe2} title="Monde" subtitle="Carte économique des territoires et classement des joueurs">
-        <Segmented options={["Carte", "Classement"] as Tab[]} value={tab} onChange={setTab} />
+        <Segmented options={["Carte", "Commerce", "Classement"] as Tab[]} value={tab} onChange={setTab} />
       </PageHeader>
 
       <div className="grid gap-2 sm:gap-4 grid-cols-3 mb-4">
-        <Stat icon={MapPin} label="Votre territoire" value={mine ? countryName(mine.country) : "—"} sub={game.cityName} />
+        <Stat icon={MapPin} label="Votre territoire" value={mine ? countryName(mine.country) : "—"}
+          sub={mine && PLAYABLE[mine.country] ? specialtyText(mine.country) : game.cityName} />
         <Stat icon={Trophy} label="Votre rang" value={myRank ? `${myRank}ᵉ` : "—"} sub={`sur ${num(players.length)} joueur${players.length > 1 ? "s" : ""}`} />
         <Stat icon={Users} label="Monde" value={`${num(players.length)} joueur${players.length > 1 ? "s" : ""}`} sub={`${Object.keys(PLAYABLE).length} pays jouables · ${HUBS.length} places financières`} />
       </div>
@@ -98,6 +107,7 @@ export default function WorldPage() {
                 </div>
                 {!owner.isMe && <p className="text-[12px] text-muted mb-3">Dirigé par {owner.name || "un joueur"}</p>}
                 <dl className="grid grid-cols-2 gap-2 text-[12px]">
+                  {specialty && <div className="col-span-2"><Info label="Spécialité du pays" value={specialty} /></div>}
                   <Info label="Patrimoine" value={compactEur(owner.netWorth)} />
                   <Info label="Population" value={num(owner.population)} />
                   <Info label="Bourse" value={<Delta value={owner.perf} />} />
@@ -119,6 +129,7 @@ export default function WorldPage() {
                 <dl className="mt-3 grid grid-cols-2 gap-2 text-[12px]">
                   <Info label="Prix d'installation" value={compactEur(price)} />
                   <Info label="Catégorie" value={`${countryTier(selId)} / 4`} />
+                  {specialty && <div className="col-span-2"><Info label="Spécialité du pays" value={specialty} /></div>}
                 </dl>
                 <ConfirmButton onConfirm={move} disabled={moving || game.cash < price} confirmLabel={`Confirmer : payer ${compactEur(price)}`}
                   className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-[10px] bg-primary px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40">
@@ -131,13 +142,22 @@ export default function WorldPage() {
             ) : (
               <p className="text-[13px] text-muted">Pays non jouable pour l&apos;instant.</p>
             )}
-            {hubs.map((h) => (
-              <div key={h.name} className="mt-4 rounded-[10px] border border-line p-3">
-                <div className="flex items-center gap-2 font-semibold text-[13px]"><Crown size={14} className="text-muted" />{h.name}</div>
-                <p className="text-[12px] text-muted mt-1">Place financière neutre · {h.specialty}</p>
-                <p className="text-[11px] text-muted mt-1">Les échanges avec les places financières arrivent bientôt.</p>
-              </div>
-            ))}
+            {hubs.map((h) => {
+              const desk = hasDesk(me, h), local = h.country === me.country;
+              return (
+                <div key={h.name} className="mt-4 rounded-[10px] border border-line p-3">
+                  <div className="flex items-center gap-2 font-semibold text-[13px]"><Crown size={14} className="text-muted" />{h.name}</div>
+                  <p className="text-[12px] text-muted mt-1">Place financière · {h.covers}</p>
+                  <p className="text-[12px] mt-1">Un bureau ici réduit les frais de courtage de {Math.round((1 - HUB_FEE_FACTOR) * 100)} % sur ces actifs.</p>
+                  {desk ? <p className="mt-2 text-[12px] font-semibold text-success">{local ? "Bureau offert : votre ville est dans ce pays" : "Bureau ouvert"}</p> : (
+                    <ConfirmButton onConfirm={() => openDesk(h.name)} disabled={game.cash < HUB_DESK_COST} confirmLabel={`Confirmer : payer ${compactEur(HUB_DESK_COST)}`}
+                      className="mt-2 w-full rounded-[10px] border border-line bg-card px-3 py-2 text-[13px] font-semibold hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40">
+                      Ouvrir un bureau · {compactEur(HUB_DESK_COST)}
+                    </ConfirmButton>
+                  )}
+                </div>
+              );
+            })}
             {!STATIC_MODE && auth.status !== "in" && (
               <div className="mt-4 pt-3 border-t border-line">
                 <p className="text-[12px] text-muted mb-2">Connectez-vous pour réserver votre pays et apparaître au classement.</p>
@@ -146,7 +166,7 @@ export default function WorldPage() {
             )}
           </Card>
         </div>
-      ) : (
+      ) : tab === "Commerce" ? <TradePanel /> : (
         <Card>
           <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
             <h2 className="text-[16px] font-semibold flex items-center gap-2"><Trophy size={18} className="text-primary" />Classement</h2>

@@ -23,6 +23,8 @@ function choose(g: E.GameState): BuildingType | undefined {
   const fix = (c.energy.balance < 0 && best(g, (b) => b.energyProd ?? 0)) || (c.food.balance < 0 && best(g, (b) => b.foodProd ?? 0))
     || SERVICE_IDS.map((id) => c.services[id].needed && c.services[id].coverage < 1 && best(g, (b) => (b.service === id ? b.serves ?? 0 : 0))).find(Boolean);
   if (fix) return fix;
+  // Pollution : des espaces verts dès qu'elle pèse sur la satisfaction
+  if (c.pollution.penalty > 0.04) { const green = best(g, (b) => -(b.pollution ?? 0)); if (green) return green; }
   if (c.expenses.imports > c.income.total * 0.12) return undefined;
   // Des chômeurs : des emplois rentables. Des postes vacants ou une ville pleine : des logements.
   if (c.unemploymentRate > 0.04) return best(g, (b) => (b.jobs && profit(b) > 0 ? profit(b) : 0));
@@ -40,6 +42,8 @@ export function simulate(days: number, claim = true): { days: SimDay[]; final: E
   const out: SimDay[] = [];
   for (let d = 0; d < days; d++) {
     if (claim) for (const s of E.goalStatuses(g)) if (s.done && !s.claimed) { const r = E.claimGoal(g, s.goal.id, d); if (r.ok) g = r.state; }
+    // Rénovation dès que la vétusté commence à coûter, si elle ne vide pas la caisse
+    if ((g.wear ?? 0) >= 0.3 && E.renovateCost(g) <= g.cash * 0.6) { const r = E.renovate(g, d); if (r.ok) g = r.state; }
     for (let i = 0; i < 40; i++) {
       const b = choose(g);
       if (!b) break;

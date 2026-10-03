@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import {
-  BarChart3, ArrowUpCircle, Briefcase, Building2, Ellipsis, Factory, FastForward, Hammer, Home, Landmark, LayoutList, Lock, MousePointerClick, Move, Pencil, RotateCcw, Smile, Store, Target, Trash2, Trees, TrendingUp, Trophy, Users, Wheat, X, Zap,
+  BarChart3, ArrowUpCircle, Briefcase, Building2, Ellipsis, Handshake, Sparkles, Wrench, Factory, FastForward, Hammer, Home, Landmark, LayoutList, Lock, MousePointerClick, Move, Pencil, RotateCcw, Smile, Store, Target, Trash2, Trees, TrendingUp, Trophy, Users, Wheat, X, Zap,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useDerived, useGame } from "@/store/game";
@@ -9,8 +9,10 @@ import { BUILDINGS, BUILDING_BY_ID, CATEGORY_LABELS, CITY_RANKS, SERVICES, SERVI
 import { Button, ConfirmButton, Progress } from "@/components/ui";
 import IsoCity, { type CityMarker, type CityMode, type MarkerKind } from "@/components/IsoCity";
 import { useMedia } from "@/lib/useMedia";
-import { buildingAudit, forecast, goalStatuses, hasResearch, isTileFree, upgradeOffer, type CityStats } from "@/lib/game/engine";
-import { FORECAST_DAYS } from "@/lib/game/config";
+import { activeBranches, branchCost, branchLimit, buildingAudit, forecast, goalStatuses, hasResearch, isTileFree, prestige, renovateCost, upgradeOffer, type CityStats } from "@/lib/game/engine";
+import { BRANCH_EFFECTS, BRANCH_MIN_VALUE, FORECAST_DAYS, PROJECTS } from "@/lib/game/config";
+import { specialtyText } from "@/lib/world/countries";
+import { ASSET_BY_SYMBOL, familyOf } from "@/lib/market/universe";
 import type { Plot } from "@/lib/game/layout";
 import { compactEur, eur, num, pctPlain, signedEur, tone } from "@/lib/format";
 
@@ -24,7 +26,7 @@ const CAT_TINT: Record<Category, string> = {
 type Tile = { x: number; y: number };
 const DEV = process.env.NODE_ENV !== "production";
 /** Outil actif de la barre du bas. */
-type Tool = "build" | "move" | "demolish" | "goals" | "list" | "stats" | "more" | null;
+type Tool = "build" | "move" | "demolish" | "goals" | "firms" | "list" | "stats" | "more" | null;
 const BUILD_CATS: Category[] = ["housing", "commerce", "services", "industry", "agriculture", "energy", "public"];
 const MARKER_LABEL: Record<MarkerKind, string> = {
   energy: "Manque d'énergie : importée au prix fort",
@@ -134,6 +136,8 @@ export default function CityPage() {
       }} />;
   } else if (tool === "goals") {
     dock = <DockPanel title="Progression de la ville" onClose={() => setTool(null)}><Progression city={city} population={game.population} goals={goals} onClaim={claimGoal} /></DockPanel>;
+  } else if (tool === "firms") {
+    dock = <DockPanel title="Entreprises implantées" onClose={() => setTool(null)}><Firms /></DockPanel>;
   } else if (tool === "list") {
     dock = <DockPanel title="Mes bâtiments" onClose={() => setTool(null)}><Owned onSelect={(t) => { setTool(null); setSelected(t); }} /></DockPanel>;
   } else if (tool === "stats") {
@@ -161,6 +165,7 @@ export default function CityPage() {
     { id: "move", label: "Déplacer", icon: Move, on: tool === "move" || mode?.kind === "move" },
     { id: "demolish", label: "Démolir", icon: Trash2, on: tool === "demolish" },
     { id: "goals", label: "Objectifs", icon: Target, on: tool === "goals" },
+    { id: "firms", label: "Entreprises", icon: Handshake, on: tool === "firms" },
     { id: "list", label: "Bâtiments", icon: LayoutList, on: tool === "list" },
     { id: "stats", label: "Stats", icon: BarChart3, on: tool === "stats", cls: "lg:hidden" },
     { id: "more", label: "Options", icon: Ellipsis, on: tool === "more" },
@@ -271,6 +276,7 @@ function Budget({ city }: { city: CityStats }) {
 
 /** Stats n°1 : l'état de la ville en trois jauges. */
 function CityBars({ city, population, outlook }: { city: CityStats; population: number; outlook: ReturnType<typeof forecast> | null }) {
+  const game = useGame((s) => s.game);
   const full = city.freeHousing === 0 && city.housing > 0;
   const jobless = city.unemploymentRate > 0.08;
   return (
@@ -290,12 +296,97 @@ function CityBars({ city, population, outlook }: { city: CityStats; population: 
         <span className="text-muted">Croissance</span>
         <span className={`font-semibold tabular ${tone(city.growth)}`}>{city.growth >= 0 ? "+" : "−"}{num(Math.abs(city.growth))} hab. / jour</span>
       </div>
+      {city.wear >= 0.05 && <Renovate />}
+      {city.specialty && game.country && (
+        <div className="text-[12px]" title="Spécialité du pays où votre ville est installée (page Monde)">
+          <span className="text-muted">Pays · </span><span className="font-semibold">{specialtyText(game.country)}</span>
+        </div>
+      )}
       {outlook && (
         <div className="flex justify-between gap-3 text-[12px]" title="Si rien ne change : même ville, mêmes bâtiments">
           <span className="shrink-0 text-muted">Dans {FORECAST_DAYS} j</span>
           <span className="text-right font-semibold tabular">{num(outlook.population)} hab. · <span className={tone(outlook.net)}>{signedEur(outlook.net)}/j</span></span>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Vétusté de la ville et bouton de rénovation. */
+function Renovate() {
+  const game = useGame((s) => s.game);
+  const renovate = useGame((s) => s.renovate);
+  const cost = renovateCost(game), wear = game.wear ?? 0;
+  return (
+    <div className="flex items-center justify-between gap-2 text-[12px]" title="La vétusté augmente l'entretien et pèse sur la satisfaction. Une rénovation la remet à zéro.">
+      <span className="flex items-center gap-1.5 whitespace-nowrap"><Wrench size={13} className={wear >= 0.5 ? "text-danger" : "text-primary"} /><span className="text-muted">Vétusté</span> <b className="tabular">{pctPlain(wear)}</b></span>
+      <button onClick={renovate} disabled={cost > game.cash} className="whitespace-nowrap rounded-[8px] border border-line px-2 py-1 text-[11px] font-semibold hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40">Rénover · {compactEur(cost)}</button>
+    </div>
+  );
+}
+
+/** Entreprises dont le joueur est actionnaire et qui ont (ou peuvent avoir) un site dans la ville. */
+function Firms() {
+  const game = useGame((s) => s.game);
+  const quotes = useGame((s) => s.quotes);
+  const openBranch = useGame((s) => s.openBranch);
+  const closeBranch = useGame((s) => s.closeBranch);
+  const active = new Set(activeBranches(game).map((b) => b.symbol));
+  const mine = game.branches ?? [];
+  const limit = branchLimit(game), cost = branchCost(game);
+  const candidates = Object.entries(game.holdings)
+    .map(([symbol, h]) => ({ asset: ASSET_BY_SYMBOL[symbol], value: h.qty * (quotes[symbol]?.price ?? h.avgCost) }))
+    .filter((c) => c.asset?.kind === "stock" && !mine.some((b) => b.symbol === c.asset.symbol))
+    .sort((a, b) => b.value - a.value);
+  const effect = (symbol: string) => BRANCH_EFFECTS[familyOf(ASSET_BY_SYMBOL[symbol])];
+  const line = (symbol: string) => {
+    const e = effect(symbol);
+    return [`${num(e.jobs)} emplois`, `+${num(e.revenue)} €/j`, e.energyProd ? `+${num(e.energyProd)} énergie` : "", e.serves ? `soigne ${num(e.serves)} hab.` : ""].filter(Boolean).join(" · ");
+  };
+  return (
+    <div className="space-y-3">
+      <p className="text-[12px] text-muted">
+        Une entreprise dont vous détenez au moins {compactEur(BRANCH_MIN_VALUE)} d&apos;actions peut ouvrir un site dans votre ville. Il tourne tant que vous gardez cette participation, quel que soit le cours.
+      </p>
+      <div className="flex justify-between text-[12px]"><span className="font-semibold">Sites ouverts</span><span className="tabular text-muted">{mine.length} / {limit} (un de plus à chaque rang)</span></div>
+      {mine.length > 0 && (
+        <ul className="space-y-2">
+          {mine.map((b) => {
+            const a = ASSET_BY_SYMBOL[b.symbol], on = active.has(b.symbol);
+            return (
+              <li key={b.symbol} className="flex items-center gap-3 rounded-[10px] border border-line p-2.5">
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[13px] font-semibold">{a?.name ?? b.symbol} <span className="font-normal text-muted">· {effect(b.symbol).label}</span></div>
+                  <div className={`text-[11px] ${on ? "text-muted" : "text-danger"}`}>{on ? line(b.symbol) : "En sommeil : vous ne détenez plus la participation de départ"}</div>
+                </div>
+                <ConfirmButton onConfirm={() => closeBranch(b.symbol)} confirmLabel="Confirmer" className="shrink-0 text-[11px] font-semibold text-danger hover:underline">Fermer</ConfirmButton>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <div className="border-t border-line pt-3">
+        <div className="mb-2 text-[12px] font-semibold">Vos participations</div>
+        {candidates.length === 0 ? <p className="text-[12px] text-muted">Aucune autre entreprise en portefeuille. Les actions s&apos;achètent dans Marchés.</p> : (
+          <ul className="space-y-2">
+            {candidates.map(({ asset, value }) => {
+              const enough = value >= BRANCH_MIN_VALUE, full = mine.length >= limit;
+              return (
+                <li key={asset.symbol} className="flex items-center gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[13px] font-medium">{asset.name} <span className="text-muted">· {compactEur(value)} détenus</span></div>
+                    <div className="text-[11px] text-muted">{effect(asset.symbol).label} : {line(asset.symbol)}</div>
+                  </div>
+                  <Button onClick={() => openBranch(asset.symbol)} disabled={!enough || full || cost > game.cash} className="shrink-0 !px-3"
+                    title={!enough ? `Participation inférieure à ${compactEur(BRANCH_MIN_VALUE)}` : full ? "Limite atteinte pour ce rang de ville" : cost > game.cash ? "Liquidités insuffisantes" : undefined}>
+                    {enough ? `Implanter · ${compactEur(cost)}` : "Participation trop faible"}
+                  </Button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }
@@ -314,6 +405,8 @@ function Bar({ icon: Icon, label, value, ratio, tone: barTone }: { icon: LucideI
 
 /** Rang de la ville, prochain palier et objectifs (subventions à encaisser). */
 function Progression({ city, population, goals, onClaim }: { city: CityStats; population: number; goals: ReturnType<typeof goalStatuses>; onClaim: (id: string) => void }) {
+  const game = useGame((s) => s.game);
+  const buildProject = useGame((s) => s.buildProject);
   const rank = CITY_RANKS[city.rank], next = CITY_RANKS[city.rank + 1];
   const unlocks = next ? BUILDINGS.filter((b) => b.buildable !== false && (b.unlockPop ?? 0) > population && (b.unlockPop ?? 0) <= next.pop) : [];
   const needs = next ? SERVICE_IDS.filter((id) => SERVICES[id].needPop > population && SERVICES[id].needPop <= next.pop) : [];
@@ -325,7 +418,10 @@ function Progression({ city, population, goals, onClaim }: { city: CityStats; po
       <div>
         <div className="flex items-baseline justify-between gap-3">
           <span className="flex items-center gap-1.5 text-[15px] font-semibold"><Trophy size={15} className="text-primary" />{rank.name}</span>
-          <span className="text-[11px] text-muted">Rang {city.rank + 1} / {CITY_RANKS.length}</span>
+          <span className="flex items-center gap-2 text-[11px] text-muted">
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 font-semibold text-amber-700" title="Prestige : rang, objectifs encaissés et grands projets"><Sparkles size={11} />{num(prestige(game))} prestige</span>
+            Rang {city.rank + 1} / {CITY_RANKS.length}
+          </span>
         </div>
         {next ? (
           <>
@@ -339,6 +435,26 @@ function Progression({ city, population, goals, onClaim }: { city: CityStats; po
             )}
           </>
         ) : <p className="mt-2 text-[12px] text-muted">Rang maximal atteint.</p>}
+      </div>
+      <div className="border-t border-line pt-3">
+        <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted">Grands projets · {game.projects?.length ?? 0} / {PROJECTS.length}</div>
+        <ul className="space-y-2.5">
+          {PROJECTS.map((p) => {
+            const done = !!game.projects?.includes(p.id), locked = city.rank < p.minRank;
+            return (
+              <li key={p.id} className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className={`text-[13px] font-medium ${locked ? "text-muted" : ""}`}>{p.name}</div>
+                  <div className="text-[11px] text-muted">{p.description} +{num(p.prestige)} prestige{locked ? ` · rang « ${CITY_RANKS[p.minRank].name} »` : ""}</div>
+                </div>
+                {done ? <span className="shrink-0 text-[11px] font-semibold text-success">Achevé</span>
+                  : locked ? <span className="inline-flex shrink-0 items-center gap-1 text-[12px] font-semibold tabular text-muted"><Lock size={12} />{compactEur(p.cost)}</span>
+                  : <ConfirmButton onConfirm={() => buildProject(p.id)} disabled={p.cost > game.cash} confirmLabel="Confirmer"
+                      className="shrink-0 rounded-[10px] bg-primary px-3 py-2 text-[13px] font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40">{compactEur(p.cost)}</ConfirmButton>}
+              </li>
+            );
+          })}
+        </ul>
       </div>
       <div className="border-t border-line pt-3">
         <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted">Objectifs · {goals.filter((g) => g.claimed).length} / {goals.length}</div>
@@ -387,6 +503,8 @@ function MoreMenu() {
         <li>60 % des habitants cherchent un emploi.</li>
         <li>Les habitants arrivent s&apos;il y a des logements libres, surtout si des emplois les attendent.</li>
         <li>Les déficits d&apos;énergie et de nourriture sont importés automatiquement, au prix fort. Les surplus sont exportés à {EXPORT_RATIO * 100} % du prix.</li>
+        <li>Les usines et les centrales polluent ; parcs, écoquartiers et exploitations agricoles absorbent la pollution.</li>
+        <li>La vétusté monte chaque jour à partir du rang « Bourg » : elle augmente l&apos;entretien jusqu&apos;à la prochaine rénovation.</li>
         <li>En grandissant, la ville attend des équipements publics (parcs, écoles, hôpitaux) : sans eux, la satisfaction baisse, donc les impôts et la croissance aussi.</li>
         <li>Entretien : {MAINTENANCE_RATE * 100} % du coût par jour. Déplacer est gratuit. Démolir rembourse {DEMOLISH_REFUND * 100} %.</li>
       </ul>
@@ -550,6 +668,7 @@ function Effects({ b }: { b: BuildingType }) {
   if (b.energyProd) chips.push({ text: `+${num(b.energyProd)}`, cls: "bg-amber-50 text-amber-700", icon: Zap });
   if (b.foodProd) chips.push({ text: `+${num(b.foodProd)}`, cls: "bg-lime-50 text-lime-700", icon: Wheat });
   if (b.serves) chips.push({ text: `dessert ${num(b.serves)} hab.`, cls: "bg-emerald-50 text-emerald-700" });
+  if (b.pollution) chips.push({ text: b.pollution > 0 ? `pollution +${num(b.pollution)}` : `pollution −${num(-b.pollution)}`, cls: b.pollution > 0 ? "bg-slate-200 text-slate-700" : "bg-emerald-50 text-emerald-700" });
   if (b.energyUse) chips.push({ text: `−${num(b.energyUse)}`, cls: "bg-danger-soft text-red-700", icon: Zap });
   return (
     <div className="flex flex-wrap gap-1">

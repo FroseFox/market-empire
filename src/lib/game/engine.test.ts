@@ -206,7 +206,8 @@ describe("progression de la ville", () => {
   it("rang selon la population", () => {
     expect(E.cityRank(250)).toBe(0);
     expect(E.cityRank(500)).toBe(1);
-    expect(E.cityRank(1_000_000)).toBe(6);
+    expect(E.cityRank(100_000)).toBe(6);
+    expect(E.cityRank(1_000_000)).toBe(8);
   });
   it("les équipements publics soutiennent la satisfaction d'une grande ville", () => {
     const base = { house_l: 2, factory_m: 6, power_m: 2, farm_m: 4 };
@@ -301,5 +302,137 @@ describe("catalogue des bâtiments", () => {
     const perCat: Record<string, number> = {};
     for (const b of BUILDINGS) if (b.buildable !== false) perCat[b.category] = (perCat[b.category] ?? 0) + 1;
     for (const n of Object.values(perCat)) expect(n).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe("ville et bourse : entreprises implantées", () => {
+  const ok = (r: E.ActionResult) => { if (!r.ok) throw new Error(r.error); return r.state; };
+  it("une entreprise détenue s'implante, apporte emplois et revenus, et s'endort si on vend", () => {
+    let g = { ...newGame(T0), cash: 300_000 };
+    expect(E.openBranch(g, "AAPL", 200, T0).ok).toBe(false); // pas actionnaire
+    g = ok(buy(g, "AAPL", 60, 200, T0));                     // 12 000 € : au-dessus du seuil
+    const before = computeCity(g), cash = g.cash;
+    g = ok(E.openBranch(g, "AAPL", 200, T0));
+    expect(g.cash).toBe(cash - 40_000);
+    const after = computeCity(g);
+    expect(after.branches).toBe(1);
+    expect(after.jobs).toBe(before.jobs + 250);
+    expect(E.openBranch(g, "AAPL", 200, T0).ok).toBe(false); // déjà implantée
+    // Le cours peut baisser sans effet ; vendre sous la participation de départ met le site en sommeil
+    g = ok(sell(g, "AAPL", 20, 150, T0));
+    expect(computeCity(g).branches).toBe(0);
+    expect(computeCity(g).jobs).toBe(before.jobs);
+    g = ok(buy(g, "AAPL", 20, 150, T0));
+    expect(computeCity(g).branches).toBe(1);
+    // Une par rang de ville : un village n'en accueille qu'une
+    g = ok(buy(g, "MSFT", 40, 400, T0));
+    expect(E.openBranch(g, "MSFT", 400, T0).ok).toBe(false);
+    expect(ok(E.closeBranch(g, "AAPL")).branches).toEqual([]);
+  });
+  it("le coût d'implantation ne passe pas pour un gain ou une perte de bourse", () => {
+    let g = ok(buy({ ...newGame(T0), cash: 300_000 }, "AAPL", 60, 200, T0));
+    const fees = g.today!.fees;
+    g = ok(E.openBranch(g, "AAPL", 200, T0));
+    const r = E.periodReport(g, g.cash + E.portfolioValue(g.holdings, { AAPL: 200 }), Infinity);
+    expect(r.city).toBe(-40_000);
+    expect(r.fees).toBe(fees);
+  });
+});
+
+describe("pays et places financières", () => {
+  const ok = (r: E.ActionResult) => { if (!r.ok) throw new Error(r.error); return r.state; };
+  it("la spécialité du pays joue sur la ville, davantage dans un pays cher", () => {
+    const g = newGame(T0);
+    const none = computeCity(g);
+    const norway = computeCity({ ...g, country: "578" });   // énergie, catégorie 2
+    const russia = computeCity({ ...g, country: "643" });   // énergie, catégorie 3
+    expect(norway.specialty).toBe("energy");
+    expect(norway.energy.prod).toBeCloseTo(none.energy.prod * 1.1, 6);
+    expect(russia.energy.prod).toBeCloseTo(none.energy.prod * 1.15, 6);
+    expect(computeCity({ ...g, country: "076" }).food.prod).toBeCloseTo(none.food.prod * 1.15, 6); // Brésil : agriculture
+    expect(computeCity({ ...g, country: "724" }).income.buildings).toBeGreaterThan(none.income.buildings); // Espagne : commerce
+  });
+  it("frais de courtage : pays « Finance », bureau dans une place, pays de la place", () => {
+    const g = { ...newGame(T0), cash: 1_000_000 };
+    expect(E.feeFactor(g, "AAPL")).toBe(1);
+    expect(E.feeFactor({ country: "756" }, "AAPL")).toBeCloseTo(0.8, 6);         // Suisse : finance, catégorie 2
+    expect(E.feeFactor({ country: "840" }, "AAPL")).toBeCloseTo(0.6 * 0.5, 6);   // États-Unis : finance + New York sur place
+    expect(E.hubFor("AAPL")?.name).toBe("New York");
+    const desk = ok(E.openDesk(g, "New York", T0));
+    expect(desk.cash).toBe(880_000);
+    expect(E.feeFactor(desk, "AAPL")).toBe(0.5);
+    expect(E.openDesk(desk, "New York", T0).ok).toBe(false);
+    // 100 titres à 200 € : 20 € de frais sans bureau, 10 € avec
+    expect(ok(buy(g, "AAPL", 100, 200, T0)).today!.fees).toBe(20);
+    expect(ok(buy(desk, "AAPL", 100, 200, T0)).today!.fees).toBe(120_010);
+  });
+});
+
+describe("commerce entre joueurs", () => {
+  it("un contrat vend le surplus plus cher et achète le manque moins cher, dans la limite des quantités réelles", () => {
+    const g = newGame(T0);
+    const base = computeCity(g);
+    expect(base.energy.balance).toBeGreaterThan(0);
+    const surplus = base.energy.balance;
+    const sold = computeCity({ ...g, contracts: [{ id: "c1", resource: "energy", qty: 20, side: "sell", partner: "x" }] });
+    expect(sold.contracts.energySold).toBe(20);
+    expect(sold.exportsValue - base.exportsValue).toBeCloseTo(20 * 2 * (0.85 - 0.7), 6);
+    // Contrat plus gros que le surplus : seul le surplus réel part au prix du contrat
+    const big = computeCity({ ...g, contracts: [{ id: "c1", resource: "energy", qty: 9_999, side: "sell", partner: "x" }] });
+    expect(big.contracts.energySold).toBeCloseTo(surplus, 6);
+    // Ville en manque de nourriture : 100 unités sous contrat coûtent 85 % du prix plein
+    const hungry = { buildings: { house_m: 1 }, population: 500 };
+    const noDeal = computeCity(hungry);
+    const deal = computeCity({ ...hungry, contracts: [{ id: "c2", resource: "food" as const, qty: 100, side: "buy" as const, partner: "y" }] });
+    expect(noDeal.importsValue - deal.importsValue).toBeCloseTo(100 * 1.5 * 0.15, 6);
+  });
+});
+
+describe("tensions de la ville", () => {
+  const ok = (r: E.ActionResult) => { if (!r.ok) throw new Error(r.error); return r.state; };
+  it("la pollution des usines pèse sur la satisfaction, les parcs l'absorbent", () => {
+    const dirty = computeCity({ buildings: { house_l: 1, factory_m: 4 }, population: 2_500 });
+    const clean = computeCity({ buildings: { house_l: 1, factory_m: 4, park: 6 }, population: 2_500 });
+    expect(dirty.pollution.penalty).toBeGreaterThan(0.1);
+    expect(clean.pollution.penalty).toBeLessThan(0.02);
+    expect(dirty.factors.some((f) => f.label === "Pollution")).toBe(true);
+  });
+  it("la vétusté monte avec le temps à partir du rang Bourg, coûte de l'entretien, et se rénove", () => {
+    let g = newGame(T0);
+    for (let i = 0; i < 20; i++) g = tickDay(g, {}, T0 + i);
+    expect(g.wear ?? 0).toBe(0); // village : pas encore
+    g = { ...g, population: 600, buildings: { ...g.buildings, house_m: 1 }, cash: 200_000 };
+    const fresh = computeCity(g).expenses.maintenance;
+    for (let i = 0; i < 100; i++) g = tickDay(g, {}, T0 + i);
+    expect(g.wear).toBeCloseTo(0.3, 6);
+    expect(computeCity(g).expenses.maintenance).toBeCloseTo(fresh * 1.3, 6);
+    const cost = E.renovateCost(g), cash = g.cash;
+    g = ok(E.renovate(g, T0));
+    expect(g.wear).toBe(0);
+    expect(g.cash).toBeCloseTo(cash - cost, 2);
+    expect(E.renovate(g, T0).ok).toBe(false);
+  });
+  it("les attentes en équipements montent avec le rang", () => {
+    const small = computeCity({ buildings: { house_l: 1 }, population: 1_200 });
+    const large = computeCity({ buildings: { house_xl: 4 }, population: 50_000 });
+    const park = (c: E.CityStats) => c.factors.find((f) => f.label === "Espaces verts")!.value;
+    expect(park(large)).toBeLessThan(park(small));
+  });
+});
+
+describe("fin de partie : grands projets et prestige", () => {
+  it("un grand projet demande un rang, compte dans le patrimoine et donne du prestige", () => {
+    let g = { ...newGame(T0), cash: 20_000_000 };
+    expect(E.buildProject(g, "airport", T0).ok).toBe(false); // village
+    g = { ...g, population: 20_000, buildings: { ...g.buildings, house_xl: 2, shop: 10 } };
+    const worth = g.cash + computeCity(g).assetValue, p0 = E.prestige(g), shops = computeCity(g).income.buildings;
+    const r = E.buildProject(g, "airport", T0);
+    if (!r.ok) throw new Error(r.error);
+    g = r.state;
+    expect(g.cash + computeCity(g).assetValue).toBeCloseTo(worth, 2);
+    expect(E.prestige(g)).toBe(p0 + 100);
+    expect(computeCity(g).income.buildings).toBeGreaterThan(shops); // commerces : +10 %
+    expect(E.buildProject(g, "airport", T0).ok).toBe(false);
+    expect(E.goalStatuses(g).find((s) => s.goal.id === "project_1")?.done).toBe(true);
   });
 });

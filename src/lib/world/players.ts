@@ -150,6 +150,8 @@ async function start() {
     const taken = all.docs.map((d) => d.data()?.country).filter((v): v is string => typeof v === "string");
     country = pickCountry(uid, taken) ?? "250";
   }
+  // Le pays donne la spécialité de la ville : la partie doit le connaître
+  { const g = useGame.getState().game; if (!g.country) useGame.setState({ game: { ...g, country } }); }
 
   let last = "", writing = false, timer: ReturnType<typeof setTimeout> | null = null;
   const publish = async () => {
