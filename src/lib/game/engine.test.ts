@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { build, buy, moveBuilding, catchUp, computeCity, createFolder, DAY_MS, demolish, doResearch, newGame, normalize, sell, tickDay, updateFolder } from "./engine";
+import { build, buy, moveBuilding, catchUp, computeCity, DAY_MS, demolish, doResearch, newGame, normalize, sell, tickDay } from "./engine";
 import * as E from "./engine";
 import { isRoad } from "./layout";
 import { STARTING_CASH } from "./config";
@@ -112,7 +112,7 @@ describe("carte", () => {
   });
 });
 
-describe("recherche et dossiers", () => {
+describe("recherche", () => {
   it("les actions européennes demandent une recherche", () => {
     const g = newGame(T0);
     expect(buy(g, "MC", 1, 500, T0).ok).toBe(false);
@@ -130,13 +130,6 @@ describe("recherche et dossiers", () => {
     expect(doResearch(g, "etf", T0).ok).toBe(false); // manque l'analyse sectorielle
     const r = doResearch(g, "sector_view", T0); if (r.ok) g = r.state;
     expect(doResearch(g, "etf", T0).ok).toBe(true);
-  });
-  it("2 dossiers maximum au départ", () => {
-    let g = newGame(T0);
-    for (const n of ["IA", "Énergie"]) { const r = createFolder(g, n, T0); if (r.ok) g = r.state; }
-    expect(createFolder(g, "Luxe", T0).ok).toBe(false);
-    const u = updateFolder(g, g.folders[0].id, { symbols: ["NVDA", "AMD", "NVDA"] });
-    expect(u.ok && u.state.folders[0].symbols).toEqual(["NVDA", "AMD"]);
   });
 });
 
@@ -184,20 +177,6 @@ describe("bilan de période", () => {
     expect(r.start + r.market + r.city - r.fees - r.research - r.demolish).toBeCloseTo(r.end, 1);
     // Sur le dernier jour seulement : la période ne reprend que ce qui s'est passé depuis.
     expect(E.periodReport(g, worth(g, prices), 1).fees).toBeCloseTo(11, 2);
-  });
-});
-
-describe("dossiers : suivi depuis l'ajout", () => {
-  it("retient le cours du jour d'ajout et l'oublie au retrait", () => {
-    const ok = (r: E.ActionResult) => { if (!r.ok) throw new Error(r.error); return r.state; };
-    let g = ok(E.createFolder(E.newGame(0), "IA", 5, ["NVDA"], { NVDA: 100 }));
-    const id = g.folders[0].id;
-    g = ok(E.updateFolder(g, id, { symbols: ["NVDA", "AMD", "TSM"] }, 9, { NVDA: 150, AMD: 80 }));
-    expect(g.folders[0].added).toEqual({ NVDA: { at: 5, price: 100 }, AMD: { at: 9, price: 80 } }); // TSM : cours inconnu
-    g = ok(E.updateFolder(g, id, { notes: "x" }));
-    expect(g.folders[0].added?.NVDA.price).toBe(100);
-    g = ok(E.updateFolder(g, id, { symbols: ["AMD"] }, 12, {}));
-    expect(g.folders[0].added).toEqual({ AMD: { at: 9, price: 80 } });
   });
 });
 
@@ -543,5 +522,70 @@ describe("journal d'absence", () => {
     expect(rep.rank.to).toBe(1);
     expect(rep.notes.some((n) => n.text.includes("Bourg"))).toBe(true);
     expect(rep.notes.some((n) => n.text.includes("subvention"))).toBe(true);
+  });
+});
+
+describe("fonction retirée : dossiers", () => {
+  it("les recherches de dossiers sont enlevées des sauvegardes et remboursées", () => {
+    const g = newGame(T0);
+    const old = { ...g, research: [...g.research, "folders_1", "folders_plus", "folder_tracking"] };
+    const fixed = normalize(old);
+    expect(fixed.research).toEqual(g.research);
+    expect(fixed.cash).toBe(g.cash + 12_000 + 18_000);
+    expect(normalize(fixed)).toBe(fixed); // une seule fois
+  });
+});
+
+describe("orientation de la ville", () => {
+  const ok = (r: E.ActionResult) => { if (!r.ok) throw new Error(r.error); return r.state; };
+  it("premier choix gratuit à partir de Petite ville, changement payant, avantage et revers appliqués", () => {
+    let g = { ...newGame(T0), cash: 2_000_000 };
+    expect(E.chooseOrientation(g, "green", T0).ok).toBe(false); // village
+    g = normalize({ ...g, population: 2_000, buildings: { ...g.buildings, house_l: 1, factory_m: 2, services: 2 } });
+    const base = computeCity(g), cash = g.cash;
+    g = ok(E.chooseOrientation(g, "industrial", T0));
+    expect(g.cash).toBe(cash); // gratuit
+    const ind = computeCity(g);
+    expect(ind.pollution.emitted).toBeCloseTo(base.pollution.emitted * 1.3, 6);
+    expect(E.chooseOrientation(g, "industrial", T0).ok).toBe(false);
+    g = ok(E.chooseOrientation(g, "green", T0));
+    expect(g.cash).toBe(cash - 150_000 * 2); // rang Petite ville = 2
+    const green = computeCity(g);
+    expect(green.pollution.emitted).toBeCloseTo(base.pollution.emitted * 0.4, 6);
+    expect(green.energy.prod).toBeCloseTo(base.energy.prod * 1.1, 6);
+    expect(green.factors.some((f) => f.label === "Ville verte" && f.value === 0.03)).toBe(true);
+    expect(E.feeFactor({ orientation: "financial" }, "AAPL")).toBe(0.85);
+    // Le changement payant est compté dans le flux de la ville du jour
+    expect(g.today?.extra).toBe(-300_000);
+  });
+});
+
+describe("lisibilité : fonctions ouvertes, aperçu, que faire maintenant", () => {
+  it("les fonctions s'ouvrent avec le rang, ou restent ouvertes si on s'en sert déjà", () => {
+    const g = newGame(T0);
+    expect(E.featureOpen(g, "firms")).toBe(false);
+    expect(E.featureOpen({ ...g, population: 500 }, "firms")).toBe(true);
+    expect(E.featureOpen({ ...g, branches: [{ symbol: "AAPL", minQty: 1 }] }, "firms")).toBe(true);
+    expect(E.featureOpen({ ...g, population: 1_400 }, "trade")).toBe(false);
+    expect(E.featureOpen({ ...g, population: 5_000 }, "projects")).toBe(true);
+  });
+  it("l'aperçu d'un bâtiment donne son effet réel sur la ville d'aujourd'hui", () => {
+    const g = newGame(T0);
+    const shop = E.buildPreview(g, "shop");
+    expect(shop.net).toBeGreaterThan(0);
+    expect(shop.net).toBeLessThan(240 * 0.5); // tous les habitants ont déjà un emploi : loin des 240 € affichés sur la fiche
+    const house = E.buildPreview(g, "house_s");
+    expect(house.growth).toBeGreaterThan(0);
+    expect(house.satisfaction).toBeCloseTo(0.05, 6); // la ville n'est plus saturée
+  });
+  it("que faire maintenant : le plus pressant d'abord, jamais un conseil de bourse", async () => {
+    const { nextActions } = await import("./insights");
+    const g = newGame(T0);
+    const a = nextActions(g, computeCity(g), {});
+    expect(a[0].id).toBe("housing");
+    expect(a.length).toBeLessThanOrEqual(3);
+    const rich = { ...g, population: 500 };
+    expect(nextActions(rich, computeCity(rich), {})[0].id).toBe("claim");
+    for (const x of nextActions(rich, computeCity(rich), {}, 20)) expect(x.title + x.text).not.toMatch(/achet|vend(ez|re) (des|une) action/i);
   });
 });

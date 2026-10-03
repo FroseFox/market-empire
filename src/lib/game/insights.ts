@@ -1,8 +1,9 @@
 // Alertes et objectifs. Règle de la charte : une alerte n'apparaît que si
 // le joueur peut agir dessus.
 import type { CityStats, GameState, Prices } from "./engine";
-import { goalStatuses, portfolioValue } from "./engine";
-import { SERVICES, SERVICE_IDS } from "./config";
+import { activeBranches, branchLimit, cityRank, featureOpen, goalStatuses, portfolioValue, renovateCost } from "./engine";
+import { BRANCH_MIN_VALUE, CITY_RANKS, ORIENTATION_MIN_RANK, SERVICES, SERVICE_IDS } from "./config";
+import { ASSET_BY_SYMBOL } from "../market/universe";
 
 export type AlertLevel = "info" | "warning" | "danger" | "success";
 export interface Alert { id: string; level: AlertLevel; title: string; detail: string; href: string }
@@ -51,6 +52,36 @@ export function computeAlerts(state: GameState, city: CityStats, prices: Prices)
     }
   }
   return out;
+}
+
+export interface NextAction { id: string; title: string; text: string; href: string; tone: "good" | "bad" | "info" }
+
+/** Les gestes les plus utiles maintenant, du plus pressant au moins pressant. Ne concerne que la ville et la progression :
+ *  le jeu ne suggère jamais d'acheter ou de vendre un actif. */
+export function nextActions(state: GameState, city: CityStats, prices: Prices, max = 3): NextAction[] {
+  const out: NextAction[] = [];
+  const fmt = (n: number) => Math.round(n).toLocaleString("fr-FR");
+  const claim = goalStatuses(state, city).filter((g) => g.done && !g.claimed);
+  if (claim.length) out.push({ id: "claim", tone: "good", title: `Encaissez ${claim.length > 1 ? `${claim.length} subventions` : "votre subvention"}`, text: `${fmt(claim.reduce((a, g) => a + g.goal.reward, 0))} € à récupérer dans Ville › Objectifs.`, href: "/ville" });
+  if (state.cash < 0) out.push({ id: "cash", tone: "bad", title: "Redressez vos liquidités", text: "Elles sont négatives : vendez un actif ou démolissez un bâtiment.", href: "/portefeuille" });
+  if (city.unemploymentRate >= 0.08) out.push({ id: "jobs", tone: "bad", title: "Créez des emplois", text: `${fmt(city.unemployed)} habitants sans travail : la satisfaction et les impôts baissent.`, href: "/ville" });
+  if (city.energy.balance < 0) out.push({ id: "energy", tone: "bad", title: "Produisez plus d'énergie", text: `Il en manque ${fmt(-city.energy.balance)} par jour, importée au prix fort.`, href: "/ville" });
+  if (city.food.balance < 0) out.push({ id: "food", tone: "bad", title: "Produisez plus de nourriture", text: `Il en manque ${fmt(-city.food.balance)} par jour, importée au prix fort.`, href: "/ville" });
+  const missing = SERVICE_IDS.filter((id) => city.services[id].needed && city.services[id].coverage < 1);
+  if (missing.length) out.push({ id: "services", tone: "bad", title: "Construisez des équipements publics", text: `Les habitants attendent : ${missing.map((id) => SERVICES[id].label.toLowerCase()).join(", ")}.`, href: "/ville" });
+  if (city.pollution.penalty >= 0.05) out.push({ id: "pollution", tone: "bad", title: "Réduisez la pollution", text: `Elle coûte ${Math.round(city.pollution.penalty * 100)} points de satisfaction : parcs et écoquartiers l'absorbent.`, href: "/ville" });
+  if (city.wear >= 0.4 && renovateCost(state) <= state.cash) out.push({ id: "wear", tone: "bad", title: "Rénovez la ville", text: `Vétusté de ${Math.round(city.wear * 100)} % : l'entretien augmente chaque jour.`, href: "/ville" });
+  if (city.freeHousing === 0 && city.housing > 0) out.push({ id: "housing", tone: "info", title: "Construisez des logements", text: city.openJobs > 0 ? `${fmt(city.openJobs)} emplois attendent des habitants.` : "Tous les logements sont occupés : la population ne grandit plus.", href: "/ville" });
+  if (cityRank(state.population) >= ORIENTATION_MIN_RANK && !state.orientation) out.push({ id: "orientation", tone: "info", title: "Choisissez l'orientation de votre ville", text: "Industrielle, verte, d'affaires ou marchande : le premier choix est gratuit.", href: "/ville" });
+  if (featureOpen(state, "firms") && (state.branches?.length ?? 0) < branchLimit(state)) {
+    const taken = new Set((state.branches ?? []).map((b) => b.symbol));
+    const eligible = Object.entries(state.holdings).find(([s, h]) => !taken.has(s) && ASSET_BY_SYMBOL[s]?.kind === "stock" && h.qty * (prices[s] ?? h.avgCost) >= BRANCH_MIN_VALUE);
+    if (eligible) out.push({ id: "branch", tone: "info", title: "Une entreprise peut s'implanter", text: `Vous êtes actionnaire de ${ASSET_BY_SYMBOL[eligible[0]].name} : elle peut ouvrir un site dans votre ville.`, href: "/ville" });
+  }
+  if (activeBranches(state).length < (state.branches?.length ?? 0)) out.push({ id: "asleep", tone: "info", title: "Un site d'entreprise est en sommeil", text: "Il ne rapporte plus : vous ne détenez plus la participation de départ.", href: "/ville" });
+  const next = CITY_RANKS[city.rank + 1];
+  if (next && out.length < max) out.push({ id: "rank", tone: "info", title: `Visez le rang « ${next.name} »`, text: `Encore ${fmt(next.pop - state.population)} habitants : logements, emplois et satisfaction font venir du monde.`, href: "/ville" });
+  return out.slice(0, max);
 }
 
 export interface Objective { id: string; title: string; current: number; target: number; done: boolean; unit?: string }

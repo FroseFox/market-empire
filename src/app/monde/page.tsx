@@ -7,7 +7,8 @@ import { moveTo } from "@/lib/world/move";
 import CityVisit from "@/components/CityVisit";
 import TradePanel from "@/components/TradePanel";
 import { useGame } from "@/store/game";
-import { hasDesk } from "@/lib/game/engine";
+import { featureOpen, hasDesk } from "@/lib/game/engine";
+import { CITY_RANKS, FEATURES } from "@/lib/game/config";
 import { HUB_DESK_COST, HUB_FEE_FACTOR } from "@/lib/game/config";
 import { useWorld, type PublicPlayer } from "@/lib/world/players";
 import { useAuth } from "@/lib/auth";
@@ -73,7 +74,7 @@ export default function WorldPage() {
   return (
     <>
       <PageHeader icon={Globe2} title="Monde" subtitle="Carte économique des territoires et classement des joueurs">
-        <Segmented options={["Carte", "Commerce", "Classement"] as Tab[]} value={tab} onChange={setTab} />
+        <Segmented options={(featureOpen(game, "trade") ? ["Carte", "Commerce", "Classement"] : ["Carte", "Classement"]) as Tab[]} value={tab} onChange={setTab} />
       </PageHeader>
 
       <div className="grid gap-2 sm:gap-4 grid-cols-3 mb-4">
@@ -149,7 +150,8 @@ export default function WorldPage() {
                   <div className="flex items-center gap-2 font-semibold text-[13px]"><Crown size={14} className="text-muted" />{h.name}</div>
                   <p className="text-[12px] text-muted mt-1">Place financière · {h.covers}</p>
                   <p className="text-[12px] mt-1">Un bureau ici réduit les frais de courtage de {Math.round((1 - HUB_FEE_FACTOR) * 100)} % sur ces actifs.</p>
-                  {desk ? <p className="mt-2 text-[12px] font-semibold text-success">{local ? "Bureau offert : votre ville est dans ce pays" : "Bureau ouvert"}</p> : (
+                  {desk ? <p className="mt-2 text-[12px] font-semibold text-success">{local ? "Bureau offert : votre ville est dans ce pays" : "Bureau ouvert"}</p>
+                    : !featureOpen(game, "hubs") ? <p className="mt-2 text-[12px] text-muted">Ouverture d&apos;un bureau à partir du rang « {CITY_RANKS[FEATURES.find((f) => f.id === "hubs")!.rank].name} ».</p> : (
                     <ConfirmButton onConfirm={() => openDesk(h.name)} disabled={game.cash < HUB_DESK_COST} confirmLabel={`Confirmer : payer ${compactEur(HUB_DESK_COST)}`}
                       className="mt-2 w-full rounded-[10px] border border-line bg-card px-3 py-2 text-[13px] font-semibold hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40">
                       Ouvrir un bureau · {compactEur(HUB_DESK_COST)}

@@ -855,6 +855,17 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
       color: carColors[i % carColors.length],
     }));
 
+    // ─── Passants : quelques habitants sur les trottoirs (d'autant plus que la ville est grande) ───
+    const coats = ["#2563EB", "#EF4444", "#F59E0B", "#10B981", "#8B5CF6", "#0F172A", "#EC4899"];
+    const walkers = Array.from({ length: compact ? 0 : Math.min(26, Math.floor(plots.length * 0.8)) }, (_, i) => ({
+      line: roadLines[(i * 3 + 1) % Math.max(1, roadLines.length)],
+      speed: 0.00006 + hash(i, 13) * 0.00006,
+      off: hash(i, 19),
+      dir: i % 2 ? 1 : -1,
+      side: hash(i, 23) < 0.5 ? 0.05 : 0.95, // un trottoir ou l'autre
+      coat: coats[i % coats.length],
+    }));
+
     /** Sol : socle, herbe, routes, trottoirs. Ne dépend que de la vue : mis en cache quand elle ne bouge pas. */
     function ground() {
       const m = modeRef.current;
@@ -1158,6 +1169,24 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
           const w = 0.12, l = 0.26;
           if (car.line.axis === "x") block(cx - w / 2, cy - l / 2, cx + w / 2, cy + l / 2, 0, 5, car.color, car.color, "rgba(15,23,42,.35)");
           else block(cx - l / 2, cy - w / 2, cx + l / 2, cy + w / 2, 0, 5, car.color, car.color, "rgba(15,23,42,.35)");
+        } });
+      }
+      if (scale > 0.45) for (const w of walkers) {
+        if (!w.line) break;
+        const len = (w.line.axis === "x" ? y1 - y0 + 1 : x1 - x0 + 1);
+        let u = ((reduce ? 0 : t) * w.speed + w.off) % 1;
+        if (w.dir < 0) u = 1 - u;
+        const pos = (w.line.axis === "x" ? y0 : x0) + u * len;
+        const wx = w.line.axis === "x" ? w.line.k + w.side : pos, wy = w.line.axis === "x" ? pos : w.line.k + w.side;
+        dynamic.push({ depth: wx + wy, ax: wx, ay: wy, draw: (tt) => {
+          const [px, py] = iso(wx, wy);
+          const step = reduce ? 0 : Math.sin(tt / 110 + w.off * 40) * 0.6 * scale; // petit balancement de la marche
+          g.fillStyle = C.shadow; g.beginPath(); g.ellipse(px, py, 2.2 * scale, 1 * scale, 0, 0, Math.PI * 2); g.fill();
+          g.strokeStyle = "#334155"; g.lineWidth = 1 * scale; g.beginPath();
+          g.moveTo(px - 0.7 * scale, py - 2.4 * scale); g.lineTo(px - 0.7 * scale + step, py);
+          g.moveTo(px + 0.7 * scale, py - 2.4 * scale); g.lineTo(px + 0.7 * scale - step, py); g.stroke();
+          g.fillStyle = w.coat; g.fillRect(px - 1.5 * scale, py - 6 * scale, 3 * scale, 3.8 * scale);
+          g.fillStyle = "#F5D0A9"; g.beginPath(); g.arc(px, py - 7.3 * scale, 1.35 * scale, 0, Math.PI * 2); g.fill();
         } });
       }
       if (m && hv && isBuildable(hv.x, hv.y, mapSize) && !byTile.has(`${hv.x},${hv.y}`)) {

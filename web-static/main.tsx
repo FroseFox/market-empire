@@ -9,13 +9,12 @@ import City from "@/app/ville/page";
 import World from "@/app/monde/page";
 import News from "@/app/actualites/page";
 import Relations from "@/app/relations/page";
-import Folders from "@/app/dossiers/page";
 import Research from "@/app/recherche/page";
 import Wiki from "@/app/wiki/page";
 
 const PAGES: Record<string, () => React.ReactNode> = {
   "/": Economy, "/marches": Markets, "/portefeuille": Portfolio, "/ville": City, "/monde": World,
-  "/actualites": News, "/relations": Relations, "/dossiers": Folders, "/recherche": Research, "/wiki": Wiki,
+  "/actualites": News, "/relations": Relations, "/recherche": Research, "/wiki": Wiki,
 };
 
 function App() {

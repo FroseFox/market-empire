@@ -3,7 +3,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
-  BarChart3, BookOpen, Building2, Cloud, CloudOff, FlaskConical, Folder, Globe2, LineChart, Network, Newspaper, Wallet, Plus, Clock, LayoutGrid, X,
+  BarChart3, BookOpen, Building2, Cloud, CloudOff, FlaskConical, Globe2, LineChart, Network, Newspaper, Wallet, Plus, Clock, LayoutGrid, X,
 } from "lucide-react";
 import { useGame } from "@/store/game";
 import { fetchQuotes, STATIC_MODE } from "@/lib/market/client";
@@ -30,7 +30,6 @@ const NAV: { href: string; label: string; icon: typeof BarChart3; soon?: boolean
   { href: "/monde", label: "Monde", icon: Globe2 },
   { href: "/actualites", label: "Actualités", icon: Newspaper },
   { href: "/relations", label: "Relations", icon: Network },
-  { href: "/dossiers", label: "Dossiers", icon: Folder },
   { href: "/recherche", label: "Recherche", icon: FlaskConical },
   { href: "/wiki", label: "Wiki", icon: BookOpen },
 ];

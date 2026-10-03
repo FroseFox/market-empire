@@ -5,15 +5,16 @@ import {
   EXPORT_RATIO, FOOD_PER_RESIDENT, MAINTENANCE_RATE, MAX_CATCHUP_DAYS, RESOURCE_PRICES,
   BRANCH_COST, BRANCH_EFFECTS, BRANCH_MIN_VALUE, CONTRACT_RATIO, FINANCE_FEE_FACTOR, HUB_DESK_COST, HUB_FEE_FACTOR,
   NEED_PER_RANK, POLLUTION_FACTOR, POLLUTION_MAX, PRESTIGE_PER_GOAL, PRESTIGE_PER_RANK, PROJECTS, PROJECT_BY_ID,
+  FEATURES, ORIENTATION_BY_ID, ORIENTATION_CHANGE_COST, ORIENTATION_MIN_RANK, type FeatureId, type OrientationId,
   RENOVATE_RATE, TERRITORY, WEAR_MAINTENANCE, WEAR_PER_DAY, WEAR_SATISFACTION,
   CITY_RANKS, FORECAST_DAYS, GOALS, UPGRADES, SERVICES, SERVICE_BONUS, SERVICE_IDS,
   STARTING_BUILDINGS, STARTING_CASH, STARTING_POPULATION, TAX_PER_RESIDENT, TRADE_FEE_MIN, TRADE_FEE_RATE,
-  type Goal, type ServiceId, type Specialty,
+  type Category, type Goal, type ServiceId, type Specialty,
 } from "./config";
 import { isBuildable, layoutFrom, placeTile, type Plot } from "./layout";
 import { HUBS, HUB_BY_NAME, PLAYABLE, countryBonus, countryPrice, countrySpecialty, type Hub } from "../world/countries";
 import { ASSET_BY_SYMBOL, familyOf, regionOf, type Asset } from "../market/universe";
-import { FOLDER_LIMIT_BASE, RESEARCH_BY_ID, STARTING_RESEARCH } from "./research";
+import { RESEARCH_BY_ID, RETIRED_RESEARCH, STARTING_RESEARCH } from "./research";
 
 export interface Holding { qty: number; avgCost: number }
 
@@ -34,16 +35,6 @@ export interface Folder {
   id: string; name: string; symbols: string[]; notes: string;
   /** Date et cours de chaque entreprise au moment de son ajout (absent des anciens dossiers). */
   added?: Record<string, { at: number; price: number }>;
-}
-
-/** Garde les repères des entreprises encore présentes, en crée un pour les nouvelles dont le cours est connu. */
-function trackAdded(prev: Folder["added"], symbols: string[], at: number, prices: Prices): Folder["added"] {
-  const out: NonNullable<Folder["added"]> = {};
-  for (const s of symbols) {
-    if (prev?.[s]) out[s] = prev[s];
-    else if (prices[s] > 0) out[s] = { at, price: prices[s] };
-  }
-  return out;
 }
 
 export interface Snapshot {
@@ -86,7 +77,7 @@ export interface GameState {
   holdings: Record<string, Holding>;
   /** Recherches acquises. */
   research: string[];
-  /** Dossiers d'analyse du joueur. */
+  /** Anciens dossiers d'analyse (fonction retirée) : gardés tels quels dans les sauvegardes, plus utilisés. */
   folders: Folder[];
   /** Guide de démarrage fermé par le joueur. */
   tutorialDone?: boolean;
@@ -104,6 +95,8 @@ export interface GameState {
   wear?: number;
   /** Grands projets achevés. */
   projects?: string[];
+  /** Orientation choisie pour la ville. */
+  orientation?: OrientationId;
   /** Agrandissements du territoire achetés (indice dans TERRITORY). */
   territory?: number;
   /** Coûts du jour en cours, versés dans l'historique au prochain passage de jour. */
@@ -191,7 +184,7 @@ export interface CityStats {
 
 /** Ce dont le calcul de la ville a besoin ; seuls les bâtiments et la population sont obligatoires. */
 export type CityInput = Pick<GameState, "buildings" | "population">
-  & Partial<Pick<GameState, "branches" | "holdings" | "country" | "wear" | "projects" | "contracts" | "territory">>;
+  & Partial<Pick<GameState, "branches" | "holdings" | "country" | "wear" | "projects" | "contracts" | "territory" | "orientation">>;
 
 /** Côté de la carte du joueur (elle s'agrandit avec le territoire). */
 export const mapSize = (state: Partial<Pick<GameState, "territory">>) => TERRITORY[clamp(state.territory ?? 0, 0, TERRITORY.length - 1)].size;
@@ -207,7 +200,8 @@ export function computeCity(state: CityInput): CityStats {
   const bonus = specialty && state.country ? countryBonus(state.country) : 0;
   const projects = (state.projects ?? []).map((id) => PROJECT_BY_ID[id]).filter(Boolean);
   // Revenus d'une catégorie : spécialité du pays et grands projets
-  const revBoost = (cat: string) => 1 + (specialty === cat ? bonus : 0)
+  const orientation = state.orientation ? ORIENTATION_BY_ID[state.orientation] : undefined;
+  const revBoost = (cat: Category) => 1 + (specialty === cat ? bonus : 0) + (orientation?.revenue?.[cat] ?? 0)
     + projects.reduce((a, p) => a + (p.perk.kind === "revenue" && p.perk.category === cat ? p.perk.bonus : 0), 0);
 
   let housing = 0, jobs = 0, energyProd = 0, energyUse = 0, foodProd = 0, bRevenue = 0, cityValue = 0, assetValue = 0, emitted = 0, absorbed = 0;
@@ -234,6 +228,9 @@ export function computeCity(state: CityInput): CityStats {
     jobs += e.jobs; bRevenue += e.revenue; energyUse += e.energyUse ?? 0; energyProd += e.energyProd ?? 0; foodProd += e.foodProd ?? 0;
     if (e.service) capacity[e.service] += e.serves ?? 0;
   }
+  emitted *= orientation?.pollution ?? 1;
+  energyProd *= orientation?.energy ?? 1;
+  foodProd *= orientation?.food ?? 1;
   if (specialty === "energy") energyProd *= 1 + bonus;
   if (specialty === "agri") foodProd *= 1 + bonus;
   // Les grands projets comptent dans le patrimoine (pas d'entretien)
@@ -267,6 +264,7 @@ export function computeCity(state: CityInput): CityStats {
   if (foodBalance < 0) factor("Manque de nourriture", -0.08);
   factor("Pollution", -pollutionPenalty);
   factor("Vétusté", -wear * WEAR_SATISFACTION);
+  if (orientation?.satisfaction) factor(orientation.name, orientation.satisfaction);
   // Équipements publics : un bonus quand ils sont là, une pénalité (qui monte avec le rang) quand la ville les attend
   const services = {} as CityStats["services"];
   for (const id of SERVICE_IDS) {
@@ -529,7 +527,7 @@ const HUB_COVERS: Record<Hub["scope"], (a: Asset) => boolean> = {
   etf: (a) => a.kind === "etf",
   commodity: (a) => a.kind === "commodity",
 };
-type FeeInput = Partial<Pick<GameState, "country" | "hubs" | "projects">>;
+type FeeInput = Partial<Pick<GameState, "country" | "hubs" | "projects" | "orientation">>;
 /** Le joueur a-t-il un bureau dans cette place ? (gratuit quand sa ville est dans le pays de la place) */
 export const hasDesk = (state: FeeInput, hub: Hub) => hub.country === state.country || !!state.hubs?.includes(hub.name);
 /** Place financière qui couvre un actif, s'il y en a une. */
@@ -544,6 +542,7 @@ export function feeFactor(state: FeeInput, symbol: string): number {
   const hub = hubFor(symbol);
   if (hub && hasDesk(state, hub)) f *= HUB_FEE_FACTOR;
   for (const id of state.projects ?? []) { const p = PROJECT_BY_ID[id]; if (p?.perk.kind === "fees") f *= p.perk.factor; }
+  if (state.orientation) f *= ORIENTATION_BY_ID[state.orientation]?.fees ?? 1;
   return f;
 }
 
@@ -647,6 +646,48 @@ export function buildProject(state: GameState, id: string, at: number): ActionRe
       transactions: addTx(state, { kind: "build", label: `Grand projet : ${p.name}`, amount: -p.cost, at }),
     },
   };
+}
+
+// ─── Orientation et fonctions qui s'ouvrent ───────────────────
+
+/** Prix pour adopter cette orientation : gratuit la première fois, payant pour en changer. */
+export const orientationCost = (state: Pick<GameState, "population"> & Partial<Pick<GameState, "orientation">>) =>
+  (state.orientation ? ORIENTATION_CHANGE_COST * Math.max(1, cityRank(state.population)) : 0);
+
+export function chooseOrientation(state: GameState, id: OrientationId, at: number): ActionResult {
+  const o = ORIENTATION_BY_ID[id];
+  if (!o) return { ok: false, error: "Orientation inconnue." };
+  if (state.orientation === id) return { ok: false, error: "C'est déjà l'orientation de votre ville." };
+  if (cityRank(state.population) < ORIENTATION_MIN_RANK) return { ok: false, error: `Réservé au rang « ${CITY_RANKS[ORIENTATION_MIN_RANK].name} ».` };
+  const cost = orientationCost(state);
+  if (cost > state.cash) return { ok: false, error: "Liquidités insuffisantes." };
+  return {
+    ok: true,
+    state: {
+      ...state, cash: round2(state.cash - cost), orientation: id,
+      ...(cost > 0 ? { today: spend(state, "extra", -cost) } : {}),
+      transactions: addTx(state, { kind: "research", label: `Orientation : ${o.name}`, amount: -cost, at }),
+    },
+  };
+}
+
+/** Une fonction du jeu est-elle ouverte ? Par le rang, ou parce que le joueur s'en sert déjà. */
+export function featureOpen(state: Pick<GameState, "population"> & Partial<Pick<GameState, "branches" | "orientation" | "contracts" | "hubs" | "projects" | "territory">>, id: FeatureId): boolean {
+  const f = FEATURES.find((x) => x.id === id);
+  if (!f || cityRank(state.population) >= f.rank) return true;
+  switch (id) {
+    case "firms": return !!state.branches?.length;
+    case "orientation": return !!state.orientation;
+    case "trade": return !!state.contracts?.length;
+    case "hubs": return !!state.hubs?.length;
+    case "projects": return !!state.projects?.length || !!state.territory;
+  }
+}
+
+/** Ce qu'un bâtiment de plus changerait dans la ville d'aujourd'hui. */
+export function buildPreview(state: CityInput, buildingId: string, city = computeCity(state)): { net: number; satisfaction: number; growth: number } {
+  const after = computeCity({ ...state, buildings: { ...state.buildings, [buildingId]: (state.buildings[buildingId] ?? 0) + 1 } });
+  return { net: after.net - city.net, satisfaction: after.satisfaction - city.satisfaction, growth: after.growth - city.growth };
 }
 
 /** Prochain agrandissement du territoire, s'il en reste un. */
@@ -908,6 +949,11 @@ export function normalize(input: GameState): GameState {
   if (!Array.isArray(state.research)) state = { ...state, research: [...STARTING_RESEARCH] };
   else if (STARTING_RESEARCH.some((r) => !state.research.includes(r))) state = { ...state, research: [...new Set([...STARTING_RESEARCH, ...state.research])] };
   if (!Array.isArray(state.folders)) state = { ...state, folders: [] };
+  // Recherches retirées du jeu : on les enlève et on rembourse ce qu'elles avaient coûté
+  if (state.research.some((r) => !RESEARCH_BY_ID[r])) {
+    const refund = state.research.reduce((a, r) => a + (RESEARCH_BY_ID[r] ? 0 : RETIRED_RESEARCH[r] ?? 0), 0);
+    state = { ...state, research: state.research.filter((r) => RESEARCH_BY_ID[r]), cash: round2(state.cash + refund) };
+  }
   // Une entreprise implantée = un bâtiment « branch » (les parties d'avant ce bâtiment n'en ont pas encore)
   const sites = state.branches?.length ?? 0;
   if ((state.buildings.branch ?? 0) !== sites) {
@@ -955,38 +1001,6 @@ export function renameCity(state: GameState, name: string): ActionResult {
   const clean = name.replace(/\s+/g, " ").trim().slice(0, 32);
   if (clean.length < 2) return { ok: false, error: "Le nom doit faire au moins 2 caractères." };
   return { ok: true, state: { ...state, cityName: clean } };
-}
-
-// ─── Dossiers ─────────────────────────────────────────────────
-
-export const folderLimit = (state: Pick<GameState, "research">) => (hasResearch(state, "folders_plus") ? Infinity : FOLDER_LIMIT_BASE);
-
-export function createFolder(state: GameState, name: string, at: number, symbols: string[] = [], prices: Prices = {}): ActionResult {
-  const clean = name.trim().slice(0, 40);
-  if (!clean) return { ok: false, error: "Donnez un nom au dossier." };
-  if (state.folders.length >= folderLimit(state)) return { ok: false, error: "Limite atteinte : recherchez « Dossiers illimités »." };
-  const folder: Folder = { id: `f${at.toString(36)}${state.folders.length}`, name: clean, symbols: [...new Set(symbols)], notes: "", added: trackAdded(undefined, symbols, at, prices) };
-  return { ok: true, state: { ...state, folders: [...state.folders, folder] } };
-}
-
-export function updateFolder(state: GameState, id: string, patch: Partial<Omit<Folder, "id" | "added">>, at = 0, prices: Prices = {}): ActionResult {
-  if (!state.folders.some((f) => f.id === id)) return { ok: false, error: "Dossier introuvable." };
-  return {
-    ok: true,
-    state: {
-      ...state,
-      folders: state.folders.map((f) => f.id !== id ? f : {
-        ...f,
-        ...(patch.name !== undefined ? { name: patch.name.trim().slice(0, 40) || f.name } : {}),
-        ...(patch.symbols !== undefined ? { symbols: [...new Set(patch.symbols)], added: trackAdded(f.added, patch.symbols, at, prices) } : {}),
-        ...(patch.notes !== undefined ? { notes: patch.notes.slice(0, 4000) } : {}),
-      }),
-    },
-  };
-}
-
-export function deleteFolder(state: GameState, id: string): ActionResult {
-  return { ok: true, state: { ...state, folders: state.folders.filter((f) => f.id !== id) } };
 }
 
 // ─── Utilitaires ──────────────────────────────────────────────

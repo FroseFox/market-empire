@@ -33,10 +33,7 @@ export default function NewsPage() {
   let items = news.items;
   if (filter === "chains") items = items.filter((n) => n.symbols.some((s) => linked.has(s)));
   else if (filter === "held") items = items.filter((n) => n.symbols.some((s) => held.includes(s)));
-  else if (filter.startsWith("f:")) {
-    const f = game.folders.find((x) => x.id === filter.slice(2));
-    items = f ? items.filter((n) => n.symbols.some((s) => f.symbols.includes(s))) : items;
-  } else if (filter.startsWith("s:")) items = items.filter((n) => n.symbols.includes(filter.slice(2)));
+  else if (filter.startsWith("s:")) items = items.filter((n) => n.symbols.includes(filter.slice(2)));
   if (advanced && topic) items = items.filter((n) => n.topic === topic);
   if (advanced && country) items = items.filter((n) => n.country === country);
 
@@ -57,7 +54,6 @@ export default function NewsPage() {
             {chip("all", "Tout")}
             {chip("held", "Mes positions")}
             {chains && chip("chains", "Chaînes de mes positions")}
-            {advanced && game.folders.map((f) => chip(`f:${f.id}`, f.name))}
             {filter.startsWith("s:") && chip(filter, ASSET_BY_SYMBOL[filter.slice(2)]?.name ?? filter.slice(2))}
           </div>
           {advanced && (
@@ -105,7 +101,7 @@ export default function NewsPage() {
                 <span className="h-8 w-8 rounded-full bg-slate-100 text-muted grid place-items-center shrink-0"><Lock size={15} /></span>
                 <div>
                   <div className="font-semibold text-[14px]">Filtres avancés</div>
-                  <p className="text-[12px] text-muted mt-0.5">Filtrez par dossier, par thème et par pays.</p>
+                  <p className="text-[12px] text-muted mt-0.5">Filtrez par thème et par pays.</p>
                   <Link href="/recherche" className="text-[12px] text-primary font-medium mt-2 inline-block">Débloquer dans Recherche →</Link>
                 </div>
               </div>

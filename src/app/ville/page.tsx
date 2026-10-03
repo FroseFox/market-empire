@@ -10,8 +10,8 @@ import { Button, ConfirmButton, Progress } from "@/components/ui";
 import IsoCity, { type CityMarker, type CityMode, type CitySign, type MarkerKind } from "@/components/IsoCity";
 import CompanyLogo, { companyBadge } from "@/components/CompanyLogo";
 import { useMedia } from "@/lib/useMedia";
-import { activeBranches, branchAt, branchCost, mapSize, nextTerritory, branchLimit, buildingAudit, forecast, goalStatuses, hasResearch, isTileFree, prestige, renovateCost, upgradeOffer, type CityStats } from "@/lib/game/engine";
-import { BRANCH_EFFECTS, BRANCH_MIN_VALUE, FORECAST_DAYS, PROJECTS } from "@/lib/game/config";
+import { computeCity, activeBranches, branchAt, branchCost, buildPreview, featureOpen, mapSize, nextTerritory, orientationCost, branchLimit, buildingAudit, forecast, goalStatuses, hasResearch, isTileFree, prestige, renovateCost, upgradeOffer, type CityStats } from "@/lib/game/engine";
+import { BRANCH_EFFECTS, BRANCH_MIN_VALUE, FEATURES, FORECAST_DAYS, ORIENTATIONS, ORIENTATION_BY_ID, PROJECTS } from "@/lib/game/config";
 import { specialtyText } from "@/lib/world/countries";
 import { ASSET_BY_SYMBOL, familyOf } from "@/lib/market/universe";
 import type { Plot } from "@/lib/game/layout";
@@ -184,7 +184,7 @@ export default function CityPage() {
     { id: "move", label: "Déplacer", icon: Move, on: tool === "move" || mode?.kind === "move" },
     { id: "demolish", label: "Démolir", icon: Trash2, on: tool === "demolish" },
     { id: "goals", label: "Objectifs", icon: Target, on: tool === "goals" },
-    { id: "firms", label: "Entreprises", icon: Handshake, on: tool === "firms" },
+    ...(featureOpen(game, "firms") ? [{ id: "firms" as const, label: "Entreprises", icon: Handshake, on: tool === "firms" }] : []),
     { id: "list", label: "Bâtiments", icon: LayoutList, on: tool === "list" },
     { id: "stats", label: "Stats", icon: BarChart3, on: tool === "stats", cls: "lg:hidden" },
     { id: "more", label: "Options", icon: Ellipsis, on: tool === "more" },
@@ -439,7 +439,11 @@ function Progression({ city, population, goals, onClaim }: { city: CityStats; po
   const game = useGame((s) => s.game);
   const buildProject = useGame((s) => s.buildProject);
   const expandTerritory = useGame((s) => s.expandTerritory);
+  const chooseOrientation = useGame((s) => s.chooseOrientation);
   const land = nextTerritory(game), size = mapSize(game);
+  const late = featureOpen(game, "projects"), canOrient = featureOpen(game, "orientation");
+  const switchCost = orientationCost(game);
+  const toCome = FEATURES.filter((f) => !featureOpen(game, f.id));
   const rank = CITY_RANKS[city.rank], next = CITY_RANKS[city.rank + 1];
   const unlocks = next ? BUILDINGS.filter((b) => b.buildable !== false && (b.unlockPop ?? 0) > population && (b.unlockPop ?? 0) <= next.pop) : [];
   const needs = next ? SERVICE_IDS.filter((id) => SERVICES[id].needPop > population && SERVICES[id].needPop <= next.pop) : [];
@@ -469,6 +473,40 @@ function Progression({ city, population, goals, onClaim }: { city: CityStats; po
           </>
         ) : <p className="mt-2 text-[12px] text-muted">Rang maximal atteint.</p>}
       </div>
+      {canOrient && (
+        <div className="border-t border-line pt-3">
+          <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted">Orientation de la ville</div>
+          <p className="mb-2 text-[11px] text-muted">
+            {game.orientation ? `Aujourd'hui : ${ORIENTATION_BY_ID[game.orientation].name}. En changer coûte ${compactEur(switchCost)}.` : "Un choix qui engage : chaque orientation a un avantage et un revers. Le premier choix est gratuit."}
+          </p>
+          <ul className="grid gap-2 sm:grid-cols-2">
+            {ORIENTATIONS.map((o) => {
+              const mine = game.orientation === o.id;
+              return (
+                <li key={o.id} className={`rounded-[10px] border p-2.5 ${mine ? "border-primary bg-primary-soft" : "border-line"}`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[13px] font-semibold">{o.name}</span>
+                    {mine ? <span className="text-[11px] font-semibold text-primary">Choisie</span>
+                      : <ConfirmButton onConfirm={() => chooseOrientation(o.id)} disabled={switchCost > game.cash} confirmLabel="Confirmer"
+                          className="rounded-[8px] border border-line bg-card px-2 py-1 text-[11px] font-semibold hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40">{switchCost ? compactEur(switchCost) : "Choisir"}</ConfirmButton>}
+                  </div>
+                  <div className="mt-1 text-[11px] text-emerald-700">{o.pro}</div>
+                  <div className="text-[11px] text-red-700">{o.con}</div>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+      {toCome.length > 0 && (
+        <div className="border-t border-line pt-3">
+          <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">À venir avec les prochains rangs</div>
+          <ul className="space-y-1 text-[12px]">
+            {toCome.map((f) => <li key={f.id} className="flex items-center justify-between gap-3 text-muted"><span className="inline-flex items-center gap-1.5"><Lock size={11} />{f.label}</span><span className="shrink-0">{CITY_RANKS[f.rank].name}</span></li>)}
+          </ul>
+        </div>
+      )}
+      {late && (
       <div className="flex items-center justify-between gap-3 border-t border-line pt-3">
         <div className="min-w-0">
           <div className="text-[13px] font-medium">Territoire : {size} × {size} carreaux</div>
@@ -480,6 +518,8 @@ function Progression({ city, population, goals, onClaim }: { city: CityStats; po
           : <ConfirmButton onConfirm={expandTerritory} disabled={land.cost > game.cash} confirmLabel="Confirmer"
               className="shrink-0 rounded-[10px] bg-primary px-3 py-2 text-[13px] font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40">{compactEur(land.cost)}</ConfirmButton>)}
       </div>
+      )}
+      {late && (
       <div className="border-t border-line pt-3">
         <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted">Grands projets · {game.projects?.length ?? 0} / {PROJECTS.length}</div>
         <ul className="space-y-2.5">
@@ -500,6 +540,7 @@ function Progression({ city, population, goals, onClaim }: { city: CityStats; po
           })}
         </ul>
       </div>
+      )}
       <div className="border-t border-line pt-3">
         <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted">Objectifs · {goals.filter((g) => g.claimed).length} / {goals.length}</div>
         <ul className="space-y-2.5">
@@ -570,6 +611,7 @@ function netPerDay(b: BuildingType) {
 
 function Palette({ active, onPick, onClose }: { active: string | null; onPick: (id: string) => void; onClose: () => void }) {
   const game = useGame((s) => s.game);
+  const city = useMemo(() => computeCity(game), [game]);
   const [cat, setCat] = useState<Category>("housing");
   return (
     <section className="hud appear p-2.5">
@@ -593,6 +635,7 @@ function Palette({ active, onPick, onClose }: { active: string | null; onPick: (
           const locked = !!b.unlockPop && game.population < b.unlockPop;
           const owned = game.buildings[b.id] ?? 0;
           const net = netPerDay(b);
+          const fx = buildPreview(game, b.id, city);
           const isActive = active === b.id;
           const Icon = CAT_ICON[b.category];
           return (
@@ -607,6 +650,14 @@ function Palette({ active, onPick, onClose }: { active: string | null; onPick: (
                   </span>
                 </span>
                 <Effects b={b} />
+                {!locked && (
+                  <span className="block rounded-[8px] bg-slate-50 px-2 py-1 text-[11px] tabular" title="Ce que ce bâtiment changerait dans votre ville telle qu'elle est aujourd'hui">
+                    <span className="text-muted">Dans votre ville : </span>
+                    <span className={`font-semibold ${tone(fx.net)}`}>{signedEur(fx.net)}/j</span>
+                    {Math.abs(fx.satisfaction) >= 0.005 && <span className={`font-semibold ${tone(fx.satisfaction)}`}> · {fx.satisfaction > 0 ? "+" : "−"}{Math.abs(Math.round(fx.satisfaction * 100))} pts</span>}
+                    {fx.growth > 0 && <span className="font-semibold text-success"> · +{num(fx.growth)} hab./j</span>}
+                  </span>
+                )}
                 <span className="mt-auto block text-[11px] text-muted">
                   {locked ? <span className="inline-flex items-center gap-1"><Lock size={11} />Débloqué à {num(b.unlockPop!)} habitants</span>
                     : b.cost > game.cash ? "Liquidités insuffisantes"

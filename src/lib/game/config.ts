@@ -282,6 +282,41 @@ export const RENOVATE_RATE = 0.03;
 /** Les attentes en équipements montent avec le rang : +10 % de pénalité par rang. */
 export const NEED_PER_RANK = 0.1;
 
+// ─── Orientation de la ville ──────────────────────────────────
+// Un choix qui engage : chaque orientation a un avantage et un revers. On n'en a qu'une à la fois.
+export type OrientationId = "industrial" | "green" | "financial" | "merchant";
+export interface Orientation {
+  id: OrientationId; name: string; pro: string; con: string;
+  /** Revenus par catégorie de bâtiment (+0,2 = +20 %). */
+  revenue?: Partial<Record<Category, number>>;
+  /** Multiplicateurs : pollution émise, production d'énergie, de nourriture, frais de courtage. */
+  pollution?: number; energy?: number; food?: number; fees?: number;
+  /** Points de satisfaction. */
+  satisfaction?: number;
+}
+export const ORIENTATIONS: Orientation[] = [
+  { id: "industrial", name: "Cité industrielle", pro: "Industrie : revenus +20 %", con: "Pollution +30 %, services −10 %", revenue: { industry: 0.2, services: -0.1 }, pollution: 1.3 },
+  { id: "green", name: "Ville verte", pro: "Pollution −60 %, satisfaction +3 points, énergie +10 %", con: "Industrie : revenus −15 %", revenue: { industry: -0.15 }, pollution: 0.4, satisfaction: 0.03, energy: 1.1 },
+  { id: "financial", name: "Place d'affaires", pro: "Services : revenus +15 %, frais de courtage −15 %", con: "Production de nourriture −15 %", revenue: { services: 0.15 }, fees: 0.85, food: 0.85 },
+  { id: "merchant", name: "Carrefour marchand", pro: "Commerce : revenus +20 %", con: "Industrie : revenus −10 %, énergie −10 %", revenue: { commerce: 0.2, industry: -0.1 }, energy: 0.9 },
+];
+export const ORIENTATION_BY_ID = Object.fromEntries(ORIENTATIONS.map((o) => [o.id, o])) as Record<OrientationId, Orientation>;
+/** Rang à partir duquel on choisit une orientation (indice dans CITY_RANKS). Le premier choix est gratuit. */
+export const ORIENTATION_MIN_RANK = 2;
+/** Changer d'orientation : ce montant × le rang de la ville. */
+export const ORIENTATION_CHANGE_COST = 150_000;
+
+// ─── Fonctions qui s'ouvrent avec le rang ─────────────────────
+/** Pour ne pas tout montrer d'un coup : chaque système apparaît au rang où il devient utile. */
+export type FeatureId = "firms" | "orientation" | "trade" | "hubs" | "projects";
+export const FEATURES: { id: FeatureId; rank: number; label: string; text: string; href: string }[] = [
+  { id: "firms", rank: 1, label: "Entreprises implantées", text: "Une entreprise dont vous êtes actionnaire peut ouvrir un site dans votre ville (bouton Entreprises).", href: "/ville" },
+  { id: "orientation", rank: ORIENTATION_MIN_RANK, label: "Orientation de la ville", text: "Choisissez ce que votre ville veut être : industrielle, verte, d'affaires ou marchande (bouton Objectifs).", href: "/ville" },
+  { id: "trade", rank: 2, label: "Commerce entre joueurs", text: "Achetez par contrat le surplus d'énergie ou de nourriture d'un autre joueur (Monde › Commerce).", href: "/monde" },
+  { id: "hubs", rank: 2, label: "Places financières", text: "Ouvrez un bureau dans une place financière pour réduire vos frais de courtage (Monde).", href: "/monde" },
+  { id: "projects", rank: 3, label: "Grands projets et territoire", text: "Agrandissez votre territoire et lancez des projets qui marquent votre ville (bouton Objectifs).", href: "/ville" },
+];
+
 // ─── Territoire ───────────────────────────────────────────────
 /** Agrandissements du territoire : côté de la carte, prix, rang de ville minimal. Compté dans le patrimoine. */
 export const TERRITORY: { size: number; cost: number; minRank: number }[] = [
