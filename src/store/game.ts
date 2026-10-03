@@ -35,6 +35,7 @@ interface Store {
   deleteFolder: (id: string) => void;
   renameCity: (name: string) => boolean;
   claimGoal: (id: string) => boolean;
+  upgrade: (tile: { x: number; y: number }) => boolean;
   closeTutorial: () => void;
   skipDay: () => void;
   reset: () => void;
@@ -147,6 +148,13 @@ export const useGame = create<Store>()(
         if (!r.ok) { get().notify(r.error, "error"); return false; }
         set({ game: r.state });
         get().notify("Subvention encaissée");
+        return true;
+      },
+      upgrade: (tile) => {
+        const r = E.upgrade(get().game, tile, Date.now());
+        if (!r.ok) { get().notify(r.error, "error"); return false; }
+        set({ game: r.state });
+        get().notify("Bâtiment amélioré");
         return true;
       },
       closeTutorial: () => set({ game: { ...get().game, tutorialDone: true } }),

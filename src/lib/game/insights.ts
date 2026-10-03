@@ -1,7 +1,8 @@
 // Alertes et objectifs. Règle de la charte : une alerte n'apparaît que si
 // le joueur peut agir dessus.
 import type { CityStats, GameState, Prices } from "./engine";
-import { portfolioValue } from "./engine";
+import { goalStatuses, portfolioValue } from "./engine";
+import { SERVICES, SERVICE_IDS } from "./config";
 
 export type AlertLevel = "info" | "warning" | "danger" | "success";
 export interface Alert { id: string; level: AlertLevel; title: string; detail: string; href: string }
@@ -24,6 +25,14 @@ export function computeAlerts(state: GameState, city: CityStats, prices: Prices)
   }
   if (city.freeHousing === 0 && city.openJobs > 0) {
     out.push({ id: "housing", level: "info", title: "Votre ville est pleine", detail: `${fmt(city.openJobs)} emplois attendent des habitants : construisez des logements.`, href: "/ville" });
+  }
+  const missing = SERVICE_IDS.filter((id) => city.services[id].needed && city.services[id].coverage < 1);
+  if (missing.length) {
+    out.push({ id: "services", level: "warning", title: "Il manque des équipements publics", detail: `${missing.map((id) => SERVICES[id].label).join(", ")} : la satisfaction baisse.`, href: "/ville" });
+  }
+  const toClaim = goalStatuses(state, city).filter((g) => g.done && !g.claimed);
+  if (toClaim.length) {
+    out.push({ id: "goals", level: "success", title: `${toClaim.length} subvention${toClaim.length > 1 ? "s" : ""} à encaisser`, detail: `${fmt(toClaim.reduce((a, g) => a + g.goal.reward, 0))} € vous attendent dans Ville › Objectifs.`, href: "/ville" });
   }
   const pv = portfolioValue(state.holdings, prices);
   if (pv > 5_000) {

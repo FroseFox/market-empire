@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import {
-  BarChart3, Briefcase, Building2, Ellipsis, Factory, FastForward, Hammer, Home, Landmark, LayoutList, Lock, MousePointerClick, Move, Pencil, RotateCcw, Smile, Store, Target, Trash2, Trees, TrendingUp, Trophy, Users, Wheat, X, Zap,
+  BarChart3, ArrowUpCircle, Briefcase, Building2, Ellipsis, Factory, FastForward, Hammer, Home, Landmark, LayoutList, Lock, MousePointerClick, Move, Pencil, RotateCcw, Smile, Store, Target, Trash2, Trees, TrendingUp, Trophy, Users, Wheat, X, Zap,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useDerived, useGame } from "@/store/game";
@@ -9,7 +9,8 @@ import { BUILDINGS, BUILDING_BY_ID, CATEGORY_LABELS, CITY_RANKS, SERVICES, SERVI
 import { Button, ConfirmButton, Progress } from "@/components/ui";
 import IsoCity, { type CityMarker, type CityMode, type MarkerKind } from "@/components/IsoCity";
 import { useMedia } from "@/lib/useMedia";
-import { goalStatuses, isTileFree, type CityStats } from "@/lib/game/engine";
+import { buildingAudit, forecast, goalStatuses, hasResearch, isTileFree, upgradeOffer, type CityStats } from "@/lib/game/engine";
+import { FORECAST_DAYS } from "@/lib/game/config";
 import type { Plot } from "@/lib/game/layout";
 import { compactEur, eur, num, pctPlain, signedEur, tone } from "@/lib/format";
 
@@ -58,6 +59,7 @@ export default function CityPage() {
   const demolish = useGame((s) => s.demolish);
   const notify = useGame((s) => s.notify);
   const claimGoal = useGame((s) => s.claimGoal);
+  const upgrade = useGame((s) => s.upgrade);
   const [tool, setTool] = useState<Tool>(null);
   const [mode, setMode] = useState<CityMode | null>(null);
   const [selected, setSelected] = useState<Tile | null>(null);
@@ -115,6 +117,7 @@ export default function CityPage() {
     () => cityMarkers(game.plots, { energy: flags.energy, food: flags.food, full: flags.full, staff: flags.staff, service: flags.service }),
     [game.plots, flags.energy, flags.food, flags.full, flags.staff, flags.service],
   );
+  const outlook = hasResearch(game, "city_forecast") ? forecast(game) : null;
   const goals = goalStatuses(game, city);
   const toClaim = goals.filter((g) => g.done && !g.claimed).length;
 
@@ -133,11 +136,12 @@ export default function CityPage() {
   } else if (tool === "list") {
     dock = <DockPanel title="Mes bâtiments" onClose={() => setTool(null)}><Owned onSelect={(t) => { setTool(null); setSelected(t); }} /></DockPanel>;
   } else if (tool === "stats") {
-    dock = <DockPanel title="Statistiques" onClose={() => setTool(null)}><div className="space-y-4"><CityBars city={city} population={game.population} /><Budget city={city} /></div></DockPanel>;
+    dock = <DockPanel title="Statistiques" onClose={() => setTool(null)}><div className="space-y-4"><CityBars city={city} population={game.population} outlook={outlook} /><Budget city={city} /></div></DockPanel>;
   } else if (tool === "more") {
     dock = <DockPanel title="Options" onClose={() => setTool(null)}><MoreMenu /></DockPanel>;
   } else if (selectedPlot && !mode) {
-    dock = <SelectedPanel plot={selectedPlot} confirmDemolish={tool === "demolish"}
+    dock = <SelectedPanel plot={selectedPlot} city={city} confirmDemolish={tool === "demolish"}
+      onUpgrade={() => upgrade({ x: selectedPlot.x, y: selectedPlot.y })}
       onMove={() => setMode({ kind: "move", id: selectedPlot.id, from: { x: selectedPlot.x, y: selectedPlot.y } })}
       onDemolish={() => { demolish(selectedPlot.id, { x: selectedPlot.x, y: selectedPlot.y }); setSelected(null); }}
       onClose={() => setSelected(null)} />;
@@ -165,7 +169,7 @@ export default function CityPage() {
     <div className="city-stage">
       <IsoCity plots={game.plots} height="fill" initialZoom={phone ? 1.3 : 1} mode={mode} selected={selected} onTileClick={onTileClick}
         markers={markers} selectedTone={tool === "demolish" ? "danger" : "primary"}
-        padTop={small ? 64 : 72} padBottom={small ? 76 : 84} zoomClass="left-3 top-1/2 -translate-y-1/2" hint={false} />
+        padTop={small ? 64 : 72} padBottom={small ? 76 : 84} zoomClass="left-3 top-[76px]" hint={false} />
 
       {/* Haut : ressources à gauche, budget à droite */}
       <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start gap-3 p-3">
@@ -220,7 +224,7 @@ export default function CityPage() {
           </div>
         </div>
         <div className="pointer-events-auto hidden w-[250px] shrink-0 lg:block">
-          <div className="hud p-3.5"><CityBars city={city} population={game.population} /></div>
+          <div className="hud p-3.5"><CityBars city={city} population={game.population} outlook={outlook} /></div>
         </div>
       </div>
     </div>
@@ -265,7 +269,7 @@ function Budget({ city }: { city: CityStats }) {
 }
 
 /** Stats n°1 : l'état de la ville en trois jauges. */
-function CityBars({ city, population }: { city: CityStats; population: number }) {
+function CityBars({ city, population, outlook }: { city: CityStats; population: number; outlook: ReturnType<typeof forecast> | null }) {
   const full = city.freeHousing === 0 && city.housing > 0;
   const jobless = city.unemploymentRate > 0.08;
   return (
@@ -285,6 +289,12 @@ function CityBars({ city, population }: { city: CityStats; population: number })
         <span className="text-muted">Croissance</span>
         <span className={`font-semibold tabular ${tone(city.growth)}`}>{city.growth >= 0 ? "+" : "−"}{num(Math.abs(city.growth))} hab. / jour</span>
       </div>
+      {outlook && (
+        <div className="flex justify-between gap-3 text-[12px]" title="Si rien ne change : même ville, mêmes bâtiments">
+          <span className="shrink-0 text-muted">Dans {FORECAST_DAYS} j</span>
+          <span className="text-right font-semibold tabular">{num(outlook.population)} hab. · <span className={tone(outlook.net)}>{signedEur(outlook.net)}/j</span></span>
+        </div>
+      )}
     </div>
   );
 }
@@ -400,12 +410,13 @@ function Palette({ active, onPick, onClose }: { active: string | null; onPick: (
   return (
     <section className="hud appear p-2.5">
       <div className="mb-2 flex items-center gap-2">
-        <div className="flex min-w-0 flex-1 gap-1 overflow-x-auto no-scrollbar" role="tablist" aria-label="Catégories">
+        <div className="flex min-w-0 flex-1 gap-1 overflow-x-auto no-scrollbar sm:flex-wrap sm:overflow-visible" role="tablist" aria-label="Catégories"
+          onWheel={(e) => { if (e.deltaY && !e.deltaX) e.currentTarget.scrollLeft += e.deltaY; }}>
           {BUILD_CATS.map((c) => {
             const Icon = CAT_ICON[c];
             return (
               <button key={c} role="tab" aria-selected={c === cat} onClick={() => setCat(c)}
-                className={`flex shrink-0 items-center gap-1.5 rounded-[10px] px-3 py-1.5 text-[12px] font-medium transition-colors ${c === cat ? "bg-primary text-white" : "bg-slate-50 text-muted hover:bg-slate-100"}`}>
+                className={`flex shrink-0 items-center gap-1.5 rounded-[10px] px-2.5 py-1.5 text-[12px] font-medium transition-colors ${c === cat ? "bg-primary text-white" : "bg-slate-50 text-muted hover:bg-slate-100"}`}>
                 <Icon size={14} />{CATEGORY_LABELS[c]}
               </button>
             );
@@ -448,9 +459,15 @@ function Palette({ active, onPick, onClose }: { active: string | null; onPick: (
   );
 }
 
-function SelectedPanel({ plot, confirmDemolish, onMove, onDemolish, onClose }: { plot: Plot; confirmDemolish: boolean; onMove: () => void; onDemolish: () => void; onClose: () => void }) {
+function SelectedPanel({ plot, city, confirmDemolish, onUpgrade, onMove, onDemolish, onClose }: { plot: Plot; city: CityStats; confirmDemolish: boolean; onUpgrade: () => void; onMove: () => void; onDemolish: () => void; onClose: () => void }) {
+  const game = useGame((s) => s.game);
   const b = BUILDING_BY_ID[plot.id];
   if (!b) return null;
+  const offer = upgradeOffer(game, plot.id);
+  const next = offer ? BUILDING_BY_ID[offer.to] : null;
+  const canUpgrade = hasResearch(game, "city_upgrade");
+  const popLocked = !!next?.unlockPop && game.population < next.unlockPop;
+  const audit = hasResearch(game, "city_audit") ? buildingAudit(plot.id, city) : null;
   const Icon = CAT_ICON[b.category];
   const refund = compactEur(b.cost * DEMOLISH_REFUND);
   return (
@@ -464,6 +481,29 @@ function SelectedPanel({ plot, confirmDemolish, onMove, onDemolish, onClose }: {
         <button onClick={onClose} aria-label="Fermer" className="rounded-[6px] p-1 text-muted hover:bg-slate-100"><X size={16} /></button>
       </div>
       <Effects b={b} />
+      {audit && (
+        <dl className="mt-2.5 grid grid-cols-3 gap-1.5 text-[11px]">
+          <div className="rounded-[8px] bg-slate-50 px-2 py-1.5"><dt className="text-muted">Revenus</dt><dd className="font-semibold tabular">{signedEur(audit.revenue)}</dd></div>
+          <div className="rounded-[8px] bg-slate-50 px-2 py-1.5"><dt className="text-muted">Ressources</dt><dd className={`font-semibold tabular ${tone(audit.resources)}`}>{signedEur(audit.resources)}</dd></div>
+          <div className="rounded-[8px] bg-slate-50 px-2 py-1.5"><dt className="text-muted">Net / jour</dt><dd className={`font-semibold tabular ${tone(audit.net)}`}>{signedEur(audit.net)}</dd></div>
+          {b.jobs && audit.staffing < 0.999 ? <p className="col-span-3 text-muted">Personnel : {pctPlain(audit.staffing)} des postes pourvus dans la ville.</p> : null}
+        </dl>
+      )}
+      {next && offer && !confirmDemolish && (
+        <div className="mt-2.5 flex items-center gap-2.5 rounded-[10px] border border-line p-2.5">
+          <ArrowUpCircle size={18} className="shrink-0 text-primary" />
+          <div className="min-w-0 flex-1 text-[12px]">
+            <div className="font-semibold">Améliorer en {next.name}</div>
+            <div className="text-muted">
+              {!canUpgrade ? "Recherche « Rénovation urbaine » requise"
+                : popLocked ? `Débloqué à ${num(next.unlockPop!)} habitants`
+                : offer.cost > game.cash ? `${compactEur(offer.cost)} · liquidités insuffisantes`
+                : offer.cost < next.cost ? `${compactEur(offer.cost)} au lieu de ${compactEur(next.cost)}` : compactEur(offer.cost)}
+            </div>
+          </div>
+          <Button onClick={onUpgrade} disabled={!canUpgrade || popLocked || offer.cost > game.cash} className="shrink-0 !px-3">{canUpgrade ? "Améliorer" : <Lock size={14} />}</Button>
+        </div>
+      )}
       {b.buildable === false && <p className="mt-2.5 text-[12px] text-muted">Bâtiment d&apos;origine : il peut être déplacé mais pas démoli.</p>}
       {confirmDemolish ? (
         <div className="mt-3 flex gap-2">

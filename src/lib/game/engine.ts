@@ -3,7 +3,7 @@
 import {
   ACTIVE_RATIO, BUILDING_BY_ID, DAY_LENGTH_MINUTES, DEMOLISH_REFUND, ENERGY_PER_RESIDENT,
   EXPORT_RATIO, FOOD_PER_RESIDENT, MAINTENANCE_RATE, MAX_CATCHUP_DAYS, RESOURCE_PRICES,
-  CITY_RANKS, GOALS, SERVICES, SERVICE_BONUS, SERVICE_IDS,
+  CITY_RANKS, FORECAST_DAYS, GOALS, UPGRADES, SERVICES, SERVICE_BONUS, SERVICE_IDS,
   STARTING_BUILDINGS, STARTING_CASH, STARTING_POPULATION, TAX_PER_RESIDENT, TRADE_FEE_MIN, TRADE_FEE_RATE,
   type Goal, type ServiceId,
 } from "./config";
@@ -520,6 +520,62 @@ export function demolish(state: GameState, buildingId: string, at: number, tile?
       transactions: addTx(state, { kind: "demolish", label: `Démolition : ${b.name}`, amount: refund, at }),
     },
   };
+}
+
+/** Version supérieure d'un bâtiment et prix à payer (un bâtiment offert au départ se paie au prix plein). */
+export function upgradeOffer(state: Pick<GameState, "buildings">, buildingId: string): { to: string; cost: number } | null {
+  const b = BUILDING_BY_ID[buildingId], to = BUILDING_BY_ID[UPGRADES[buildingId]];
+  if (!b || !to) return null;
+  const offered = (state.buildings[buildingId] ?? 0) <= (STARTING_BUILDINGS[buildingId] ?? 0);
+  return { to: to.id, cost: to.cost - (offered ? 0 : b.cost) };
+}
+
+/** Améliore sur place le bâtiment du carreau `tile` (recherche « Rénovation urbaine »). */
+export function upgrade(state: GameState, tile: { x: number; y: number }, at: number): ActionResult {
+  const plot = state.plots.find((p) => p.x === tile.x && p.y === tile.y);
+  if (!plot) return { ok: false, error: "Aucun bâtiment ici." };
+  if (!hasResearch(state, "city_upgrade")) return { ok: false, error: "Débloquez d'abord « Rénovation urbaine » dans Recherche." };
+  const offer = upgradeOffer(state, plot.id);
+  if (!offer) return { ok: false, error: "Ce bâtiment n'a pas de version supérieure." };
+  const from = BUILDING_BY_ID[plot.id], to = BUILDING_BY_ID[offer.to];
+  if (to.unlockPop && state.population < to.unlockPop) return { ok: false, error: `${to.name} : débloqué à ${to.unlockPop} habitants.` };
+  if (offer.cost > state.cash) return { ok: false, error: "Liquidités insuffisantes." };
+  const buildings = { ...state.buildings, [from.id]: (state.buildings[from.id] ?? 0) - 1, [to.id]: (state.buildings[to.id] ?? 0) + 1 };
+  if (buildings[from.id] <= 0) delete buildings[from.id];
+  return {
+    ok: true,
+    state: {
+      ...state,
+      cash: round2(state.cash - offer.cost),
+      buildings,
+      plots: state.plots.map((p) => (p === plot ? { ...p, id: to.id } : p)),
+      transactions: addTx(state, { kind: "build", label: `Amélioration : ${from.name} → ${to.name}`, amount: -offer.cost, at }),
+    },
+  };
+}
+
+/** Population et flux net attendus dans quelques jours si rien ne change (recherche « Prévisions de la ville »). */
+export function forecast(state: Pick<GameState, "buildings" | "population">, days = FORECAST_DAYS): { population: number; net: number; cash: number } {
+  let population = state.population, cash = 0;
+  for (let i = 0; i < days; i++) {
+    const c = computeCity({ buildings: state.buildings, population });
+    cash += c.net;
+    population = Math.max(0, population + c.growth);
+  }
+  return { population, net: computeCity({ buildings: state.buildings, population }).net, cash };
+}
+
+/** Ce qu'un bâtiment rapporte et coûte réellement par jour dans la ville actuelle (recherche « Audit des bâtiments »). */
+export function buildingAudit(buildingId: string, city: CityStats): { revenue: number; resources: number; maintenance: number; net: number; staffing: number } {
+  const b = BUILDING_BY_ID[buildingId];
+  const staffing = city.jobs > 0 ? city.employed / city.jobs : 0;
+  const revenue = (b.revenue ?? 0) * staffing;
+  // Une unité produite vaut le prix plein tant que la ville importe, le prix d'export sinon ; idem pour ce qui est consommé
+  const unit = (balance: number, price: number) => (balance < 0 ? price : price * EXPORT_RATIO);
+  const resources = ((b.energyProd ?? 0) - (b.energyUse ?? 0)) * unit(city.energy.balance, RESOURCE_PRICES.energy)
+    + (b.foodProd ?? 0) * unit(city.food.balance, RESOURCE_PRICES.food);
+  const maintenance = b.cost * MAINTENANCE_RATE;
+  return { revenue, resources, maintenance, net: revenue + resources - maintenance, staffing };
 }
 
 // ─── Carte ────────────────────────────────────────────────────

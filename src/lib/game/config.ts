@@ -124,6 +124,17 @@ export interface BuildingType {
   description: string;
 }
 
+/** Amélioration sur place (recherche « Rénovation urbaine ») : bâtiment → sa version supérieure, pour la différence de prix. */
+export const UPGRADES: Record<string, string> = {
+  house_s: "house_m", house_m: "house_l", house_l: "house_xl",
+  factory_s: "factory_m", factory_m: "factory_l",
+  farm_s: "farm_m", farm_m: "farm_l",
+  power_s: "power_m", power_m: "power_l",
+  shop: "services",
+};
+/** Nombre de jours simulés par la recherche « Prévisions de la ville ». */
+export const FORECAST_DAYS = 7;
+
 export const BUILDINGS: BuildingType[] = [
   // 🏠 Logements
   { id: "house_s", name: "Petit quartier", category: "housing", cost: 20_000, housing: 100, description: "+100 habitants" },

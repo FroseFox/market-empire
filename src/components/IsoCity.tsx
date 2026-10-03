@@ -2,6 +2,7 @@
 // Vue isométrique 2.5D de la ville, dessinée sur un canvas.
 // Tout est calculé à partir de `plots` : aucune image externe.
 // Navigation : molette / pincement (zoom vers le curseur), glisser, double-clic, clavier (flèches, + / −, 0).
+// Autour de la ville : un paysage (campagne en damier, bosquets, côte et mer, routes qui partent au loin).
 // La ville suit l'heure réelle : elle s'assombrit le soir et les fenêtres s'allument.
 // Performances : chaque type de bâtiment est dessiné une fois puis réutilisé comme image tant que le zoom ne bouge pas,
 // et la ville au repos est animée à 30 images par seconde.
@@ -18,7 +19,8 @@ const TW = 64, TH = 32; // taille d'un carreau à l'échelle 1
 const C = {
   grass: ["#A9DA8C", "#A3D686", "#9CD080", "#AEDD93"], grassEdge: "#86BF6A", tuft: "rgba(74,130,64,.35)",
   curb: "#CDD5DF", crosswalk: "rgba(255,255,255,.8)", lamp: "#475569", pineA: "#3F7F4E", pineB: "#336B41",
-  soilL: "#B08A63", soilR: "#8F6E4E", soilDark: "#6F543B",
+  land: "#A4D788", sand: "#EFE3BC", sea: "#8FCBEF", seaDeep: "#74B8E6", foam: "rgba(255,255,255,.75)",
+  patches: ["rgba(126,184,98,.38)", "rgba(196,226,150,.45)", "rgba(222,206,120,.42)", "rgba(110,170,92,.30)", "rgba(190,214,120,.40)"],
   road: "#5B6778", roadLine: "#E2E8F0", sidewalk: "#D5DCE5",
   wallL: "#F1F5F9", wallR: "#CBD5E1", wallTop: "#F8FAFC",
   roofL: "#E07A5F", roofR: "#B85C44",
@@ -203,9 +205,12 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
     let x0 = Math.min(...xs, MAP_SIZE / 2 - span) - pad, x1 = Math.max(...xs, MAP_SIZE / 2 + span) + pad;
     let y0 = Math.min(...ys, MAP_SIZE / 2 - span) - pad, y1 = Math.max(...ys, MAP_SIZE / 2 + span) + pad;
     x0 = Math.max(0, x0); y0 = Math.max(0, y0); x1 = Math.min(MAP_SIZE - 1, x1); y1 = Math.min(MAP_SIZE - 1, y1);
+    // La ville s'arrête sur une route (boulevard de ceinture), pas au milieu d'un pâté de maisons
+    x0 = Math.floor(x0 / 4) * 4; y0 = Math.floor(y0 / 4) * 4;
+    x1 = Math.min(MAP_SIZE - 1, Math.ceil(x1 / 4) * 4); y1 = Math.min(MAP_SIZE - 1, Math.ceil(y1 / 4) * 4);
 
     const byTile = new Map(plots.map((p) => [`${p.x},${p.y}`, p]));
-    const SLAB = 18; // épaisseur du socle
+    const SLAB = 0; // plus de socle : la ville est posée dans son paysage
     let scale = 1, ox = 0, oy = 0, W = 0, H = 0, dpr = 1, base = { scale: 1, ox: 0, oy: 0 };
 
     const iso = (x: number, y: number, z = 0): Pt => [ox + (x - y) * (TW / 2) * scale, oy + (x + y) * (TH / 2) * scale - z * scale];
@@ -329,7 +334,27 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
       poly([iso(dx, by, 0), iso(dx + 0.08, by, 0), iso(dx + 0.08, by, 5), iso(dx, by, 5)], "#94A3B8");
     }
 
+    /** Arbre : recopié depuis une image quand le zoom est stable, dessiné en direct sinon. */
     function tree(x: number, y: number, s = 1, pine = hash(Math.round(x * 13), Math.round(y * 17)) < 0.35) {
+      if (!useSprites || baking) { paintTree(x, y, s, pine); return; }
+      const q = Math.round(s * 5) / 5, key = `tree|${pine ? 1 : 0}|${q}`;
+      let sp = sprites.get(key);
+      if (!sp) {
+        const L = 9 * q * scale + 2, T = 26 * q * scale + 2, w = Math.ceil(L + 11 * q * scale + 2), h = Math.ceil(T + 4 * q * scale + 2);
+        const c = document.createElement("canvas"); c.width = Math.ceil(w * dpr); c.height = Math.ceil(h * dpr);
+        const cx = c.getContext("2d")!; cx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        const keep = { ox, oy, g };
+        ox = L; oy = T; g = cx; baking = true;
+        paintTree(0, 0, q, pine);
+        baking = false;
+        ({ ox, oy, g } = keep);
+        sp = { cv: c, lit: null, dx: L, dy: T, w, h };
+        sprites.set(key, sp);
+      }
+      const [px, py] = iso(x, y, 0);
+      g.drawImage(sp.cv, snap(px - sp.dx), snap(py - sp.dy), sp.w, sp.h);
+    }
+    function paintTree(x: number, y: number, s: number, pine: boolean) {
       const [px, py] = iso(x, y, 0);
       g.fillStyle = C.shadow; g.beginPath(); g.ellipse(px + 3 * scale, py, 6 * s * scale, 3 * s * scale, 0, 0, Math.PI * 2); g.fill();
       if (pine) {
@@ -618,12 +643,6 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
 
     /** Sol : socle, herbe, routes, trottoirs. Ne dépend que de la vue : mis en cache quand elle ne bouge pas. */
     function ground() {
-      poly([iso(x0, y1 + 1), iso(x1 + 1, y1 + 1), [iso(x1 + 1, y1 + 1)[0], iso(x1 + 1, y1 + 1)[1] + SLAB * scale], [iso(x0, y1 + 1)[0], iso(x0, y1 + 1)[1] + SLAB * scale]], C.soilL);
-      poly([iso(x1 + 1, y0), iso(x1 + 1, y1 + 1), [iso(x1 + 1, y1 + 1)[0], iso(x1 + 1, y1 + 1)[1] + SLAB * scale], [iso(x1 + 1, y0)[0], iso(x1 + 1, y0)[1] + SLAB * scale]], C.soilR);
-      const edgeL = iso(x0, y1 + 1), edgeC = iso(x1 + 1, y1 + 1), edgeR = iso(x1 + 1, y0);
-      poly([edgeL, edgeC, [edgeC[0], edgeC[1] + 4 * scale], [edgeL[0], edgeL[1] + 4 * scale]], C.grassEdge);
-      poly([edgeC, edgeR, [edgeR[0], edgeR[1] + 4 * scale], [edgeC[0], edgeC[1] + 4 * scale]], "#76AD5C");
-
       const m = modeRef.current;
       const mx = TW * scale, my = TH * scale;
       for (let x = x0; x <= x1; x++) {
@@ -681,6 +700,97 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
           if (m && isBuildable(x, y) && !byTile.has(`${x},${y}`)) poly(q, "rgba(16,185,129,.10)");
         }
       }
+    }
+
+    // ─── Paysage autour de la ville ───
+    const COAST = MAP_SIZE + 5, CELL = 5;
+    /** Ligne de côte (ondulée) : la mer est au sud-ouest, au-delà de y = coast(x). */
+    const coast = (x: number) => COAST + Math.sin(x * 0.45) * 0.9 + Math.sin(x * 0.17 + 1) * 1.6;
+    function backdrop() {
+      g.fillStyle = C.land; g.fillRect(0, 0, W, H);
+      // Partie du monde visible à l'écran
+      const inv = (sx: number, sy: number) => { const a = (sx - ox) / (TW / 2 * scale), b = (sy - oy) / (TH / 2 * scale); return [(a + b) / 2, (b - a) / 2]; };
+      const cs = [inv(0, 0), inv(W, 0), inv(0, H), inv(W, H)];
+      const wx0 = Math.max(-140, Math.min(...cs.map((c) => c[0])) - 1), wx1 = Math.min(170, Math.max(...cs.map((c) => c[0])) + 1);
+      const wy0 = Math.max(-140, Math.min(...cs.map((c) => c[1])) - 1), wy1 = Math.min(170, Math.max(...cs.map((c) => c[1])) + 1);
+      const vis = (x: number, y: number, m: number) => { const [sx, sy] = iso(x, y); return sx > -m && sx < W + m && sy > -m && sy < H + m; };
+      const cm = CELL * TW * scale;
+      // Campagne : un damier de prés et de champs
+      const groves: Pt[] = [];
+      for (let cx = Math.floor(wx0 / CELL); cx <= Math.floor(wx1 / CELL); cx++) {
+        for (let cy = Math.floor(wy0 / CELL); cy <= Math.floor(wy1 / CELL); cy++) {
+          const x = cx * CELL, y = cy * CELL;
+          if (!vis(x + CELL / 2, y + CELL / 2, cm) || y + CELL > COAST - 4) continue;
+          const r = hash(cx * 7 + 3, cy * 11 + 5);
+          if (r < 0.62) poly([iso(x + 0.15, y + 0.15), iso(x + CELL - 0.15, y + 0.15), iso(x + CELL - 0.15, y + CELL - 0.15), iso(x + 0.15, y + CELL - 0.15)], C.patches[Math.floor(r / 0.62 * C.patches.length)]);
+          // Bosquets, hors de la ville et des grandes routes
+          const inCity = x + CELL > x0 - 1 && x < x1 + 2 && y + CELL > y0 - 1 && y < y1 + 2;
+          const onRoad = (x <= 17 && x + CELL >= 16) || (y <= 17 && y + CELL >= 16);
+          if (!inCity && !onRoad && hash(cx * 13 + 1, cy * 5 + 9) < 0.42) groves.push([x, y]);
+        }
+      }
+      // Routes qui quittent la ville (prolongement des deux avenues centrales)
+      const road = (ax: number, ay: number, bx: number, by: number, alongX: boolean) => {
+        poly([iso(ax, ay), iso(bx, ay), iso(bx, by), iso(ax, by)], C.road);
+        const a = alongX ? iso(ax, ay + 0.5) : iso(ax + 0.5, ay), b = alongX ? iso(bx, ay + 0.5) : iso(ax + 0.5, by);
+        g.strokeStyle = C.roadLine; g.lineWidth = Math.max(0.6, scale); g.setLineDash([3 * scale, 4 * scale]);
+        g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.stroke(); g.setLineDash([]);
+      };
+      const mid = MAP_SIZE / 2;
+      if (wx0 < x0) road(wx0, mid, x0, mid + 1, true);
+      if (wx1 > x1 + 1) road(x1 + 1, mid, wx1, mid + 1, true);
+      if (wy0 < y0) road(mid, wy0, mid + 1, y0, false);
+      const quay = coast(mid + 0.5) - 0.2;
+      if (wy1 > y1 + 1) road(mid, y1 + 1, mid + 1, quay, false);
+      // Côte : plage, mer, large
+      if (wy1 > COAST - 4) {
+        const band = (off: number, fill: string) => {
+          g.beginPath();
+          for (let x = Math.floor(wx0); x <= Math.ceil(wx1); x++) { const [sx, sy] = iso(x, coast(x) + off); if (x === Math.floor(wx0)) g.moveTo(sx, sy); else g.lineTo(sx, sy); }
+          const far = Math.max(wy1, COAST) + 6;
+          const [ex, ey] = iso(Math.ceil(wx1), far), [fx, fy] = iso(Math.floor(wx0), far);
+          g.lineTo(ex, ey); g.lineTo(fx, fy); g.closePath(); g.fillStyle = fill; g.fill();
+        };
+        band(-0.8, C.sand); band(0, C.sea);
+        g.strokeStyle = C.foam; g.lineWidth = Math.max(1, 1.6 * scale);
+        g.beginPath();
+        for (let x = Math.floor(wx0); x <= Math.ceil(wx1); x++) { const [sx, sy] = iso(x, coast(x) + 0.12); if (x === Math.floor(wx0)) g.moveTo(sx, sy); else g.lineTo(sx, sy); }
+        g.stroke();
+        band(4.5, C.seaDeep);
+        // Ponton au bout de la route du sud, et quelques voiliers
+        poly([iso(mid + 0.3, quay), iso(mid + 0.7, quay), iso(mid + 0.7, quay + 2.4), iso(mid + 0.3, quay + 2.4)], "#C9A77A");
+        for (let i = 0; i < 9; i++) {
+          const bx = -30 + i * 11 + hash(i, 41) * 6, by = coast(bx) + 2 + hash(i, 17) * 7;
+          if (!vis(bx, by, 40)) continue;
+          const [px, py] = iso(bx, by);
+          poly([[px - 5 * scale, py], [px + 5 * scale, py], [px + 3.5 * scale, py + 2.2 * scale], [px - 3.5 * scale, py + 2.2 * scale]], "#F8FAFC");
+          poly([[px, py - 1 * scale], [px, py - 11 * scale], [px + 5 * scale, py - 1 * scale]], "#FFFFFF");
+        }
+      }
+      // Bosquets (du fond vers l'avant)
+      groves.sort((a, b) => a[0] + a[1] - b[0] - b[1]);
+      for (const [x, y] of groves) {
+        const n = 3 + Math.floor(hash(x + 2, y + 9) * 4);
+        const pts: Pt[] = Array.from({ length: n }, (_, i) => [x + 0.6 + hash(x + i, y) * (CELL - 1.2), y + 0.6 + hash(x, y + i * 3) * (CELL - 1.2)]);
+        pts.sort((a, b) => a[0] + a[1] - b[0] - b[1]);
+        for (const [tx, ty] of pts) tree(tx, ty, 1 + hash(Math.round(tx * 9), Math.round(ty * 7)) * 0.2);
+      }
+    }
+    // Le paysage ne dépend que de la vue : dès qu'elle est stable, on recopie son image.
+    const backCv = document.createElement("canvas");
+    const backCtx = backCv.getContext("2d");
+    let backKey = "", backSeen = "";
+    function paintBackdrop() {
+      const key = `${scale}|${ox.toFixed(1)}|${oy.toFixed(1)}|${cv!.width}|${cv!.height}|${useSprites ? 1 : 0}`;
+      if (!backCtx) { backdrop(); return; }
+      if (key !== backKey) {
+        if (key !== backSeen) { backSeen = key; backKey = ""; backdrop(); return; }
+        if (backCv.width !== cv!.width || backCv.height !== cv!.height) { backCv.width = cv!.width; backCv.height = cv!.height; }
+        backCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        g = backCtx; backdrop(); g = main!;
+        backKey = key;
+      }
+      main!.drawImage(backCv, 0, 0, W, H);
     }
 
     // Calque du sol : toute la carte est dessinée une fois par niveau de zoom, puis recopiée (même pendant un déplacement).
@@ -795,7 +905,7 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
       useSprites = key === spriteKey;
       prevKey = key;
       g = main!;
-      g.clearRect(0, 0, W, H);
+      paintBackdrop();
       paintGround();
 
       // Carreau survolé
@@ -1020,7 +1130,7 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
 
   return (
     <div ref={wrap} className={`relative w-full overflow-hidden outline-none ${height === "fill" ? "" : "rounded-[12px] focus-visible:ring-2 focus-visible:ring-primary"}`}
-      style={{ height: height === "fill" ? "100%" : height, background: "radial-gradient(ellipse at 50% 20%, #F3F8FE 0%, #DDE8F4 100%)" }}
+      style={{ height: height === "fill" ? "100%" : height, background: C.land }}
       tabIndex={compact ? undefined : 0} onKeyDown={compact ? undefined : onKey}>
       <canvas ref={canvas} role="img" className={compact ? "" : `block ${mode ? "cursor-crosshair" : interactive ? "cursor-pointer" : "cursor-grab"} active:cursor-grabbing touch-none`} aria-label={`Vue isométrique de la ville : ${plots.length} bâtiments`} />
       {!compact && (
