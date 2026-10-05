@@ -10,6 +10,7 @@ import CompanyLogo from "@/components/CompanyLogo";
 import { Donut } from "@/components/charts";
 import { eur, eur2, pctPlain, signedEur, tone, qtyFmt } from "@/lib/format";
 import PriceStatus from "@/components/PriceStatus";
+import { focusAsset } from "@/lib/market/focus";
 
 const PALETTE = ["#2563EB", "#10B981", "#F59E0B", "#6366F1", "#0EA5E9", "#EC4899", "#64748B"];
 
@@ -72,16 +73,25 @@ export default function PortfolioPage() {
                 <th className="text-left font-medium py-2">Action</th><th className="text-right font-medium">Qté</th>
                 <th className="text-right font-medium hidden sm:table-cell">PRU</th><th className="text-right font-medium">Prix</th>
                 <th className="text-right font-medium">Valeur</th><th className="text-right font-medium">Plus-value</th>
+                <th className="text-right font-medium pl-3 hidden sm:table-cell"><span className="sr-only">Actions</span></th>
               </tr></thead>
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.sym} className="border-b border-line/70">
-                    <td className="py-2.5"><div className="flex items-center gap-2.5"><CompanyLogo symbol={r.sym} size={30} /><div><div className="font-semibold">{ASSET_BY_SYMBOL[r.sym]?.name ?? r.sym}</div><div className="text-[11px] text-muted flex items-center gap-1.5">{r.sym}<PriceStatus symbol={r.sym} /></div></div></div></td>
+                    <td className="py-2.5">
+                      <Link href="/marches" onClick={() => focusAsset(r.sym)} title="Ouvrir la fiche : cours, achat et vente" className="group flex items-center gap-2.5">
+                        <CompanyLogo symbol={r.sym} size={30} />
+                        <div><div className="font-semibold group-hover:text-primary group-hover:underline">{ASSET_BY_SYMBOL[r.sym]?.name ?? r.sym}</div><div className="text-[11px] text-muted flex items-center gap-1.5">{r.sym}<PriceStatus symbol={r.sym} /></div></div>
+                      </Link>
+                    </td>
                     <td className="text-right tabular">{qtyFmt(r.h.qty)}</td>
                     <td className="text-right tabular hidden sm:table-cell">{eur2(r.h.avgCost)}</td>
                     <td className="text-right tabular">{eur2(r.price)}<div><Delta value={r.day} /></div></td>
                     <td className="text-right tabular font-semibold">{eur(r.value)}</td>
                     <td className={`text-right tabular font-semibold ${tone(r.pnl)}`}>{signedEur(r.pnl)}<div className="text-[11px] font-normal">{pctPlain(r.pnl / (r.h.qty * r.h.avgCost))}</div></td>
+                    <td className="text-right pl-3 hidden sm:table-cell">
+                      <Link href="/marches" onClick={() => focusAsset(r.sym)} className="inline-flex items-center whitespace-nowrap rounded-[8px] border border-line px-2.5 py-1.5 text-[12px] font-semibold text-primary hover:bg-primary-soft">Acheter / Vendre</Link>
+                    </td>
                   </tr>
                 ))}
               </tbody>
