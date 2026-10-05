@@ -17,6 +17,7 @@ import { Sparkline, WealthChart } from "@/components/charts";
 import { eur, eur2, pctPlain, qtyFmt, signedEur } from "@/lib/format";
 import PriceStatus from "@/components/PriceStatus";
 import { useMedia } from "@/lib/useMedia";
+import { clearFocus, peekFocus } from "@/lib/market/focus";
 
 const PAGE = 60;
 const KINDS: AssetKind[] = ["stock", "etf", "commodity", "crypto"];
@@ -41,8 +42,10 @@ function fmtTime(range: Range) {
 export default function MarketsPage() {
   const { game, quotes } = useDerived();
   const [query, setQuery] = useState("");
-  const [selected, setSelected] = useState("NVDA");
-  const [tab, setTab] = useState<Tab>("stock");
+  // Arrivée depuis le Portefeuille : la fiche de l'actif demandé s'ouvre directement, sur l'onglet « Détenus »
+  const [asked] = useState(() => { const s = peekFocus(); return s && ASSET_BY_SYMBOL[s] ? s : null; });
+  const [selected, setSelected] = useState(asked ?? "NVDA");
+  const [tab, setTab] = useState<Tab>(asked ? "held" : "stock");
   const [region, setRegion] = useState<"Toutes" | Region>("Toutes");
   const [family, setFamily] = useState<"Tous" | Family>("Tous");
   const [sort, setSort] = useState<Sort>("sector");
@@ -106,6 +109,13 @@ export default function MarketsPage() {
 
   // Sur petit écran, la fiche s'ouvre par-dessus la liste
   const [sheet, setSheet] = useState(false);
+  // Fiche demandée depuis une autre page : ouverte juste après l'affichage (sur petit écran, elle recouvre la liste)
+  useEffect(() => {
+    clearFocus();
+    if (!asked) return;
+    const id = setTimeout(() => setSheet(true), 0);
+    return () => clearTimeout(id);
+  }, [asked]);
   const open = (sym: string) => { setSelected(sym); if (small) setSheet(true); };
   // Fiche ouverte (téléphone) : le bouton Retour et la touche Échap la ferment, au lieu de quitter la page
   useEffect(() => {

@@ -171,7 +171,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
       <div className="flex-1 min-w-0 flex flex-col">
         {/* Barre du haut */}
-        <header className="h-16 bg-card border-b border-line flex items-center gap-2 sm:gap-4 px-3 sm:px-4 md:px-8 sticky top-0 z-20">
+        {/* Au-dessus des panneaux flottants des pages (z-20) : ses menus (notifications, compte) passent devant eux */}
+        <header className="h-16 bg-card border-b border-line flex items-center gap-2 sm:gap-4 px-3 sm:px-4 md:px-8 sticky top-0 z-30">
           <div className="lg:hidden"><Logo /></div>
           {hydrated && <NextDay />}
           <div className="ml-auto flex min-w-0 items-center gap-1.5 sm:gap-3">
