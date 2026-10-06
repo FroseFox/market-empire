@@ -23,6 +23,13 @@ export const ACTIVE_RATIO = 0.6;
  *  pour qu'une partie tienne en 2 semaines à 1 mois. */
 export const TAX_PER_RESIDENT = 2.5;
 
+/** Dotation de démarrage : l'État soutient les petites communes. Versée chaque jour, elle diminue à mesure que la
+ *  population grandit et disparaît à `untilPop` habitants. Elle accélère seulement le début de partie (où l'on
+ *  posait un bâtiment par jour réel) sans raccourcir la suite : passé ce seuil, le rythme est inchangé. */
+/* Réglage mesuré avec le robot de lib/game/sim.ts : sans dotation, Petite ville demandait 11 jours réels et la ville ne
+ * comptait que 29 bâtiments après deux semaines ; avec, 3 jours et 48 bâtiments. Capitale économique reste à 3-4 semaines. */
+export const START_GRANT = { perDay: 10_000, untilPop: 6_000 };
+
 /** Entretien quotidien d'un bâtiment, en fraction de son coût. */
 export const MAINTENANCE_RATE = 0.001;
 

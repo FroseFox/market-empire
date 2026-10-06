@@ -8,7 +8,7 @@ import {
   FEATURES, ORIENTATION_BY_ID, ORIENTATION_CHANGE_COST, ORIENTATION_MIN_RANK, type FeatureId, type OrientationId,
   RENOVATE_RATE, TERRITORY, WEAR_MAINTENANCE, WEAR_PER_DAY, WEAR_SATISFACTION,
   CITY_RANKS, FORECAST_DAYS, GOALS, UPGRADES, SERVICES, SERVICE_BONUS, SERVICE_IDS,
-  STARTING_BUILDINGS, STARTING_CASH, STARTING_POPULATION, TAX_PER_RESIDENT, TRADE_FEE_MIN, TRADE_FEE_RATE,
+  STARTING_BUILDINGS, STARTING_CASH, STARTING_POPULATION, START_GRANT, TAX_PER_RESIDENT, TRADE_FEE_MIN, TRADE_FEE_RATE,
   type Category, type Goal, type ServiceId, type Specialty,
 } from "./config";
 import { isBuildable, layoutFrom, placeTile, type Plot } from "./layout";
@@ -168,7 +168,8 @@ export interface CityStats {
   branches: number;
   /** Quantités réellement échangées par contrat aujourd'hui. */
   contracts: { energySold: number; energyBought: number; foodSold: number; foodBought: number };
-  income: { taxes: number; buildings: number; exports: number; total: number };
+  /** `grant` = dotation de démarrage des petites communes (voir START_GRANT). */
+  income: { taxes: number; buildings: number; exports: number; grant: number; total: number };
   expenses: { maintenance: number; imports: number; total: number };
   exportsValue: number;
   importsValue: number;
@@ -300,7 +301,8 @@ export function computeCity(state: CityInput): CityStats {
   const importsValue = te.imports + tf.imports;
 
   const maintenance = cityValue * MAINTENANCE_RATE * (1 + wear * WEAR_MAINTENANCE);
-  const incomeTotal = taxes + buildingsIncome + exportsValue;
+  const grant = START_GRANT.perDay * Math.max(0, 1 - pop / START_GRANT.untilPop);
+  const incomeTotal = taxes + buildingsIncome + exportsValue + grant;
   const expensesTotal = maintenance + importsValue;
 
   // Croissance de population (doc §8) : logements libres × emplois × satisfaction
@@ -322,7 +324,7 @@ export function computeCity(state: CityInput): CityStats {
     pollution: { emitted, absorbed, penalty: pollutionPenalty },
     wear, specialty, bonus, branches: branches.length,
     contracts: { energySold: te.sold, energyBought: te.bought, foodSold: tf.sold, foodBought: tf.bought },
-    income: { taxes, buildings: buildingsIncome, exports: exportsValue, total: incomeTotal },
+    income: { taxes, buildings: buildingsIncome, exports: exportsValue, grant, total: incomeTotal },
     expenses: { maintenance, imports: importsValue, total: expensesTotal },
     exportsValue, importsValue,
     tradeBalance: exportsValue - importsValue,
@@ -351,7 +353,7 @@ function goalValue(goal: Goal, state: Pick<GameState, "population"> & Partial<Pi
   const big = state.population >= (goal.minPop ?? 0);
   switch (goal.metric) {
     case "population": return state.population;
-    case "net": return c.net;
+    case "net": return c.net - c.income.grant; // l'objectif mesure l'économie propre de la ville, sans la dotation de démarrage
     case "satisfaction": return big ? c.satisfaction : 0;
     case "autonomy": return big && c.energy.balance >= 0 && c.food.balance >= 0 ? 1 : 0;
     case "services": return big ? Math.min(...SERVICE_IDS.map((id) => c.services[id].coverage)) : 0;

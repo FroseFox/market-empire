@@ -8,7 +8,7 @@ import {
   DAY_LENGTH_MINUTES, DEMOLISH_REFUND, ENERGY_PER_RESIDENT, EXPORT_RATIO, FOOD_PER_RESIDENT, GOALS, HUB_DESK_COST, HUB_FEE_FACTOR, MAINTENANCE_RATE,
   FEATURES, ORIENTATIONS, ORIENTATION_CHANGE_COST, ORIENTATION_MIN_RANK,
   MAX_CATCHUP_DAYS, MAX_CONTRACTS, NEED_PER_RANK, POLLUTION_MAX, PROJECTS, RENOVATE_RATE, RESOURCE_PRICES, SERVICES, SERVICE_IDS, SPECIALTY_BONUS,
-  STARTING_CASH, STARTING_POPULATION, TAX_PER_RESIDENT, TERRITORY, TRADE_FEE_MIN, TRADE_FEE_RATE, UPGRADES, WEAR_PER_DAY, type BranchFamily, type Category,
+  STARTING_CASH, STARTING_POPULATION, START_GRANT, TAX_PER_RESIDENT, TERRITORY, TRADE_FEE_MIN, TRADE_FEE_RATE, UPGRADES, WEAR_PER_DAY, type BranchFamily, type Category,
 } from "@/lib/game/config";
 import { GUIDE } from "@/lib/game/guide";
 import { BRANCH_COLOR, RESEARCH, RESEARCH_BY_ID } from "@/lib/game/research";
@@ -154,6 +154,7 @@ export default function WikiPage() {
           <Section id="ville" title="Ville : comment elle gagne de l'argent">
             <ul className="list-disc space-y-1.5 pl-5">
               <li><b>Impôts</b> : {TAX_PER_RESIDENT.toLocaleString("fr-FR")} € par habitant et par jour, réduits quand la satisfaction baisse ou que le chômage monte.</li>
+              <li><b>Dotation de l&apos;État</b> : une aide aux petites communes, de {eur(START_GRANT.perDay)} par jour au départ. Elle diminue à mesure que la ville grandit et disparaît à {num(START_GRANT.untilPop)} habitants.</li>
               <li><b>Entreprises</b> : chaque bâtiment qui a des emplois rapporte son revenu, au prorata des postes pourvus. {pct(ACTIVE_RATIO)} des habitants cherchent un emploi.</li>
               <li><b>Ressources</b> : chaque habitant consomme {ENERGY_PER_RESIDENT.toLocaleString("fr-FR")} énergie et {FOOD_PER_RESIDENT.toLocaleString("fr-FR")} nourriture par jour. Le manque est importé au prix plein ({RESOURCE_PRICES.energy.toLocaleString("fr-FR")} € l&apos;énergie, {RESOURCE_PRICES.food.toLocaleString("fr-FR")} € la nourriture) ; le surplus est exporté à {pct(EXPORT_RATIO)} de ce prix.</li>
               <li><b>Entretien</b> : {pct(MAINTENANCE_RATE, 2)} du prix de chaque bâtiment par jour. Démolir rembourse {pct(DEMOLISH_REFUND)}. Déplacer est gratuit.</li>

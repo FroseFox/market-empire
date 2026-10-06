@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { build, buy, moveBuilding, catchUp, computeCity, DAY_MS, demolish, doResearch, newGame, normalize, sell, tickDay } from "./engine";
 import * as E from "./engine";
 import { isRoad } from "./layout";
-import { STARTING_CASH } from "./config";
+import { START_GRANT, STARTING_CASH } from "./config";
 
 const T0 = Date.UTC(2026, 8, 27, 12);
 
@@ -15,8 +15,13 @@ describe("ville de départ (doc Équilibrage §2)", () => {
     expect(c.jobs).toBe(150);
   });
   it("≈ 1 100 €/jour de revenus locaux (rythme relevé par rapport au doc, voir config)", () => {
-    expect(c.income.total).toBeGreaterThan(950);
-    expect(c.income.total).toBeLessThan(1250);
+    expect(c.income.total - c.income.grant).toBeGreaterThan(950);
+    expect(c.income.total - c.income.grant).toBeLessThan(1250);
+  });
+  it("dotation de démarrage : forte au départ, comptée dans les revenus", () => {
+    expect(c.income.grant).toBeCloseTo(START_GRANT.perDay * (1 - c.housing / START_GRANT.untilPop), 0);
+    expect(c.income.grant).toBeGreaterThan(9000);
+    expect(c.income.total).toBeCloseTo(c.income.taxes + c.income.buildings + c.income.exports + c.income.grant, 6);
   });
   it("énergie et nourriture suffisantes", () => {
     expect(c.energy.balance).toBeGreaterThanOrEqual(0);

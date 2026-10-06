@@ -119,6 +119,7 @@ export default function EconomyPage() {
             <Row label="Importations" v={-city.expenses.imports} />
             <Row label="Exportations" v={city.income.exports} />
             <div className="flex justify-between text-muted"><span>Bourse</span><span>variable</span></div>
+            {city.income.grant >= 1 && <Row label="Dotation de l'État" v={city.income.grant} />}
           </div>
           <div className="flex items-center justify-between rounded-[12px] bg-slate-50 px-4 py-3 mb-3">
             <span className="text-[13px] font-medium text-muted">Flux net</span>

@@ -285,7 +285,7 @@ function Pill({ icon: Icon, label, value, sub, bad, warn, good, title }: { icon:
 /** Stats n°2 : d'où vient et où part l'argent de la ville, chaque jour. */
 function Budget({ city }: { city: CityStats }) {
   const rows: [string, number][] = [
-    ["Impôts", city.income.taxes], ["Entreprises", city.income.buildings], ["Exportations", city.income.exports],
+    ["Impôts", city.income.taxes], ["Entreprises", city.income.buildings], ["Exportations", city.income.exports], ["Dotation de l'État", city.income.grant],
     ["Entretien", -city.expenses.maintenance], ["Importations", -city.expenses.imports],
   ];
   return (
