@@ -18,6 +18,9 @@ export interface CityLive {
 interface Callbacks { tip: (t: CityTip | null) => void; click: (x: number, y: number) => void; lost: () => void }
 
 const MIN_ZOOM = 0.6, MAX_ZOOM = 4;
+// Le zoom est relatif à « toute la carte tient dans le cadre » : sur un écran étroit, ×4 restait minuscule.
+// On raisonne donc aussi en pixels par carreau : taille de départ garantie, et zoom maximal identique sur tous les écrans.
+const START_PX = 30, CLOSE_PX = 110;
 /** Hauteur de la caméra au-dessus de l'horizon : 32° donne des carreaux proches du 2:1 de l'ancienne vue. */
 const EL = (32 * Math.PI) / 180, SIN = Math.sin(EL), COS = Math.cos(EL), R2 = Math.SQRT1_2;
 /** Pixels par carreau de l'ancienne vue à l'échelle 1 : sert à garder les mêmes tailles d'indicateurs. */
@@ -105,6 +108,7 @@ export class CityEngine {
   private W = 1; private H = 1; private u = 0.05; private tx = 0; private tz = 0;
   private base = { u: 0.05, tx: 0, tz: 0 }; private view = { zoom: 1, ox: 0, oz: 0 }; private lastInitial = 1;
   private goal: { zoom: number; ox: number; oz: number } | null = null;
+  private framed = false;
   private night = 0; private nightAt = 0; private nightSeen: Light = "auto"; private nightDrawn = -1;
   private hoverTile: { x: number; y: number } | null = null;
   // Boucle
@@ -179,8 +183,9 @@ export class CityEngine {
     this.builtBlocks = new Set(plots.map((p) => `${Math.floor(p.x / 4)},${Math.floor(p.y / 4)}`));
 
     this.rebuild();
-    if (this.lastInitial !== f.initialZoom) { this.lastInitial = f.initialZoom; this.view = { zoom: f.initialZoom, ox: 0, oz: 0 }; }
+    const first = !this.framed || this.lastInitial !== f.initialZoom;
     this.layout();
+    if (first) { this.framed = true; this.lastInitial = f.initialZoom; this.view = { zoom: this.startZoom(), ox: 0, oz: 0 }; this.applyView(); }
     this.applyLive();
     this.run();
   }
@@ -513,9 +518,17 @@ export class CityEngine {
     this.applyView();
   }
 
+  /** Zoom le plus fort : au moins ×4, et toujours assez pour voir un bâtiment de près (écrans étroits). */
+  private maxZoom() { return Math.max(MAX_ZOOM, this.base.u * CLOSE_PX); }
+  /** Zoom de départ : celui demandé, relevé si les carreaux seraient trop petits pour être lisibles. */
+  private startZoom() {
+    const f = this.frameOpts;
+    return f.compact ? f.initialZoom : Math.min(this.maxZoom(), Math.max(f.initialZoom, this.base.u * START_PX));
+  }
+
   private applyView() {
     const v = this.view;
-    v.zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, v.zoom));
+    v.zoom = Math.max(MIN_ZOOM, Math.min(this.maxZoom(), v.zoom));
     this.u = this.base.u / v.zoom; this.tx = this.base.tx + v.ox; this.tz = this.base.tz + v.oz;
     // La ville reste toujours en partie visible
     const [sx, sy] = this.project((this.x0 + this.x1 + 1) / 2, 0, (this.y0 + this.y1 + 1) / 2);
@@ -548,7 +561,7 @@ export class CityEngine {
     return [this.tx + a + b, this.tz - a + b];
   }
   private viewAround(z: number, sx: number, sy: number) {
-    const zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, z)), [gx, gz] = this.ground(sx, sy), u = this.base.u / zoom;
+    const zoom = Math.max(MIN_ZOOM, Math.min(this.maxZoom(), z)), [gx, gz] = this.ground(sx, sy), u = this.base.u / zoom;
     const a = (sx - this.W / 2) * u * R2, b = ((sy - this.H / 2) * u * R2) / SIN;
     return { zoom, ox: gx - a - b - this.base.tx, oz: gz + a - b - this.base.tz };
   }
@@ -561,7 +574,7 @@ export class CityEngine {
     const v = this.goal ?? this.view, u = this.base.u / v.zoom, a = dx * u * R2, b = (dy * u * R2) / SIN;
     this.go({ zoom: v.zoom, ox: v.ox - (a + b), oz: v.oz - (-a + b) }, true);
   }
-  reset() { this.go({ zoom: this.frameOpts.initialZoom, ox: 0, oz: 0 }, true); }
+  reset() { this.go({ zoom: this.startZoom(), ox: 0, oz: 0 }, true); }
 
   // ─── Image ───
   private applyNight() {
