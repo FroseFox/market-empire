@@ -282,7 +282,7 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
     /** Zoom autour du centre du cadre + déplacement (la ville reste toujours en partie visible). */
     function applyView() {
       const v = view.current;
-      v.zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, v.zoom));
+      v.zoom = Math.max(MIN_ZOOM, Math.min(Math.max(MAX_ZOOM, 2.4 / base.scale), v.zoom));
       scale = base.scale * v.zoom;
       ox = W / 2 + (base.ox - W / 2) * v.zoom + v.px;
       oy = H / 2 + (base.oy - H / 2) * v.zoom + v.py;
@@ -295,7 +295,7 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
     let goal: { zoom: number; px: number; py: number } | null = null;
     /** Vue qui garde le point écran (sx, sy) immobile en passant au zoom `z`. */
     function viewAround(z: number, sx: number, sy: number) {
-      const zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, z));
+      const zoom = Math.max(MIN_ZOOM, Math.min(Math.max(MAX_ZOOM, 2.4 / base.scale), z));
       const k = zoom / view.current.zoom;
       const nox = sx - (sx - ox) * k, noy = sy - (sy - oy) * k;
       return { zoom, px: nox - W / 2 - (base.ox - W / 2) * zoom, py: noy - H / 2 - (base.oy - H / 2) * zoom };
