@@ -68,8 +68,10 @@ export default function WorldPage() {
     setMoving(false);
   };
 
-  const ranked = [...players].sort((a, b) => sort === "Patrimoine" ? b.netWorth - a.netWorth : sort === "Population" ? b.population - a.population : b.perf - a.perf);
-  const myRank = [...players].sort((a, b) => b.netWorth - a.netWorth).findIndex((p) => p.isMe) + 1;
+  // La carte montre tous les joueurs ; le classement écarte les sauvegardes signalées comme impossibles
+  const inRanking = players.filter((p) => p.isMe || p.ranked !== false);
+  const ranked = [...inRanking].sort((a, b) => sort === "Patrimoine" ? b.netWorth - a.netWorth : sort === "Population" ? b.population - a.population : b.perf - a.perf);
+  const myRank = [...inRanking].sort((a, b) => b.netWorth - a.netWorth).findIndex((p) => p.isMe) + 1;
 
   return (
     <>
@@ -80,7 +82,7 @@ export default function WorldPage() {
       <div className="grid gap-2 sm:gap-4 grid-cols-3 mb-4">
         <Stat icon={MapPin} label="Votre territoire" value={mine ? countryName(mine.country) : "—"}
           sub={mine && PLAYABLE[mine.country] ? specialtyText(mine.country) : game.cityName} />
-        <Stat icon={Trophy} label="Votre rang" value={myRank ? `${myRank}ᵉ` : "—"} sub={`sur ${num(players.length)} joueur${players.length > 1 ? "s" : ""}`} />
+        <Stat icon={Trophy} label="Votre rang" value={myRank ? `${myRank}ᵉ` : "—"} sub={`sur ${num(inRanking.length)} joueur${inRanking.length > 1 ? "s" : ""} classé${inRanking.length > 1 ? "s" : ""}`} />
         <Stat icon={Users} label="Monde" value={`${num(players.length)} joueur${players.length > 1 ? "s" : ""}`} sub={`${Object.keys(PLAYABLE).length} pays jouables · ${HUBS.length} places financières`} />
       </div>
 
