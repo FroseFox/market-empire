@@ -653,7 +653,9 @@ export class CityEngine {
   /** Redessine tout de suite si la boucle d'animation ne tourne pas. */
   private draw() { if (!this.raf && !this.disposed) this.frame(performance.now()); }
   private loop = (t: number) => {
-    if (this.goal || this.pts.size > 0 || t < this.growUntil || t - this.lastDraw >= 30) { this.lastDraw = t; this.frame(t); }
+    // Pleine fluidité tant que le joueur est sur le jeu. Fenêtre visible mais sans le focus (autre fenêtre ou
+    // autre appli au premier plan) : 30 images par seconde suffisent. Onglet caché : la boucle est arrêtée (run).
+    if (document.hasFocus() || this.goal || this.pts.size > 0 || t < this.growUntil || t - this.lastDraw >= 33) { this.lastDraw = t; this.frame(t); }
     this.raf = requestAnimationFrame(this.loop);
   };
   private run = () => {
