@@ -1,14 +1,14 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import {
-  BarChart3, ArrowUpCircle, Briefcase, Copy, Undo2, Building2, Ellipsis, Handshake, Sparkles, Wrench, Factory, FastForward, Hammer, Home, Landmark, LayoutList, Lock, MousePointerClick, Move, Pencil, RotateCcw, Smile, Store, Target, Trash2, Trees, TrendingUp, Trophy, Users, Wheat, X, Zap,
+  BarChart3, ArrowUpCircle, Briefcase, CircleAlert, TriangleAlert, Copy, Undo2, Building2, Ellipsis, Handshake, Sparkles, Wrench, Factory, FastForward, Hammer, Home, Landmark, LayoutList, Lock, MousePointerClick, Move, Pencil, RotateCcw, Smile, Store, Target, Trash2, Trees, TrendingUp, Trophy, Users, Wheat, X, Zap,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useDerived, useGame } from "@/store/game";
 import { BUILDINGS, BUILDING_BY_ID, CATEGORY_LABELS, CITY_RANKS, SERVICES, SERVICE_IDS, DEMOLISH_REFUND, EXPORT_RATIO, MAINTENANCE_RATE, RESOURCE_PRICES, type BuildingType, type Category } from "@/lib/game/config";
 import { Button, ConfirmButton, Progress, LockTag } from "@/components/ui";
 import IsoCity from "@/components/City3D";
-import type { CityMarker, CityMode, CitySign, MarkerKind } from "@/components/IsoCity";
+import { MARKER_LEVEL, type CityMarker, type CityMode, type CitySign, type MarkerKind } from "@/components/IsoCity";
 import CompanyLogo, { companyBadge } from "@/components/CompanyLogo";
 import { useMedia } from "@/lib/useMedia";
 import { computeCity, activeBranches, branchAt, branchCost, buildPreview, featureOpen, mapSize, nextTerritory, orientationCost, branchLimit, buildingAudit, forecast, goalStatuses, hasResearch, isTileFree, prestige, renovateCost, upgradeOffer, type CityStats } from "@/lib/game/engine";
@@ -37,6 +37,17 @@ const MARKER_LABEL: Record<MarkerKind, string> = {
   staff: "Postes vacants : il manque des habitants",
   service: "Équipement public manquant",
 };
+/** Ce qu'il faut faire pour faire disparaître la pastille, et l'onglet de construction qui s'ouvre. */
+const MARKER_FIX: Record<MarkerKind, { text: string; cat: Category; cta: string }> = {
+  energy: { text: "Construisez une centrale pour produire votre propre énergie.", cat: "energy", cta: "Construire une centrale" },
+  food: { text: "Construisez une exploitation agricole pour nourrir vos habitants.", cat: "agriculture", cta: "Construire une exploitation" },
+  full: { text: "Construisez des logements pour accueillir de nouveaux habitants.", cat: "housing", cta: "Construire des logements" },
+  staff: { text: "Construisez des logements : de nouveaux habitants viendront occuper ces postes.", cat: "housing", cta: "Construire des logements" },
+  service: { text: "Construisez l'équipement public manquant pour satisfaire vos habitants.", cat: "public", cta: "Construire un équipement" },
+};
+/** Rouge : coûte de l'argent chaque jour. Orange : ne coûte rien, mais freine la ville. */
+const LEVEL_TEXT = { bad: { word: "Problème", sub: "coûte de l'argent chaque jour" }, warn: { word: "À surveiller", sub: "freine la croissance de la ville" } } as const;
+
 /** Pas plus de quelques pastilles par problème : la carte doit rester lisible. */
 const MAX_MARKERS = 4;
 
@@ -69,6 +80,8 @@ export default function CityPage() {
   const undo = useGame((s) => s.undo);
   const undoLast = useGame((s) => s.undoLast);
   const [tool, setTool] = useState<Tool>(null);
+  // Onglet ouvert dans la palette de construction (choisi par le bouton d'une alerte)
+  const [buildCat, setBuildCat] = useState<Category>("housing");
   const [mode, setMode] = useState<CityMode | null>(null);
   const [selected, setSelected] = useState<Tile | null>(null);
   const small = useMedia("(max-width: 1023px)");
@@ -146,7 +159,7 @@ export default function CityPage() {
   // Panneau au-dessus de la barre d'outils : palette, liste, stats, menu, ou fiche du bâtiment sélectionné
   let dock: React.ReactNode = null;
   if (tool === "build") {
-    dock = <Palette active={mode?.kind === "place" ? mode.id : null} onClose={() => { setTool(null); setMode(null); }}
+    dock = <Palette key={buildCat} initialCat={buildCat} active={mode?.kind === "place" ? mode.id : null} onClose={() => { setTool(null); setMode(null); }}
       onPick={(id) => {
         setSelected(null);
         const off = mode?.kind === "place" && mode.id === id;
@@ -165,6 +178,8 @@ export default function CityPage() {
     dock = <DockPanel title="Options" onClose={() => setTool(null)}><MoreMenu /></DockPanel>;
   } else if (selectedPlot && !mode) {
     dock = <SelectedPanel plot={selectedPlot} city={city} confirmDemolish={tool === "demolish"}
+      alert={markers.find((m) => m.x === selectedPlot.x && m.y === selectedPlot.y)}
+      onFix={(cat) => { setSelected(null); setMode(null); setBuildCat(cat); setTool("build"); }}
       onUpgrade={() => upgrade({ x: selectedPlot.x, y: selectedPlot.y })}
       onCopy={() => { setSelected(null); setMode({ kind: "place", id: selectedPlot.id }); }}
       onMove={() => setMode({ kind: "move", id: selectedPlot.id, from: { x: selectedPlot.x, y: selectedPlot.y } })}
@@ -610,10 +625,31 @@ function netPerDay(b: BuildingType) {
     - (b.energyUse ?? 0) * RESOURCE_PRICES.energy - b.cost * MAINTENANCE_RATE;
 }
 
-function Palette({ active, onPick, onClose }: { active: string | null; onPick: (id: string) => void; onClose: () => void }) {
+/** Explication d'une pastille : ce qu'elle signale, si c'est grave, et quoi faire. */
+function MarkerAlert({ marker, onFix }: { marker: CityMarker; onFix: (cat: Category) => void }) {
+  const bad = MARKER_LEVEL[marker.kind] === "bad";
+  const level = LEVEL_TEXT[bad ? "bad" : "warn"], fix = MARKER_FIX[marker.kind];
+  const Icon = bad ? CircleAlert : TriangleAlert;
+  return (
+    <div role="status" className={`mb-2.5 rounded-[10px] border p-2.5 text-[12px] ${bad ? "border-red-200 bg-danger-soft" : "border-amber-200 bg-warning-soft"}`}>
+      <div className={`flex items-center gap-1.5 font-semibold ${bad ? "text-red-700" : "text-amber-700"}`}>
+        <Icon size={15} className="shrink-0" />
+        <span>{level.word}</span><span className="font-normal opacity-80">· {level.sub}</span>
+      </div>
+      <p className="mt-1 font-medium text-ink">{marker.label}</p>
+      <p className="mt-0.5 text-muted">{fix.text}</p>
+      <button type="button" onClick={() => onFix(fix.cat)}
+        className={`mt-2 inline-flex items-center gap-1.5 rounded-[8px] px-2.5 py-1.5 text-[12px] font-semibold text-white ${bad ? "bg-danger hover:bg-red-600" : "bg-amber-600 hover:bg-amber-700"}`}>
+        <Hammer size={13} />{fix.cta}
+      </button>
+    </div>
+  );
+}
+
+function Palette({ active, onPick, onClose, initialCat = "housing" }: { active: string | null; onPick: (id: string) => void; onClose: () => void; initialCat?: Category }) {
   const game = useGame((s) => s.game);
   const city = useMemo(() => computeCity(game), [game]);
-  const [cat, setCat] = useState<Category>("housing");
+  const [cat, setCat] = useState<Category>(initialCat);
   return (
     <section className="hud appear p-2.5">
       <div className="mb-2 flex items-center gap-2">
@@ -676,7 +712,7 @@ function Palette({ active, onPick, onClose }: { active: string | null; onPick: (
   );
 }
 
-function SelectedPanel({ plot, city, confirmDemolish, onUpgrade, onCopy, onMove, onDemolish, onClose }: { plot: Plot; city: CityStats; confirmDemolish: boolean; onUpgrade: () => void; onCopy: () => void; onMove: () => void; onDemolish: () => void; onClose: () => void }) {
+function SelectedPanel({ plot, city, confirmDemolish, alert, onFix, onUpgrade, onCopy, onMove, onDemolish, onClose }: { plot: Plot; city: CityStats; confirmDemolish: boolean; alert?: CityMarker; onFix: (cat: Category) => void; onUpgrade: () => void; onCopy: () => void; onMove: () => void; onDemolish: () => void; onClose: () => void }) {
   const game = useGame((s) => s.game);
   const b = BUILDING_BY_ID[plot.id];
   if (!b) return null;
@@ -699,6 +735,7 @@ function SelectedPanel({ plot, city, confirmDemolish, onUpgrade, onCopy, onMove,
         </div>
         <button onClick={onClose} aria-label="Fermer" className="rounded-[6px] p-1 text-muted hover:bg-slate-100"><X size={16} /></button>
       </div>
+      {alert && !confirmDemolish && <MarkerAlert marker={alert} onFix={onFix} />}
       <Effects b={b} />
       {audit && (
         <dl className="mt-2.5 grid grid-cols-3 gap-1.5 text-[11px]">
