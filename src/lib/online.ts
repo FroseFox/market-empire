@@ -40,7 +40,7 @@ function figures() {
   const cost = E.portfolioCost(s.game.holdings);
   return {
     p_city: s.game.cityName,
-    p_net_worth: Math.max(0, Math.round(s.game.cash + pv + city.assetValue)),
+    p_net_worth: Math.max(0, Math.round(s.game.cash + pv + E.leverageValue(s.game, prices) + city.assetValue)),
     p_population: Math.max(0, Math.round(s.game.population)),
     p_perf: cost > 0 ? Math.round((pv / cost - 1) * 10_000) / 10_000 : 0,
     p_day: Math.max(1, s.game.day),

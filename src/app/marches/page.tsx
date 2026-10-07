@@ -16,6 +16,7 @@ import { Button, Card, Delta, Empty, PageHeader, Segmented, LockTag } from "@/co
 import { Sparkline, WealthChart } from "@/components/charts";
 import { eur, eur2, pctPlain, qtyFmt, signedEur } from "@/lib/format";
 import PriceStatus from "@/components/PriceStatus";
+import LeverageBox from "@/components/Leverage";
 import { useMedia } from "@/lib/useMedia";
 import { clearFocus, peekFocus } from "@/lib/market/focus";
 
@@ -398,6 +399,8 @@ function AssetPanel({ symbol, onSelect }: { symbol: string; onSelect: (s: string
           <Button variant="secondary" disabled={busy || !held || (!sellAll && (n <= 0 || n > held.qty))} onClick={() => run(() => sell(symbol, typed, sellAll))}>{sellAll ? "Tout vendre" : "Vendre"}</Button>
         </div>
       </div>
+
+      <LeverageBox key={symbol} symbol={symbol} />
 
       {links.length > 0 && (
         <div className="mt-5">

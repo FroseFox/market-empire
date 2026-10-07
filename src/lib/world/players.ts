@@ -73,7 +73,7 @@ function profileFromGame(country: string) {
   const cost = E.portfolioCost(s.game.holdings);
   return {
     cityName: s.game.cityName,
-    netWorth: Math.round(s.game.cash + pv + city.assetValue),
+    netWorth: Math.round(s.game.cash + pv + E.leverageValue(s.game, prices) + city.assetValue),
     population: Math.round(s.game.population),
     perf: cost > 0 ? Math.round((pv / cost - 1) * 10_000) / 10_000 : 0,
     day: s.game.day,

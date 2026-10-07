@@ -32,6 +32,9 @@ interface Store {
   /** Achète pour `amount` euros de titres (fractions de titre permises), au cours du moment. */
   buy: (symbol: string, amount: number) => Promise<boolean>;
   /** Vend pour `amount` euros de titres ; `all` vend toute la position. */
+  settle: () => void;
+  openLeverage: (symbol: string, stake: number, lev: number) => Promise<boolean>;
+  closeLeverage: (id: string) => Promise<boolean>;
   sell: (symbol: string, amount: number, all?: boolean) => Promise<boolean>;
   build: (id: string, tile?: { x: number; y: number }) => boolean;
   /** Construit jusqu'à `count` exemplaires, placés automatiquement. Renvoie le nombre construit. */
@@ -85,12 +88,46 @@ export const useGame = create<Store>()(
         const quotes = { ...get().quotes };
         for (const q of list) quotes[q.symbol] = { price: q.price, change: q.change, source: q.source };
         set({ quotes, dataMode: mode, lastQuoteAt: Date.now() });
+        get().settle();
+      },
+
+      // Positions à levier : fermeture d'office de celles qui ont presque tout perdu
+      settle: () => {
+        if (!get().game.positions?.length) return;
+        const r = E.settleLeverage(get().game, get().prices(), Date.now());
+        if (!r.closed.length) return;
+        set({ game: r.state });
+        get().notify(r.closed.length === 1
+          ? `Position à levier fermée d'office : ${r.closed[0].symbol} ×${r.closed[0].lev}`
+          : `${r.closed.length} positions à levier fermées d'office`, "error");
+      },
+      openLeverage: async (symbol, stake, lev) => {
+        const price = await fetchPrice(symbol);
+        if (!price) { get().notify("Prix indisponible, réessayez.", "error"); return false; }
+        const r = E.openLeverage(get().game, symbol, stake, lev, price, Date.now());
+        if (!r.ok) { get().notify(r.error, "error"); return false; }
+        set({ game: r.state });
+        get().setQuotes([{ symbol, price, change: get().quotes[symbol]?.change ?? 0, source: get().quotes[symbol]?.source ?? "" }], get().dataMode);
+        get().notify(`Position ouverte : ${symbol} ×${lev}, mise de ${Math.round(stake).toLocaleString("fr-FR")} €`);
+        return true;
+      },
+      closeLeverage: async (id) => {
+        const pos = get().game.positions?.find((p) => p.id === id);
+        if (!pos) return false;
+        const price = await fetchPrice(pos.symbol);
+        if (!price) { get().notify("Prix indisponible, réessayez.", "error"); return false; }
+        const r = E.closeLeverage(get().game, id, price, Date.now());
+        if (!r.ok) { get().notify(r.error, "error"); return false; }
+        const gain = (r.state.realized ?? 0) - (get().game.realized ?? 0);
+        set({ game: r.state });
+        get().notify(`Position clôturée : ${gain >= 0 ? "+" : "−"}${Math.abs(Math.round(gain)).toLocaleString("fr-FR")} €`, gain >= 0 ? "ok" : "error");
+        return true;
       },
 
       sync: () => {
         const { state, days } = E.catchUp(get().game, Date.now(), get().prices());
         // Retour après plusieurs jours : on garde de quoi raconter ce qui s'est passé
-        if (days > 0) set({ game: state, ...(days >= 3 ? { absence: E.absenceReport(get().game, state) } : {}) });
+        if (days > 0) { set({ game: state, ...(days >= 3 ? { absence: E.absenceReport(get().game, state) } : {}) }); get().settle(); }
         return days;
       },
 
@@ -288,6 +325,7 @@ export function useDerived() {
   const city = E.computeCity(game);
   const portfolio = E.portfolioValue(game.holdings, prices);
   const cost = E.portfolioCost(game.holdings);
-  const netWorth = game.cash + portfolio + city.assetValue;
-  return { game, quotes, prices, city, portfolio, portfolioCost: cost, netWorth };
+  const leverage = E.leverageValue(game, prices);
+  const netWorth = game.cash + portfolio + leverage + city.assetValue;
+  return { game, quotes, prices, city, portfolio, portfolioCost: cost, leverage, netWorth };
 }

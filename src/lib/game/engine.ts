@@ -7,7 +7,7 @@ import {
   NEED_PER_RANK, POLLUTION_FACTOR, POLLUTION_MAX, PRESTIGE_PER_GOAL, PRESTIGE_PER_RANK, PROJECTS, PROJECT_BY_ID,
   FEATURES, ORIENTATION_BY_ID, ORIENTATION_CHANGE_COST, ORIENTATION_MIN_RANK, type FeatureId, type OrientationId,
   RENOVATE_RATE, TERRITORY, WEAR_MAINTENANCE, WEAR_PER_DAY, WEAR_SATISFACTION,
-  CITY_RANKS, FORECAST_DAYS, GOALS, UPGRADES, SERVICES, SERVICE_BONUS, SERVICE_IDS,
+  LEVERAGE, CITY_RANKS, FORECAST_DAYS, GOALS, UPGRADES, SERVICES, SERVICE_BONUS, SERVICE_IDS,
   STARTING_BUILDINGS, STARTING_CASH, STARTING_POPULATION, START_GRANT, TAX_PER_RESIDENT, TRADE_FEE_MIN, TRADE_FEE_RATE,
   type Category, type Goal, type ServiceId, type Specialty,
 } from "./config";
@@ -103,6 +103,8 @@ export interface GameState {
   today?: DayCosts;
   /** Total des plus-values réalisées depuis que le jeu les enregistre. */
   realized?: number;
+  /** Positions à effet de levier ouvertes. */
+  positions?: LevPosition[];
   transactions: Transaction[];
   history: Snapshot[];
 }
@@ -110,6 +112,10 @@ export interface GameState {
 /** Entreprise implantée. Son bâtiment sur la carte est le plot « branch » de même rang (1re entreprise ↔ 1er plot « branch »). */
 export interface Branch { symbol: string; minQty: number }
 export interface Contract { id: string; resource: "energy" | "food"; qty: number; side: "buy" | "sell"; partner: string }
+
+/** Position à effet de levier : le joueur engage `stake`, le jeu prête le reste (`stake × (lev − 1)`).
+ *  Elle porte `qty` titres achetés à `entry` ; `interest` = intérêts accumulés sur la somme prêtée. */
+export interface LevPosition { id: string; symbol: string; lev: number; stake: number; qty: number; entry: number; interest: number; at: number }
 
 export type Prices = Record<string, number>;
 
@@ -416,13 +422,92 @@ export function portfolioValue(holdings: Record<string, Holding>, prices: Prices
   return v;
 }
 
+// ─── Effet de levier ──────────────────────────────────────────
+
+/** Ce que vaut une position si on la ferme à ce cours (jamais négatif : on ne perd pas plus que sa mise). */
+export const levValue = (p: LevPosition, price: number) => Math.max(0, round2(p.stake + p.qty * (price - p.entry) - p.interest));
+/** Cours sous lequel la position est fermée d'office. */
+export const levLiquidationPrice = (p: LevPosition) => Math.max(0, p.entry - (p.stake * (1 - LEVERAGE.liquidation) - p.interest) / p.qty);
+/** Valeur de toutes les positions à levier (comptée dans le patrimoine). */
+export function leverageValue(state: Partial<Pick<GameState, "positions">>, prices: Prices): number {
+  return (state.positions ?? []).reduce((a, p) => a + levValue(p, prices[p.symbol] ?? p.entry), 0);
+}
+/** Levier le plus fort permis : par le rang de la ville, et par le type d'actif. 1 = pas de levier. */
+export function maxLeverage(state: Pick<GameState, "population">, symbol?: string): number {
+  const rank = cityRank(state.population);
+  let max = 1;
+  LEVERAGE.levels.forEach((l, i) => { if (rank >= LEVERAGE.minRank[i]) max = l; });
+  const kind = symbol ? ASSET_BY_SYMBOL[symbol]?.kind : undefined;
+  return kind ? Math.min(max, LEVERAGE.maxByKind[kind] ?? 1) : max;
+}
+
+export function openLeverage(state: GameState, symbol: string, stake: number, lev: number, price: number, at: number): ActionResult {
+  if (!(price > 0)) return { ok: false, error: "Prix indisponible." };
+  const need = ASSET_BY_SYMBOL[symbol]?.research;
+  if (need && !hasResearch(state, need)) return { ok: false, error: `Débloquez d'abord « ${RESEARCH_BY_ID[need]?.name ?? need} » dans Recherche.` };
+  if (!(LEVERAGE.levels as readonly number[]).includes(lev) || lev > maxLeverage(state, symbol)) return { ok: false, error: "Ce levier n'est pas encore disponible pour cet actif." };
+  if (!Number.isFinite(stake) || stake < LEVERAGE.minStake) return { ok: false, error: `Mise minimale : ${LEVERAGE.minStake} €.` };
+  if ((state.positions?.length ?? 0) >= LEVERAGE.maxPositions) return { ok: false, error: `Pas plus de ${LEVERAGE.maxPositions} positions à levier à la fois.` };
+  stake = round2(stake);
+  const exposure = round2(stake * lev);
+  const fee = tradeFee(exposure, feeFactor(state, symbol));
+  if (stake + fee > state.cash + 1e-6) return { ok: false, error: "Liquidités insuffisantes." };
+  const pos: LevPosition = { id: `${at.toString(36)}-${state.transactions.length}`, symbol, lev, stake, qty: exposure / price, entry: price, interest: 0, at };
+  return {
+    ok: true,
+    state: {
+      ...state,
+      cash: round2(state.cash - stake - fee),
+      positions: [...(state.positions ?? []), pos],
+      today: spend(state, "fees", fee),
+      transactions: addTx(state, { kind: "buy", label: `Levier ×${lev} : ouverture ${symbol} (mise ${Math.round(stake).toLocaleString("fr-FR")} €)`, amount: -(stake + fee), at }),
+    },
+  };
+}
+
+/** Ferme une position : le joueur récupère ce qu'elle vaut, frais de courtage déduits. `forced` = fermeture d'office. */
+export function closeLeverage(state: GameState, id: string, price: number, at: number, forced = false): ActionResult {
+  const pos = state.positions?.find((p) => p.id === id);
+  if (!pos) return { ok: false, error: "Position introuvable." };
+  if (!(price > 0)) return { ok: false, error: "Prix indisponible." };
+  const value = levValue(pos, price);
+  const fee = Math.min(value, tradeFee(round2(pos.qty * price), feeFactor(state, pos.symbol)));
+  const payout = round2(value - fee);
+  const gain = round2(payout - pos.stake);
+  return {
+    ok: true,
+    state: {
+      ...state,
+      cash: round2(state.cash + payout),
+      positions: state.positions!.filter((p) => p.id !== id),
+      today: spend(state, "fees", fee),
+      realized: round2((state.realized ?? 0) + gain),
+      transactions: addTx(state, { kind: "sell", label: `Levier ×${pos.lev} : ${forced ? "position fermée d'office" : "clôture"} ${pos.symbol}`, amount: payout, gain, at }),
+    },
+  };
+}
+
+/** Ferme d'office les positions qui ont presque tout perdu. À appeler quand les cours changent. */
+export function settleLeverage(state: GameState, prices: Prices, at: number): { state: GameState; closed: LevPosition[] } {
+  const closed: LevPosition[] = [];
+  let s = state;
+  for (const p of state.positions ?? []) {
+    const price = prices[p.symbol];
+    if (!(price > 0) || levValue(p, price) > p.stake * LEVERAGE.liquidation) continue;
+    const r = closeLeverage(s, p.id, price, at, true);
+    if (r.ok) { s = r.state; closed.push(p); }
+  }
+  return { state: s, closed };
+}
+
 export function portfolioCost(holdings: Record<string, Holding>): number {
   return Object.values(holdings).reduce((a, h) => a + h.qty * h.avgCost, 0);
 }
 
 export function snapshot(state: GameState, prices: Prices, at: number): Snapshot {
   const c = computeCity(state);
-  const portfolio = portfolioValue(state.holdings, prices);
+  // Les positions à levier comptent dans les investissements
+  const portfolio = portfolioValue(state.holdings, prices) + leverageValue(state, prices);
   return {
     at, day: state.day,
     cash: state.cash, portfolio, city: c.assetValue,
@@ -443,6 +528,8 @@ export function tickDay(state: GameState, prices: Prices, at: number): GameState
     population: Math.max(0, state.population + c.growth),
     wear: nextWear(state.wear, state.population),
   };
+  // Intérêts du jour sur les sommes empruntées
+  if (state.positions?.length) next.positions = state.positions.map((p) => ({ ...p, interest: round2(p.interest + p.stake * (p.lev - 1) * LEVERAGE.dayRate) }));
   delete next.today;
   const t = state.today ?? NO_COSTS;
   next.history = [...state.history, {
@@ -674,11 +761,12 @@ export function chooseOrientation(state: GameState, id: OrientationId, at: numbe
 }
 
 /** Une fonction du jeu est-elle ouverte ? Par le rang, ou parce que le joueur s'en sert déjà. */
-export function featureOpen(state: Pick<GameState, "population"> & Partial<Pick<GameState, "branches" | "orientation" | "contracts" | "hubs" | "projects" | "territory">>, id: FeatureId): boolean {
+export function featureOpen(state: Pick<GameState, "population"> & Partial<Pick<GameState, "branches" | "orientation" | "contracts" | "hubs" | "projects" | "territory" | "positions">>, id: FeatureId): boolean {
   const f = FEATURES.find((x) => x.id === id);
   if (!f || cityRank(state.population) >= f.rank) return true;
   switch (id) {
     case "firms": return !!state.branches?.length;
+    case "leverage": return !!state.positions?.length;
     case "orientation": return !!state.orientation;
     case "trade": return !!state.contracts?.length;
     case "hubs": return !!state.hubs?.length;
@@ -951,6 +1039,7 @@ export function normalize(input: GameState): GameState {
   if (!Array.isArray(state.research)) state = { ...state, research: [...STARTING_RESEARCH] };
   else if (STARTING_RESEARCH.some((r) => !state.research.includes(r))) state = { ...state, research: [...new Set([...STARTING_RESEARCH, ...state.research])] };
   if (!Array.isArray(state.folders)) state = { ...state, folders: [] };
+  if (state.positions && !Array.isArray(state.positions)) { state = { ...state }; delete state.positions; }
   // Recherches retirées du jeu : on les enlève et on rembourse ce qu'elles avaient coûté
   if (state.research.some((r) => !RESEARCH_BY_ID[r])) {
     const refund = state.research.reduce((a, r) => a + (RESEARCH_BY_ID[r] ? 0 : RETIRED_RESEARCH[r] ?? 0), 0);
