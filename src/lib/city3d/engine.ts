@@ -6,7 +6,7 @@
 import * as THREE from "three";
 import { BUILDING_BY_ID } from "@/lib/game/config";
 import { isBuildable, isRoad, mapBounds, MAP_SIZE, MAX_MAP_SIZE, type Plot } from "@/lib/game/layout";
-import { CAT_COLOR, MARKER_COLOR, nightFactor, type CityMarker, type CityMode, type CitySign, type Light, type MarkerKind } from "@/components/IsoCity";
+import { CAT_COLOR, MARKER_COLOR, markerTip, nightFactor, type CityMarker, type CityMode, type CitySign, type Light, type MarkerKind } from "@/components/IsoCity";
 import { buildingModel, propModel, treeModel, type V3 } from "./models";
 
 export interface CityTip { left: number; top: number; title: string; text: string; warn?: boolean }
@@ -474,8 +474,10 @@ export class CityEngine {
     if (!l.mode) for (const mk of l.markers) {
       const p = this.byTile.get(`${mk.x},${mk.y}`); if (!p) continue;
       const el = document.createElement("div");
-      el.style.cssText = "position:absolute;left:0;top:0;will-change:transform";
+      // Pastille cliquable (zone élargie pour le doigt) : elle ouvre la fiche du bâtiment, qui explique le problème
+      el.style.cssText = "position:absolute;left:0;top:0;will-change:transform;pointer-events:auto;cursor:pointer;padding:8px 8px 0;touch-action:manipulation";
       el.innerHTML = markerSvg(mk.kind);
+      el.addEventListener("click", (e) => { e.stopPropagation(); this.cb.click(mk.x, mk.y); });
       if (!this.reduce) (el.firstElementChild as HTMLElement).animate([{ transform: "translateY(0)" }, { transform: "translateY(-4px)" }], { duration: 1300 + ((mk.x * 37 + mk.y * 11) % 5) * 90, direction: "alternate", iterations: Infinity, easing: "ease-in-out" });
       this.overlay.appendChild(el);
       this.pins.push({ el, x: mk.x, y: mk.y, top: buildingModel(p.id).top, lift: l.signs[`${mk.x},${mk.y}`] ? 1 : 0 });
@@ -698,7 +700,7 @@ export class CityEngine {
     if (p && !this.live.mode) {
       const [ax, ay] = this.project(tx + 0.5, buildingModel(p.id).top + 0.06, ty + 0.5);
       const mk = this.markerMap.get(`${tx},${ty}`), sg = this.live.signs[`${tx},${ty}`];
-      this.cb.tip({ left: ax, top: ay - (mk ? 34 : sg ? 30 : 6), title: sg?.title ?? b?.name ?? p.id, text: mk?.label ?? sg?.text ?? b?.description ?? "", warn: !!mk });
+      this.cb.tip({ left: ax, top: ay - (mk ? 34 : sg ? 30 : 6), title: sg?.title ?? b?.name ?? p.id, text: (mk && markerTip(mk)) ?? sg?.text ?? b?.description ?? "", warn: !!mk });
     } else this.cb.tip(null);
     this.refreshHover(); this.draw();
   };

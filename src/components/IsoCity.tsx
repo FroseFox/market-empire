@@ -56,6 +56,10 @@ interface Item { depth: number; ax: number; ay: number; draw: (t: number) => voi
 /** Indicateur affiché au-dessus d'un bâtiment (manque d'énergie, logements pleins…). */
 export type MarkerKind = "energy" | "food" | "full" | "staff" | "service";
 export interface CityMarker { x: number; y: number; kind: MarkerKind; label: string }
+/** Gravité d'un indicateur : « bad » coûte de l'argent chaque jour (rouge), « warn » freine la ville (orange). */
+export const MARKER_LEVEL: Record<MarkerKind, "bad" | "warn"> = { energy: "bad", food: "bad", full: "warn", staff: "warn", service: "warn" };
+/** Texte d'infobulle d'un indicateur, précédé de sa gravité. */
+export const markerTip = (m: CityMarker) => `${MARKER_LEVEL[m.kind] === "bad" ? "Problème" : "À surveiller"} · ${m.label}`;
 export const MARKER_COLOR: Record<MarkerKind, string> = { energy: "#EF4444", food: "#EF4444", full: "#F59E0B", staff: "#F59E0B", service: "#F59E0B" };
 /** Hauteur approximative des bâtiments (pour poser l'indicateur au-dessus du toit). */
 const TOP: Record<string, number> = {
@@ -1354,7 +1358,7 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
         const [ax, ay] = iso(tx + 0.5, ty + 0.5, (TOP[p.id] ?? 30) + 4);
         const mk = markersRef.current.get(`${tx},${ty}`);
         const sg = signsRef.current[`${tx},${ty}`];
-        setTip({ left: ax, top: ay - (mk ? 34 : sg ? 30 : 6), title: sg?.title ?? b?.name ?? p.id, text: mk?.label ?? sg?.text ?? b?.description ?? "", warn: !!mk });
+        setTip({ left: ax, top: ay - (mk ? 34 : sg ? 30 : 6), title: sg?.title ?? b?.name ?? p.id, text: (mk && markerTip(mk)) ?? sg?.text ?? b?.description ?? "", warn: !!mk });
       } else setTip(null);
       if (!raf) frame(performance.now());
     };
