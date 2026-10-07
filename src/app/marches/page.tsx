@@ -1,5 +1,5 @@
 "use client";
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState, useRef } from "react";
 import Link from "next/link";
 import { ChevronRight, Layers, LineChart, Lock, Search, Wallet, X } from "lucide-react";
 import { useDerived, useGame } from "@/store/game";
@@ -110,6 +110,9 @@ export default function MarketsPage() {
 
   // Sur petit écran, la fiche s'ouvre par-dessus la liste
   const [sheet, setSheet] = useState(false);
+  // Changement d'actif : la fiche repart du haut
+  const panelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { panelRef.current?.scrollTo({ top: 0 }); }, [selected]);
   // Fiche demandée depuis une autre page : ouverte juste après l'affichage (sur petit écran, elle recouvre la liste)
   useEffect(() => {
     clearFocus();
@@ -269,7 +272,14 @@ export default function MarketsPage() {
           )}
         </Card>
 
-        {!small && <div className="xl:col-span-5"><div className="xl:sticky xl:top-20"><AssetPanel symbol={selected} onSelect={setSelected} /></div></div>}
+        {/* La fiche reste à l'écran et défile toute seule : on atteint Acheter sans descendre en bas de la liste */}
+        {!small && (
+          <div className="xl:col-span-5">
+            <div ref={panelRef} className="xl:sticky xl:top-20 xl:max-h-[calc(100dvh-6rem)] xl:overflow-y-auto xl:overscroll-contain xl:rounded-[14px]">
+              <AssetPanel symbol={selected} onSelect={setSelected} />
+            </div>
+          </div>
+        )}
       </div>
 
       {small && sheet && (
