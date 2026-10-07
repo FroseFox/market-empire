@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
-import { History, PieChart, TrendingUp, Wallet } from "lucide-react";
+import { History, PieChart, TrendingUp, Wallet, Zap } from "lucide-react";
 import { useDerived } from "@/store/game";
 import { hasResearch } from "@/lib/game/engine";
 import { ASSET_BY_SYMBOL, KIND_LABEL, familyOf, regionOf } from "@/lib/market/universe";
@@ -11,6 +11,7 @@ import { Donut } from "@/components/charts";
 import { eur, eur2, pctPlain, signedEur, tone, qtyFmt } from "@/lib/format";
 import PriceStatus from "@/components/PriceStatus";
 import { focusAsset } from "@/lib/market/focus";
+import { LeveragePositions } from "@/components/Leverage";
 
 const PALETTE = ["#2563EB", "#10B981", "#F59E0B", "#6366F1", "#0EA5E9", "#EC4899", "#64748B"];
 
@@ -28,7 +29,7 @@ const LockLink = ({ label }: { label: string }) => (
 );
 
 export default function PortfolioPage() {
-  const { game, quotes, portfolio, portfolioCost } = useDerived();
+  const { game, quotes, portfolio, portfolioCost, leverage } = useDerived();
   const rows = Object.entries(game.holdings).map(([sym, h]) => {
     const price = quotes[sym]?.price ?? h.avgCost;
     const value = h.qty * price;
@@ -117,6 +118,13 @@ export default function PortfolioPage() {
             </>
           )}
         </Card>
+
+        {!!game.positions?.length && (
+          <Card title="Positions à effet de levier" icon={Zap} className="xl:col-span-12"
+            extra={<span className="text-[12px] text-muted">Valeur si vous clôturez tout : <b className="tabular text-ink">{eur(leverage)}</b></span>}>
+            <LeveragePositions link />
+          </Card>
+        )}
 
         <Card title="Historique des opérations" icon={History} className="xl:col-span-12"
           extra={showGains
