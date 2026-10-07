@@ -286,9 +286,11 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
       scale = base.scale * v.zoom;
       ox = W / 2 + (base.ox - W / 2) * v.zoom + v.px;
       oy = H / 2 + (base.oy - H / 2) * v.zoom + v.py;
-      const [cx, cy] = iso((x0 + x1 + 1) / 2, (y0 + y1 + 1) / 2);
-      const fx = Math.max(W * 0.1, Math.min(W * 0.9, cx)) - cx, fy = Math.max(H * 0.1, Math.min(H * 0.9, cy)) - cy;
-      if (fx || fy) { v.px += fx; v.py += fy; ox += fx; oy += fy; }
+      // On peut aller partout sur le terrain : le carreau au centre de l'écran doit rester sur le terrain (marge d'un carreau)
+      const a = (W / 2 - ox) / (TW / 2 * scale), b = (H / 2 - oy) / (TH / 2 * scale);
+      const tx = Math.max(x0 - 1, Math.min(x1 + 2, (a + b) / 2)), ty = Math.max(y0 - 1, Math.min(y1 + 2, (b - a) / 2));
+      const nox = W / 2 - (tx - ty) * (TW / 2) * scale, noy = H / 2 - (tx + ty) * (TH / 2) * scale;
+      if (Math.abs(nox - ox) > 0.01 || Math.abs(noy - oy) > 0.01) { v.px += nox - ox; v.py += noy - oy; ox = nox; oy = noy; }
     }
 
     // Vue visée pendant une animation de zoom (rejointe en douceur image par image)

@@ -21,6 +21,8 @@ const MIN_ZOOM = 0.6, MAX_ZOOM = 4;
 // Le zoom est relatif à « toute la carte tient dans le cadre » : sur un écran étroit, ×4 restait minuscule.
 // On raisonne donc aussi en pixels par carreau : taille de départ garantie, et zoom maximal identique sur tous les écrans.
 const START_PX = 30, CLOSE_PX = 110;
+/** Marge (en carreaux) autour du terrain jusqu'où la vue peut aller. */
+const PAN_MARGIN = 1;
 /** Hauteur de la caméra au-dessus de l'horizon : 32° donne des carreaux proches du 2:1 de l'ancienne vue. */
 const EL = (32 * Math.PI) / 180, SIN = Math.sin(EL), COS = Math.cos(EL), R2 = Math.SQRT1_2;
 /** Pixels par carreau de l'ancienne vue à l'échelle 1 : sert à garder les mêmes tailles d'indicateurs. */
@@ -530,10 +532,12 @@ export class CityEngine {
     const v = this.view;
     v.zoom = Math.max(MIN_ZOOM, Math.min(this.maxZoom(), v.zoom));
     this.u = this.base.u / v.zoom; this.tx = this.base.tx + v.ox; this.tz = this.base.tz + v.oz;
-    // La ville reste toujours en partie visible
-    const [sx, sy] = this.project((this.x0 + this.x1 + 1) / 2, 0, (this.y0 + this.y1 + 1) / 2);
-    const fx = Math.max(this.W * 0.1, Math.min(this.W * 0.9, sx)) - sx, fy = Math.max(this.H * 0.1, Math.min(this.H * 0.9, sy)) - sy;
-    if (fx || fy) this.shift(fx, fy);
+    // On peut aller partout sur le terrain, zoomé ou non : c'est le point au centre de l'écran qui doit rester
+    // sur le terrain (avant, c'était le centre du terrain qui devait rester à l'écran : en zoomant, on ne pouvait
+    // plus s'éloigner que d'un ou deux carreaux).
+    const cx = Math.max(this.x0 - PAN_MARGIN, Math.min(this.x1 + 1 + PAN_MARGIN, this.tx));
+    const cz = Math.max(this.y0 - PAN_MARGIN, Math.min(this.y1 + 1 + PAN_MARGIN, this.tz));
+    if (cx !== this.tx || cz !== this.tz) { v.ox = cx - this.base.tx; v.oz = cz - this.base.tz; this.tx = cx; this.tz = cz; }
     const D = 220;
     this.cam.left = (-this.W * this.u) / 2; this.cam.right = (this.W * this.u) / 2; this.cam.top = (this.H * this.u) / 2; this.cam.bottom = (-this.H * this.u) / 2;
     this.cam.position.set(this.tx + D * COS * R2, D * SIN, this.tz + D * COS * R2); this.cam.lookAt(this.tx, 0, this.tz); this.cam.updateProjectionMatrix();
