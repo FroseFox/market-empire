@@ -26,6 +26,8 @@ export interface PublicPlayer {
   avatar?: string | null;
   color: string;
   isMe: boolean;
+  /** Faux : sauvegarde signalée comme impossible. Le joueur garde son pays sur la carte, mais sort du classement. */
+  ranked?: boolean;
   /** Plan de la ville, quand il est déjà connu (page claude.ai) ; sinon il est lu à la visite. */
   city?: unknown;
 }
@@ -80,26 +82,32 @@ function profileFromGame(country: string) {
   };
 }
 
-type Row = { id: string; name: string; avatar: string | null; country: string | null; city_name: string; net_worth: number; population: number; perf: number; day: number; updated_at: string };
+type Row = { id: string; name: string; avatar: string | null; country: string | null; city_name: string; net_worth: number; population: number; perf: number; day: number; updated_at: string; flagged?: boolean };
 
+let lastLoad = 0;
 /** Site publié : classement lu dans Supabase (mis en cache 5 min, seulement quand la page Monde est ouverte). */
 async function loadOnline(fresh = false) {
-  // « ranking » = classement sans les sauvegardes signalées comme impossibles ; tant que la vue n'existe pas, on lit la table
-  const query = "select=id,name,avatar,country,city_name,net_worth,population,perf,day,updated_at&order=net_worth.desc&limit=300";
-  const rows = (await rest<Row[]>(`ranking?${query}`, fresh ? 0 : undefined)) ?? (await rest<Row[]>(`players?${query}`, fresh ? 0 : undefined));
-  if (!rows) { emit({ status: "offline", players: [], me: null }); return; }
+  // La carte montre TOUS les territoires occupés : un joueur signalé (sauvegarde impossible) garde son pays,
+  // il sort seulement du classement. On lit donc la table complète avec son signalement, en une seule requête.
+  // Secours : la vue « ranking » (sans les joueurs signalés), puis la table sans la colonne de signalement.
+  const cols = "id,name,avatar,country,city_name,net_worth,population,perf,day,updated_at";
+  const tail = "&order=net_worth.desc&limit=300", ttl = fresh ? 0 : undefined;
+  const rows = (await rest<Row[]>(`players?select=${cols},flagged${tail}`, ttl))
+    ?? (await rest<Row[]>(`ranking?select=${cols}${tail}`, ttl))
+    ?? (await rest<Row[]>(`players?select=${cols}${tail}`, ttl));
+  // Échec : on réessaiera à la prochaine ouverture de la page, sans attendre 5 minutes
+  if (!rows) { lastLoad = 0; emit({ status: "offline", players: [], me: null }); return; }
   const me = useAuth.getState().user?.id ?? null;
   emit({
     status: "ready", me,
     players: rows.filter((r) => r.country && PLAYABLE[r.country]).map((r) => ({
       id: r.id, cityName: r.city_name, netWorth: Number(r.net_worth) || 0, population: r.population, perf: Number(r.perf) || 0,
       day: r.day, country: r.country!, updatedAt: Date.parse(r.updated_at) || 0, name: r.name, avatar: r.avatar,
-      color: r.id === me ? "#2563EB" : "#64748B", isMe: r.id === me,
+      color: r.id === me ? "#2563EB" : "#64748B", isMe: r.id === me, ranked: !r.flagged,
     })),
   });
 }
 
-let lastLoad = 0;
 async function start() {
   // Site publié : au plus une lecture toutes les 5 minutes (la liste est aussi mise en cache)
   if (!STATIC_MODE) { if (Date.now() - lastLoad > 5 * 60_000) { lastLoad = Date.now(); loadOnline(); } return; }
