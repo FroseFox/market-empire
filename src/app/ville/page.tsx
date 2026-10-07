@@ -10,6 +10,7 @@ import { Button, ConfirmButton, Progress, LockTag } from "@/components/ui";
 import IsoCity from "@/components/City3D";
 import { MARKER_LEVEL, type CityMarker, type CityMode, type CitySign, type MarkerKind } from "@/components/IsoCity";
 import CompanyLogo, { companyBadge } from "@/components/CompanyLogo";
+import { cityMarkers } from "@/lib/game/markers";
 import { useMedia } from "@/lib/useMedia";
 import { computeCity, activeBranches, branchAt, branchCost, buildPreview, featureOpen, mapSize, nextTerritory, orientationCost, branchLimit, buildingAudit, forecast, goalStatuses, hasResearch, isTileFree, prestige, renovateCost, upgradeOffer, type CityStats } from "@/lib/game/engine";
 import { BRANCH_EFFECTS, BRANCH_MIN_VALUE, FEATURES, FORECAST_DAYS, ORIENTATIONS, ORIENTATION_BY_ID, PROJECTS } from "@/lib/game/config";
@@ -30,13 +31,6 @@ const DEV = process.env.NODE_ENV !== "production";
 /** Outil actif de la barre du bas. */
 type Tool = "build" | "move" | "demolish" | "goals" | "firms" | "list" | "stats" | "more" | null;
 const BUILD_CATS: Category[] = ["housing", "commerce", "services", "industry", "agriculture", "energy", "public"];
-const MARKER_LABEL: Record<MarkerKind, string> = {
-  energy: "Manque d'énergie : importée au prix fort",
-  food: "Manque de nourriture : importée au prix fort",
-  full: "Logements pleins : la population ne grandit plus",
-  staff: "Postes vacants : il manque des habitants",
-  service: "Équipement public manquant",
-};
 /** Ce qu'il faut faire pour faire disparaître la pastille, et l'onglet de construction qui s'ouvre. */
 const MARKER_FIX: Record<MarkerKind, { text: string; cat: Category; cta: string }> = {
   energy: { text: "Construisez une centrale pour produire votre propre énergie.", cat: "energy", cta: "Construire une centrale" },
@@ -47,26 +41,6 @@ const MARKER_FIX: Record<MarkerKind, { text: string; cat: Category; cta: string 
 };
 /** Rouge : coûte de l'argent chaque jour. Orange : ne coûte rien, mais freine la ville. */
 const LEVEL_TEXT = { bad: { word: "Problème", sub: "coûte de l'argent chaque jour" }, warn: { word: "À surveiller", sub: "freine la croissance de la ville" } } as const;
-
-/** Pas plus de quelques pastilles par problème : la carte doit rester lisible. */
-const MAX_MARKERS = 4;
-
-/** Indicateurs posés sur la carte, à l'endroit où le problème se règle. */
-function cityMarkers(plots: Plot[], flags: { energy: boolean; food: boolean; full: boolean; staff: boolean; service: string }): CityMarker[] {
-  const pick = (kind: MarkerKind, weight: (b: BuildingType) => number, label = MARKER_LABEL[kind]) =>
-    plots.map((p) => ({ p, w: weight(BUILDING_BY_ID[p.id] ?? ({} as BuildingType)) })).filter((r) => r.w > 0)
-      .sort((a, b) => b.w - a.w).slice(0, MAX_MARKERS)
-      .map(({ p }) => ({ x: p.x, y: p.y, kind, label }));
-  const out: CityMarker[] = [];
-  if (flags.energy) out.push(...pick("energy", (b) => b.energyUse ?? 0));
-  if (flags.food) out.push(...pick("food", (b) => b.housing ?? 0));
-  else if (flags.full) out.push(...pick("full", (b) => b.housing ?? 0));
-  if (flags.staff) out.push(...pick("staff", (b) => b.jobs ?? 0));
-  if (flags.service) out.push(...pick("service", (b) => b.housing ?? 0, `Il manque : ${flags.service}`));
-  // Une seule pastille par bâtiment (la première, donc la plus grave)
-  const seen = new Set<string>();
-  return out.filter((m) => { const k = `${m.x},${m.y}`; if (seen.has(k)) return false; seen.add(k); return true; });
-}
 
 export default function CityPage() {
   const { game, city } = useDerived();
@@ -129,16 +103,11 @@ export default function CityPage() {
     if (hit && (tool === "list" || tool === "stats" || tool === "more")) setTool(null);
   };
 
-  const flags = {
-    energy: city.energy.balance < 0, food: city.food.balance < 0,
-    full: city.freeHousing === 0 && city.housing > 0, staff: city.openJobs > 0 && city.freeHousing === 0,
-    // Équipements attendus par les habitants et insuffisants
-    service: SERVICE_IDS.filter((id) => city.services[id].needed && city.services[id].coverage < 1).map((id) => SERVICES[id].label.toLowerCase()).join(", "),
-  };
-  const markers = useMemo(
-    () => cityMarkers(game.plots, { energy: flags.energy, food: flags.food, full: flags.full, staff: flags.staff, service: flags.service }),
-    [game.plots, flags.energy, flags.food, flags.full, flags.staff, flags.service],
-  );
+  const flags = { energy: city.energy.balance < 0, food: city.food.balance < 0, full: city.freeHousing === 0 && city.housing > 0 };
+  // Pastilles au-dessus des bâtiments concernés (règles dans lib/game/markers.ts)
+  const markerList = cityMarkers(game.plots, city), markerKey = JSON.stringify(markerList);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- la liste ne change que si son contenu change
+  const markers = useMemo(() => markerList, [markerKey]);
   // Enseignes des entreprises implantées : une par bâtiment « branch », dans l'ordre des implantations
   const branches = game.branches, holdings = game.holdings;
   const signs = useMemo(() => {
