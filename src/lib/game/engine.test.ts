@@ -243,13 +243,13 @@ describe("rénovation, prévisions, audit", () => {
   const ok = (r: E.ActionResult) => { if (!r.ok) throw new Error(r.error); return r.state; };
   it("améliore un bâtiment sur place pour la différence de prix, après la recherche", () => {
     let g = { ...newGame(T0), cash: 500_000, population: 900 };
-    g = ok(build(g, "house_s", T0, { x: 9, y: 9 }));
-    expect(E.upgrade(g, { x: 9, y: 9 }, T0).ok).toBe(false); // recherche manquante
+    g = ok(build(g, "house_s", T0, { x: 13, y: 13 }));
+    expect(E.upgrade(g, { x: 13, y: 13 }, T0).ok).toBe(false); // recherche manquante
     g = ok(doResearch(g, "city_upgrade", T0));
     const cash = g.cash, worth = g.cash + computeCity(g).assetValue;
-    g = ok(E.upgrade(g, { x: 9, y: 9 }, T0));
+    g = ok(E.upgrade(g, { x: 13, y: 13 }, T0));
     expect(g.cash).toBe(cash - 55_000);
-    expect(g.plots.find((p) => p.x === 9 && p.y === 9)?.id).toBe("house_m");
+    expect(g.plots.find((p) => p.x === 13 && p.y === 13)?.id).toBe("house_m");
     expect(g.buildings.house_s).toBeUndefined();
     expect(g.cash + computeCity(g).assetValue).toBeCloseTo(worth, 2); // patrimoine inchangé
     expect(normalize(g)).toBe(g);
@@ -258,7 +258,7 @@ describe("rénovation, prévisions, audit", () => {
     const before = g.cash + computeCity(g).assetValue;
     g = ok(E.upgrade(g, shop, T0));
     expect(g.cash + computeCity(g).assetValue).toBeCloseTo(before, 2);
-    expect(E.upgrade(g, { x: 9, y: 9 }, T0).ok).toBe(false); // house_l : 2 000 habitants requis
+    expect(E.upgrade(g, { x: 13, y: 13 }, T0).ok).toBe(false); // house_l : 2 000 habitants requis
   });
   it("la prévision suit ce que feront vraiment les prochains jours", () => {
     let g = ok(build({ ...newGame(T0), cash: 500_000 }, "house_s", T0));
@@ -316,7 +316,7 @@ describe("ville et bourse : entreprises implantées", () => {
     expect(ok(E.closeBranch(g, "AAPL")).branches).toEqual([]);
   });
   it("chaque entreprise implantée a son bâtiment sur la carte, qu'on retrouve après un déplacement", () => {
-    let g = { ...newGame(T0), cash: 2_000_000, population: 2_000 };
+    let g: E.GameState = { ...newGame(T0), cash: 2_000_000, population: 2_000, territory: 2 };
     g = ok(buy(g, "AAPL", 60, 200, T0));
     g = ok(buy(g, "MSFT", 40, 400, T0));
     g = ok(E.openBranch(g, "AAPL", 200, T0));
@@ -328,9 +328,9 @@ describe("ville et bourse : entreprises implantées", () => {
     expect(E.branchAt(g, sites[1].x, sites[1].y)?.symbol).toBe("MSFT");
     expect(normalize(g)).toBe(g);
     // Déplacer le bâtiment d'Apple : il reste celui d'Apple ; il ne se démolit pas
-    g = ok(moveBuilding(g, sites[0], { x: 1, y: 1 }));
-    expect(E.branchAt(g, 1, 1)?.symbol).toBe("AAPL");
-    expect(demolish(g, "branch", T0, { x: 1, y: 1 }).ok).toBe(false);
+    g = ok(moveBuilding(g, sites[0], { x: 5, y: 5 }));
+    expect(E.branchAt(g, 5, 5)?.symbol).toBe("AAPL");
+    expect(demolish(g, "branch", T0, { x: 5, y: 5 }).ok).toBe(false);
     // Fermer Apple retire son bâtiment, pas celui de Microsoft
     g = ok(E.closeBranch(g, "AAPL"));
     expect(g.plots.filter((p) => p.id === "branch")).toEqual([sites[1]]);
@@ -486,28 +486,50 @@ describe("ordres en euros", () => {
 describe("territoire", () => {
   it("s'agrandit contre paiement, à partir d'un certain rang, et compte dans le patrimoine", () => {
     let g = { ...newGame(T0), cash: 15_000_000 };
-    expect(E.mapSize(g)).toBe(32);
-    expect(build(g, "house_s", T0, { x: -2, y: 5 }).ok).toBe(false);   // hors de la carte de départ
-    expect(E.expandTerritory(g, T0).ok).toBe(false);                    // village : trop tôt
-    g = { ...g, population: 20_000, buildings: { ...g.buildings, house_xl: 2 } };
-    g = normalize(g);
+    expect(E.mapSize(g)).toBe(8);
+    expect(E.landUse(g)).toEqual({ used: g.plots.length, total: 25 });
+    expect(g.plots.every((p) => E.isTileFree({ plots: [], territory: 0 }, p.x, p.y))).toBe(true); // la ville de départ tient dans la petite carte
+    expect(build(g, "house_s", T0, { x: 10, y: 13 }).ok).toBe(false);   // hors de la carte de départ
+    expect(E.expandTerritory({ ...g, cash: 100 }, T0).ok).toBe(false);  // pas assez d'argent
     const worth = g.cash + computeCity(g).assetValue;
     const r = E.expandTerritory(g, T0);
     if (!r.ok) throw new Error(r.error);
     g = r.state;
-    expect(E.mapSize(g)).toBe(40);
+    expect(E.mapSize(g)).toBe(16);
     expect(g.cash + computeCity(g).assetValue).toBeCloseTo(worth, 2);
-    const ok = build(g, "house_s", T0, { x: -2, y: 5 });
+    const ok = build(g, "house_s", T0, { x: 10, y: 13 });
     expect(ok.ok).toBe(true);
-    expect(build(g, "house_s", T0, { x: -4, y: 5 }).ok).toBe(false);    // route de la nouvelle bordure
-    expect(build(g, "house_s", T0, { x: -6, y: 5 }).ok).toBe(false);    // au-delà du territoire acheté
+    expect(build(g, "house_s", T0, { x: 8, y: 13 }).ok).toBe(false);    // route de la nouvelle bordure
+    expect(build(g, "house_s", T0, { x: 6, y: 13 }).ok).toBe(false);    // au-delà du territoire acheté
     if (ok.ok) expect(normalize(ok.state)).toBe(ok.state);
+    expect(E.expandTerritory(g, T0).ok).toBe(false);                    // palier suivant : réservé à un rang plus haut
+    // Tous les paliers s'achètent l'un après l'autre jusqu'à la plus grande carte
+    for (let i = 0; i < 6; i++) { const more = E.expandTerritory({ ...g, population: 600_000, cash: 1e9 }, T0); if (more.ok) g = more.state; }
+    expect(E.mapSize(g)).toBe(48);
+    expect(E.nextTerritory(g)).toBeUndefined();
+  });
+  it("une ancienne partie garde ce qu'elle a construit et ce qu'elle a payé", () => {
+    const old = (over: object) => { const { landV: _v, ...g } = newGame(T0); void _v; return { ...g, ...over } as E.GameState; };
+    // Petite ville d'avant : elle tient dans la carte de départ, elle devra acheter pour s'étendre
+    const small = normalize(old({}));
+    expect(E.mapSize(small)).toBe(8);
+    // Ville étalée sur l'ancienne carte de 32 : elle la garde, rien n'est démoli, et ce terrain offert ne gonfle pas le patrimoine
+    const wide = old({ plots: [...newGame(T0).plots, { id: "house_s", x: 1, y: 1 }], buildings: { ...newGame(T0).buildings, house_s: (newGame(T0).buildings.house_s ?? 0) + 1 } });
+    const kept = normalize(wide);
+    expect(E.mapSize(kept)).toBe(32);
+    expect(kept.plots).toHaveLength(wide.plots.length);
+    expect(computeCity(kept).assetValue).toBeCloseTo(computeCity({ ...wide, territory: 0 }).assetValue, 2);
+    // Territoire payé avant (40 × 40) : conservé, et toujours compté à son prix
+    const paid = normalize(old({ territory: 1 }));
+    expect(E.mapSize(paid)).toBe(40);
+    expect(computeCity(paid).assetValue - computeCity(small).assetValue).toBeCloseTo(2_000_000, 2);
+    expect(normalize(kept)).toBe(kept);
   });
   it("une carte pleine refuse la construction automatique au lieu de perdre le bâtiment", () => {
     let g = { ...newGame(T0), cash: 1e9 };
     let n = 0;
     for (;;) { const r = build(g, "house_s", T0); if (!r.ok) { expect(r.error).toMatch(/Plus de place/); break; } g = r.state; n++; }
-    expect(g.plots.length).toBe(529);
+    expect(g.plots.length).toBe(25);
     expect(g.buildings.house_s).toBe(n);
   });
 });

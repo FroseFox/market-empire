@@ -67,8 +67,9 @@ export function simulate(days: number, claim = true, invest = true): { days: Sim
       if (!b) break;
       if (b.cost > g.cash) break; // il économise
       if (E.capitalCost(b) > (g.capital ?? 0)) { waits++; break; } // il attend que ses placements produisent le capital
-      const r = E.build(g, b.id, d);
-      if (!r.ok) break; // plus de place
+      let r = E.build(g, b.id, d);
+      // Plus de place : il achète du terrain s'il le peut, sinon il attend
+      if (!r.ok) { const land = E.expandTerritory(g, d); if (!land.ok) break; g = land.state; r = E.build(g, b.id, d); if (!r.ok) break; }
       g = r.state;
     }
     g = E.tickDay(g, PRICES, d);

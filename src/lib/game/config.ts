@@ -455,16 +455,25 @@ export const FEATURES: { id: FeatureId; rank: number; label: string; text: strin
   { id: "shares", rank: 2, label: "Bourse des villes", text: "Achetez des parts de la ville d'un autre joueur pour toucher une part de ses revenus, ou vendez des parts de la vôtre pour lever de l'argent (Monde › Bourse des villes).", href: "/monde" },
   { id: "alliances", rank: 2, label: "Alliances", text: "Fondez ou rejoignez une alliance : sa caisse commune donne un bonus à tous ses membres, et les contrats entre alliés se font à de meilleurs prix (Monde › Alliances).", href: "/monde" },
   { id: "hubs", rank: 2, label: "Places financières", text: "Ouvrez un bureau dans une place financière pour réduire vos frais de courtage (Monde).", href: "/monde" },
-  { id: "projects", rank: 3, label: "Grands projets et territoire", text: "Agrandissez votre territoire et lancez des projets qui marquent votre ville (bouton Objectifs).", href: "/ville" },
+  { id: "projects", rank: 3, label: "Grands projets", text: "Lancez des projets qui marquent votre ville (bouton Objectifs).", href: "/ville" },
 ];
 
 // ─── Territoire ───────────────────────────────────────────────
-/** Agrandissements du territoire : côté de la carte, prix, rang de ville minimal. Compté dans le patrimoine. */
+/** Territoire : côté de la carte, prix, rang de ville minimal. Compté dans le patrimoine.
+ *  La ville démarre petite et achète son terrain : 4 carreaux de plus de chaque côté à chaque palier
+ *  (les tailles vont de 8 en 8 pour que les routes, tracées tous les 4 carreaux, bordent toujours la carte). */
 export const TERRITORY: { size: number; cost: number; minRank: number }[] = [
-  { size: 32, cost: 0, minRank: 0 },
+  { size: 8, cost: 0, minRank: 0 },
+  { size: 16, cost: 20_000, minRank: 0 },
+  { size: 24, cost: 150_000, minRank: 2 },
+  { size: 32, cost: 600_000, minRank: 3 },
   { size: 40, cost: 2_000_000, minRank: 4 },
   { size: 48, cost: 10_000_000, minRank: 6 },
 ];
+/** Version des règles de territoire. Les parties d'avant (carte de 32 offerte au départ) sont converties à l'ouverture. */
+export const LAND_VERSION = 2;
+/** Tic prévient quand le terrain est occupé à ce point. */
+export const LAND_ALMOST_FULL = 0.9;
 
 // ─── Grands projets (fin de partie) ───────────────────────────
 export interface Project {

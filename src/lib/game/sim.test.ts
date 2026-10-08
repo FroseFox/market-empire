@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { simulate } from "./sim";
 import { CITY_RANKS, START_GRANT } from "./config";
-import { computeCity } from "./engine";
+import { computeCity, landUse } from "./engine";
 
 // Garde-fou d'équilibrage : un joueur prudent, qui garde un quart de sa fortune placé en bourse sans spéculer
 // (cours constants), doit avancer à un rythme compatible avec une partie de 2 semaines à 1 mois
@@ -38,6 +38,6 @@ describe("rythme de progression de la ville (robot)", () => {
     for (let i = 30; i < days.length; i++) expect(days[i].population).toBeGreaterThanOrEqual(days[i - 30].population * 0.9);
     // Il reste de la place sur la carte quand la ville devient capitale économique
     expect(days.find((d) => d.rank >= CITY_RANKS.findIndex((r) => r.name === "Capitale économique"))?.buildings ?? Infinity).toBeLessThan(300);
-    expect(final.plots.length).toBeLessThanOrEqual(529);
+    expect(final.plots.length).toBeLessThanOrEqual(landUse(final).total);
   });
 });

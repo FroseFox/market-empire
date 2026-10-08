@@ -49,6 +49,9 @@ for (let x = MAX.lo + 1; x < MAX.hi - 1; x++) {
   }
 }
 
+/** Nombre de carreaux constructibles d'une carte de côté `size`. */
+export const buildableCount = (size = MAP_SIZE) => TILES.reduce((a, t) => a + (isBuildable(t.x, t.y, size) ? 1 : 0), 0);
+
 export function placeTile(plots: Plot[], buildingId: string, size = MAP_SIZE): { x: number; y: number } | null {
   const zone = zoneOf(BUILDING_BY_ID[buildingId]?.category ?? "housing");
   const used = new Set(plots.map((p) => `${p.x},${p.y}`));

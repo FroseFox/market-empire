@@ -1,8 +1,8 @@
 // Alertes et objectifs. Règle de la charte : une alerte n'apparaît que si
 // le joueur peut agir dessus.
 import type { CityStats, GameState, Prices } from "./engine";
-import { activeBranches, branchLimit, capitalPerDay, cityRank, featureOpen, goalStatuses, holdingValue, investCap, investRoom, nextBank, portfolioValue, renovateCost } from "./engine";
-import { BRANCH_MIN_VALUE, CAPITAL, CITY_RANKS, ORIENTATION_MIN_RANK, SERVICES, SERVICE_IDS } from "./config";
+import { activeBranches, branchLimit, capitalPerDay, cityRank, featureOpen, goalStatuses, holdingValue, investCap, investRoom, landUse, nextBank, nextTerritory, portfolioValue, renovateCost } from "./engine";
+import { BRANCH_MIN_VALUE, CAPITAL, CITY_RANKS, LAND_ALMOST_FULL, ORIENTATION_MIN_RANK, SERVICES, SERVICE_IDS } from "./config";
 import { ASSET_BY_SYMBOL } from "../market/universe";
 
 export type AlertLevel = "info" | "warning" | "danger" | "success";
@@ -77,6 +77,13 @@ export function nextActions(state: GameState, city: CityStats, prices: Prices, m
   if (cityRank(state.population) >= 1 && capitalPerDay(state.holdings, prices) <= 0) out.push({ id: "capital", tone: "info", title: "Produisez du capital", text: `Rien n'est placé en bourse : les bâtiments à partir de ${fmt(CAPITAL.fromCost)} € demandent du capital, que seuls vos placements produisent.`, href: "/marches" });
   const bank = nextBank(state);
   if (bank && cityRank(state.population) >= bank.minRank && bank.cost <= state.cash && investRoom(state) < investCap(state) * 0.1) out.push({ id: "bank", tone: "info", title: "Agrandissez la Banque de la ville", text: `Votre plafond de mise est presque atteint : le niveau suivant donne un levier ×${bank.lev.toLocaleString("fr-FR")}.`, href: "/portefeuille" });
+  const ground = landUse(state), land = nextTerritory(state);
+  if (land && ground.used >= ground.total * LAND_ALMOST_FULL) {
+    const locked = cityRank(state.population) < land.minRank;
+    out.push({ id: "land", tone: "info", title: locked ? "Le terrain est presque plein" : "Agrandissez votre territoire",
+      text: locked ? `Il reste ${ground.total - ground.used} carreaux libres. Le prochain agrandissement s'ouvre au rang « ${CITY_RANKS[land.minRank].name} » : d'ici là, améliorez ou remplacez des bâtiments.`
+        : `Il reste ${ground.total - ground.used} carreaux libres. Passez à ${land.size} × ${land.size} pour ${fmt(land.cost)} € (bouton Objectifs).`, href: "/ville" });
+  }
   if (cityRank(state.population) >= ORIENTATION_MIN_RANK && !state.orientation) out.push({ id: "orientation", tone: "info", title: "Choisissez l'orientation de votre ville", text: "Industrielle, verte, d'affaires ou marchande : le premier choix est gratuit.", href: "/ville" });
   if (featureOpen(state, "firms") && (state.branches?.length ?? 0) < branchLimit(state)) {
     const taken = new Set((state.branches ?? []).map((b) => b.symbol));

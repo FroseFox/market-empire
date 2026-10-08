@@ -329,7 +329,7 @@ export default function WikiPage() {
                 [Hammer, "Construire", "La liste des bâtiments. Chaque étiquette dit ce que le bâtiment apporte."],
                 [Move, "Déplacer", "Changer un bâtiment de place. C’est gratuit."],
                 [Trash2, "Démolir", `Retirer un bâtiment : ${pct(DEMOLISH_REFUND)} de son prix vous est rendu.`],
-                [Target, "Objectifs", "Les paliers et leurs subventions, puis l’orientation, le territoire et les grands projets."],
+                [Target, "Objectifs", "Les paliers et leurs subventions, le territoire à agrandir, puis l’orientation et les grands projets."],
                 [Handshake, "Entreprises", "Faire ouvrir dans votre ville le site d’une entreprise dont vous êtes actionnaire."],
                 [LayoutList, "Bâtiments", "La liste de tout ce que vous avez construit."],
                 [BarChart3, "Stats", "Les chiffres de la ville (sur téléphone ; sur grand écran ils sont toujours affichés)."],
@@ -379,6 +379,7 @@ export default function WikiPage() {
               { q: "La population ne grandit plus", why: "Il n’y a plus de logement libre, ou trop peu d’emplois et de satisfaction.", fix: "D’abord des logements, puis des emplois." },
               { q: "Le revenu de la ville est négatif", tone: "bad", why: "L’entretien et les importations dépassent les impôts et les revenus.", fix: "Pourvoir les emplois vides (il faut des habitants), produire votre énergie et votre nourriture." },
               { q: "Je ne peux pas construire un gros bâtiment", why: `À partir de ${compactEur(CAPITAL.fromCost)}, un bâtiment demande du capital ◆ en plus de l’argent.`, fix: <>Garder des placements en bourse : ce sont eux qui produisent le capital (voir <Jump to="capital">Le capital ◆</Jump>).</> },
+              { q: "Plus de place sur la carte", why: "Tous les carreaux constructibles de votre territoire sont occupés.", fix: <>Acheter l’agrandissement suivant dans la Ville, bouton Objectifs (voir <Jump to="progression">Rangs et objectifs</Jump>). S’il demande un rang plus haut, améliorer ou remplacer des bâtiments en attendant.</> },
               { q: "Un site d’entreprise est en sommeil", why: "Vous avez vendu une partie des actions de cette entreprise : vous êtes passé sous la participation de départ.", fix: "Racheter des actions jusqu’à retrouver la participation de départ." },
             ]} />
             <H3>En bourse</H3>
@@ -559,6 +560,7 @@ export default function WikiPage() {
             <p>À partir du rang « {CITY_RANKS[ORIENTATION_MIN_RANK].name} », la ville choisit une orientation, une seule à la fois. Le premier choix est gratuit ; en changer coûte {compactEur(ORIENTATION_CHANGE_COST)} × le rang de la ville.</p>
             <Table head={["Orientation", "Avantage", "Revers"]} rows={ORIENTATIONS.map((o) => [o.name, o.pro, o.con])} />
             <H3>Territoire</H3>
+            <p>La ville démarre sur une petite carte. Quand le terrain est plein, on ne peut plus construire : il faut acheter l’agrandissement suivant (Ville, bouton Objectifs), qui ajoute 4 carreaux de chaque côté. Le territoire acheté compte dans le patrimoine.</p>
             <Table head={["Carte", "Prix", "Rang requis"]} rows={TERRITORY.map((t) => [`${t.size} × ${t.size} carreaux`, t.cost ? compactEur(t.cost) : "départ", CITY_RANKS[t.minRank].name])} />
             <H3>Objectifs (subvention versée une fois)</H3>
             <Table head={["Objectif", "Condition", "Subvention"]} rows={GOALS.map((g) => [g.label, g.minPop ? `avec au moins ${num(g.minPop)} habitants` : "", compactEur(g.reward)])} />
