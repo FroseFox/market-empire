@@ -8,7 +8,8 @@ import { Building2, FlaskConical, Globe2, LineChart, LogOut, RefreshCw, ShieldCh
 import type { LucideIcon } from "lucide-react";
 import { forgetAccount, googleEnabled, loginWithDiscord, loginWithGoogle, loginWithPassword, logout, switchAccount, useAuth } from "@/lib/auth";
 import { Face } from "@/components/AccountMenu";
-import { createAccount, playOffline, retryOnline, useOnline } from "@/lib/online";
+import { createAccount, playOffline, retryOnline, setPseudo, useOnline } from "@/lib/online";
+import { PSEUDO_MAX, pseudoProblem, suggestPseudo } from "@/lib/pseudo";
 import { useGame } from "@/store/game";
 import { DiscordIcon, GoogleIcon, ProviderTag } from "@/components/DiscordButton";
 import { Logo } from "@/components/AppShell";
@@ -112,7 +113,7 @@ function LoginScreen() {
       )}
       <ul className="mt-6 space-y-2 text-[12px] leading-relaxed text-muted">
         <li className="flex gap-2"><ShieldCheck size={15} className="mt-0.5 shrink-0 text-success" />Le jeu ne reçoit que votre nom et votre image de profil. Jamais votre mot de passe.</li>
-        {google && <li className="flex gap-2"><ShieldCheck size={15} className="mt-0.5 shrink-0 text-success" />Avec Google, le nom de votre compte Google est celui que les autres joueurs voient dans le classement.</li>}
+        <li className="flex gap-2"><ShieldCheck size={15} className="mt-0.5 shrink-0 text-success" />Les autres joueurs ne voient que le pseudo que vous choisissez, jamais votre nom de compte.</li>
         <li className="flex gap-2"><ShieldCheck size={15} className="mt-0.5 shrink-0 text-success" />Votre partie est sauvegardée en ligne : vous la retrouvez sur tous vos appareils.</li>
       </ul>
       <TestLogin />
@@ -183,23 +184,32 @@ function Who() {
 function CreateAccount() {
   const game = useGame((s) => s.game);
   const [city, setCity] = useState(game.cityName);
+  // Pseudo : proposé d'après le compte Discord ; laissé vide avec Google, dont le nom est souvent le vrai nom
+  const user = useAuth((s) => s.user);
+  const [pseudo, setPseudoText] = useState(() => (user && user.via !== "google" ? suggestPseudo(user.name) : ""));
+  const pseudoIssue = pseudo.trim() ? pseudoProblem(pseudo) : null;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const started = game.day > 1 || game.transactions.length > 0;
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
-    setError(await createAccount(city));
+    const refused = await setPseudo(pseudo);
+    setError(refused ?? await createAccount(city));
     setBusy(false);
   };
   return (
     <Frame>
       <h2 className="text-[26px] font-semibold leading-tight">Créer votre compte</h2>
-      <p className="mt-2 mb-5 text-[14px] leading-relaxed text-muted">Dernière étape : donnez un nom à votre ville. Vous pourrez le changer plus tard.</p>
+      <p className="mt-2 mb-5 text-[14px] leading-relaxed text-muted">Dernière étape : choisissez votre pseudo et le nom de votre ville. Vous pourrez les changer plus tard.</p>
       <Who />
       <form onSubmit={submit} className="mt-5">
+        <label htmlFor="new-pseudo" className="mb-1.5 block text-[13px] font-medium">Votre pseudo</label>
+        <input id="new-pseudo" value={pseudo} maxLength={PSEUDO_MAX} autoFocus placeholder="Vu par les autres joueurs" onChange={(e) => { setPseudoText(e.target.value); setError(null); }}
+          className="w-full rounded-[12px] border border-line bg-card px-3.5 py-2.5 text-[15px] outline-none focus:border-primary" />
+        <p className={`mb-4 mt-1.5 text-[12px] ${pseudoIssue ? "text-danger" : "text-muted"}`}>{pseudoIssue ?? "C'est le nom affiché sur la carte et au classement."}</p>
         <label htmlFor="new-city" className="mb-1.5 block text-[13px] font-medium">Nom de votre ville</label>
-        <input id="new-city" value={city} maxLength={32} autoFocus onChange={(e) => { setCity(e.target.value); setError(null); }}
+        <input id="new-city" value={city} maxLength={32} onChange={(e) => { setCity(e.target.value); setError(null); }}
           className="w-full rounded-[12px] border border-line bg-card px-3.5 py-2.5 text-[15px] outline-none focus:border-primary" />
         <p className="mt-2 text-[12px] text-muted">
           {started
@@ -207,7 +217,7 @@ function CreateAccount() {
             : `Vous commencez avec ${eur(game.cash)} et un village de ${game.population} habitants.`}
         </p>
         {error && <p role="alert" className="mt-3 rounded-[10px] bg-danger-soft px-3 py-2 text-[13px] text-red-700">{error}</p>}
-        <Button type="submit" disabled={busy || city.trim().length < 2} className="mt-5 w-full !rounded-[12px] !py-3 !text-[15px]">
+        <Button type="submit" disabled={busy || city.trim().length < 2 || !!pseudoProblem(pseudo)} className="mt-5 w-full !rounded-[12px] !py-3 !text-[15px]">
           {busy ? "Création…" : "Créer mon compte et jouer"}
         </Button>
       </form>

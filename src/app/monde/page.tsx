@@ -33,6 +33,7 @@ export default function WorldPage() {
 
   const auth = useAuth();
   const onlineCountry = useOnline((s) => s.country);
+  const pseudo = useOnline((s) => s.name);
 
   // Joueurs publiés + moi (chiffres en direct). Sans compte, on se place quand même sur la carte.
   const players: PublicPlayer[] = useMemo(() => {
@@ -45,10 +46,10 @@ export default function WorldPage() {
     const country = onlineCountry ?? (game.country && PLAYABLE[game.country] && !countryFull(game.country, taken) ? game.country : null) ?? listed?.country ?? pickCountry(auth.user?.id ?? game.playerName ?? "local", taken) ?? "250";
     const me: PublicPlayer = {
       id: listed?.id ?? "local", cityName: game.cityName, netWorth, population: game.population, perf: portfolioCost ? portfolio / portfolioCost - 1 : 0,
-      day: game.day, country, updatedAt: game.lastTick, name: auth.user?.name ?? game.playerName, avatar: auth.user?.avatar, color: "#2563EB", isMe: true,
+      day: game.day, country, updatedAt: game.lastTick, name: pseudo ?? auth.user?.name ?? game.playerName, avatar: auth.user?.avatar, color: "#2563EB", isMe: true,
     };
     return [...others, me];
-  }, [world, game, netWorth, portfolio, portfolioCost, auth.user, onlineCountry]);
+  }, [pseudo, world, game, netWorth, portfolio, portfolioCost, auth.user, onlineCountry]);
 
   // Un pays accueille plusieurs villes : on les regroupe, la plus riche d'abord
   const byCountry = useMemo(() => {
@@ -258,7 +259,7 @@ export default function WorldPage() {
               </table>
             </div>
           )}
-          <p className="text-[11px] text-muted mt-3">Le classement ne montre que le nom du compte et ce que chaque joueur publie : nom de ville, patrimoine, population et performance boursière. Mis à jour toutes les 2 minutes.</p>
+          <p className="text-[11px] text-muted mt-3">Le classement ne montre que le pseudo et ce que chaque joueur publie : nom de ville, patrimoine, population et performance boursière. Mis à jour toutes les 2 minutes.</p>
           {!STATIC_MODE && auth.status !== "in" && <div className="mt-3"><DiscordButton small /></div>}
         </Card>
       )}

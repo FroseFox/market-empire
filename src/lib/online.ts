@@ -17,6 +17,7 @@ import { restAsUser, rpc, useAuth } from "@/lib/auth";
 import { STATIC_MODE } from "@/lib/market/client";
 import { countryPreference } from "@/lib/world/countries";
 import { openingMove } from "@/lib/syncRule";
+import { PSEUDO_ERRORS, pseudoProblem, tidyPseudo } from "@/lib/pseudo";
 
 const LINK_KEY = "market-empire-linked";
 const SYNC_KEY = "market-empire-synced";
@@ -31,7 +32,8 @@ const DEBOUNCE = 30_000;
 export type OnlinePhase = "idle" | "connecting" | "new" | "ready" | "error";
 /** Pays (territoire) du joueur connecté, et étape d'ouverture du compte. */
 /** `tester` = compte de test désigné dans la base : il peut activer le mode test (Ville › Options). */
-export const useOnline = create<{ country: string | null; phase: OnlinePhase; tester: boolean }>(() => ({ country: null, phase: "idle", tester: false }));
+/** `name` : pseudo public du joueur, tel que le serveur le connaît (`null` tant qu'il n'a pas été lu). */
+export const useOnline = create<{ country: string | null; phase: OnlinePhase; tester: boolean; name: string | null }>(() => ({ country: null, phase: "idle", tester: false, name: null }));
 
 function figures() {
   const s = useGame.getState();
@@ -363,7 +365,8 @@ export async function contributeAlliance(amount: number): Promise<boolean> {
 /** Le compte est ouvert : on mémorise l'appareil et on sauvegarde à chaque changement. */
 function finish(uid: string, name: string) {
   try { localStorage.setItem(LINK_KEY, uid); } catch { /* stockage indisponible */ }
-  setPlayerName(name);
+  // Le pseudo du serveur fait foi (lu juste après) ; le nom du compte ne sert qu'en attendant, pour une partie sans nom
+  setPlayerName(useOnline.getState().name ?? (useGame.getState().game.playerName ? "" : name));
   unsubGame?.();
   unsubGame = useGame.subscribe((s, p) => {
     if (s.game === p.game || !active) return;
@@ -383,10 +386,12 @@ function finish(uid: string, name: string) {
   void syncShares();
   void syncAlliance();
   // Compte de test : sa partie est toujours en mode test (argent et capital sans limite, tout débloqué)
-  void restAsUser<{ tester: boolean }[]>(`players?select=tester&id=eq.${uid}&limit=1`).then((r) => {
+  void restAsUser<{ tester: boolean; name: string | null }[]>(`players?select=tester,name&id=eq.${uid}&limit=1`).then((r) => {
     if (active !== uid) return;
-    const tester = !!r?.[0]?.tester, g = useGame.getState().game;
-    useOnline.setState({ tester });
+    const tester = !!r?.[0]?.tester, pseudo = r?.[0]?.name || null;
+    useOnline.setState({ tester, name: pseudo });
+    if (pseudo) setPlayerName(pseudo);
+    const g = useGame.getState().game;
     if (tester && !g.sandbox) useGame.setState({ game: E.enterSandbox(g, null) });
   }).catch(() => {});
 }
@@ -443,6 +448,22 @@ async function connect(uid: string, name: string) {
   }
 }
 
+/** Change le pseudo public. Renvoie `null` si c'est fait, sinon le message à afficher. */
+export async function setPseudo(name: string): Promise<string | null> {
+  const user = useAuth.getState().user;
+  if (!user || active !== user.id) return "Connexion perdue, reconnectez-vous.";
+  const problem = pseudoProblem(name);
+  if (problem) return problem;
+  try {
+    const r = await rpc<{ name?: string; error?: string }>("set_name", { p_name: tidyPseudo(name) });
+    if (active !== user.id) return null;
+    if (!r?.name) return PSEUDO_ERRORS[r?.error ?? ""] ?? "Pseudo refusé.";
+    useOnline.setState({ name: r.name });
+    setPlayerName(r.name);
+    return null;
+  } catch { return "Le serveur n'a pas répondu, réessayez dans un instant."; }
+}
+
 /** Création du compte : nomme la ville et enregistre la première sauvegarde en ligne. */
 export async function createAccount(cityName: string): Promise<string | null> {
   const user = useAuth.getState().user;
@@ -454,7 +475,7 @@ export async function createAccount(cityName: string): Promise<string | null> {
   lastWrite = 0;
   await flush();
   if (useGame.getState().cloud === "error") return "Le serveur n'a pas répondu, réessayez dans un instant.";
-  finish(user.id, user.name);
+  finish(user.id, useOnline.getState().name ?? user.name);
   return null;
 }
 
@@ -523,7 +544,7 @@ function disconnect() {
   lastCity = "";
   lastOffer = "";
   lastIncome = "";
-  useOnline.setState({ country: null, phase: "idle", tester: false });
+  useOnline.setState({ country: null, phase: "idle", tester: false, name: null });
   setCloud("local");
 }
 
