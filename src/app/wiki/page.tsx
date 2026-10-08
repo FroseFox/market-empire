@@ -4,7 +4,7 @@ import Link from "next/link";
 import { BookOpen } from "lucide-react";
 import { useGame } from "@/store/game";
 import {
-  ACTIVE_RATIO, ALLIANCE, BANK, BRANCH_COST, CITIES_PER_COUNTRY, SHARES, CAPITAL, LEVERAGE, BRANCH_EFFECTS, BRANCH_MIN_VALUE, BUILDINGS, BUILDING_BY_ID, CATEGORY_LABELS, CITY_RANKS, CONTRACT_RATIO, COUNTRY_PRICES,
+  ACTIVE_RATIO, ALLIANCE, BANK, BRANCH_COST, CITIES_PER_COUNTRY, CITY_EFFECT_CAPS, SHARES, TOURISM, CAPITAL, LEVERAGE, BRANCH_EFFECTS, BRANCH_MIN_VALUE, BUILDINGS, BUILDING_BY_ID, CATEGORY_LABELS, CITY_RANKS, CONTRACT_RATIO, COUNTRY_PRICES,
   DAY_LENGTH_MINUTES, DEMOLISH_REFUND, ENERGY_PER_RESIDENT, EXPORT_RATIO, FOOD_PER_RESIDENT, GOALS, HUB_DESK_COST, HUB_FEE_FACTOR, MAINTENANCE_RATE,
   FEATURES, ORIENTATIONS, ORIENTATION_CHANGE_COST, ORIENTATION_MIN_RANK,
   MAX_CATCHUP_DAYS, MAX_CONTRACTS, NEED_PER_RANK, POLLUTION_MAX, PROJECTS, RENOVATE_RATE, RESOURCE_PRICES, SERVICES, SERVICE_IDS, SPECIALTY_BONUS,
@@ -173,15 +173,27 @@ export default function WikiPage() {
             {CATS.map((c) => (
               <div key={c} className="mt-3 first:mt-0">
                 <h3 className="mb-1.5 text-[13px] font-semibold">{CATEGORY_LABELS[c]}</h3>
-                <Table head={["Bâtiment", "Prix", "Habitants", "Emplois", "Revenu / j", "Énergie", "Nourriture", "Pollution", "Débloqué à", "S'améliore en"]}
+                <Table head={["Bâtiment", "Prix", "Habitants", "Emplois", "Revenu / j", "Énergie", "Nourriture", "Pollution", "Débloqué à", "S'améliore en", "Effet spécial"]}
                   rows={BUILDINGS.filter((b) => b.category === c && b.buildable !== false).map((b) => [
                     b.name, compactEur(b.cost), b.housing ? num(b.housing) : "", b.jobs ? num(b.jobs) : "", b.revenue ? `${num(b.revenue)} €` : "",
                     b.energyProd ? `+${num(b.energyProd)}` : b.energyUse ? `−${num(b.energyUse)}` : "", b.foodProd ? `+${num(b.foodProd)}` : "",
                     b.pollution ? (b.pollution > 0 ? `+${b.pollution}` : `−${-b.pollution}`) : "", b.unlockPop ? `${num(b.unlockPop)} hab.` : "départ", upgradeTo(b.id),
+                    b.tourist || b.visitors || b.growthBoost || b.exportBonus || b.wearCut || b.capitalBoost || b.joy ? b.description : "",
                   ])} />
               </div>
             ))}
             <p className="mt-3">L&apos;amélioration sur place (recherche « Rénovation urbaine ») coûte seulement la différence de prix entre les deux bâtiments.</p>
+            <h3 className="mb-1.5 mt-4 text-[13px] font-semibold">Bâtiments à effet spécial</h3>
+            <ul className="list-disc space-y-1.5 pl-5">
+              <li><b>Tourisme</b> (Musée, Hôtel, Stade, Parc d&apos;attractions) : leur revenu est multiplié par l&apos;<b>attrait</b> de la ville, qui vaut 1 pour une satisfaction de 75 % sans pollution, et va de {TOURISM.min.toLocaleString("fr-FR")} à {TOURISM.max.toLocaleString("fr-FR")}. Une ville agréable et propre gagne plus. Ce sont des commerces : la spécialité « Commerce et tourisme » d&apos;un pays s&apos;y applique.</li>
+              <li><b>Transports</b> : la Gare et l&apos;Aéroport régional amènent des <b>visiteurs</b>, qui augmentent encore les revenus du tourisme (jusqu&apos;à +{Math.round(CITY_EFFECT_CAPS.visitors * 100)} %). La Gare fait aussi venir plus de nouveaux habitants (jusqu&apos;à +{Math.round(CITY_EFFECT_CAPS.growthBoost * 100)} %).</li>
+              <li><b>Port de commerce</b> : vos surplus d&apos;énergie et de nourriture s&apos;exportent plus cher (jusqu&apos;à +{Math.round(CITY_EFFECT_CAPS.exportBonus * 100)} points, soit {Math.round((EXPORT_RATIO + CITY_EFFECT_CAPS.exportBonus) * 100)} % du prix plein).</li>
+              <li><b>Ateliers municipaux</b> : la vétusté avance moins vite (jusqu&apos;à −{Math.round(CITY_EFFECT_CAPS.wearCut * 100)} %).</li>
+              <li><b>Quartier d&apos;affaires</b> : vos placements en bourse produisent plus de capital (jusqu&apos;à +{Math.round(CITY_EFFECT_CAPS.capitalBoost * 100)} %).</li>
+              <li><b>Culture et loisirs</b> (Musée, Stade, Parc d&apos;attractions) : des points de satisfaction en plus (jusqu&apos;à +{Math.round(CITY_EFFECT_CAPS.joy * 100)}).</li>
+              <li><b>Centre de recyclage</b> et <b>Commissariat</b> : une autre façon d&apos;absorber la pollution et de couvrir la sécurité.</li>
+              <li>Chaque effet a un plafond : empiler le même bâtiment ne suffit pas.</li>
+            </ul>
           </Section>
 
           <Section id="equipements" title="Équipements publics et tensions">

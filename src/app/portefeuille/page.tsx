@@ -86,7 +86,7 @@ function BankCard({ staked, perDay }: { staked: number; perDay: number }) {
 }
 
 export default function PortfolioPage() {
-  const { game, quotes, prices, portfolio, portfolioCost } = useDerived();
+  const { game, quotes, prices, city, portfolio, portfolioCost } = useDerived();
   const rows = Object.entries(game.holdings).map(([sym, h]) => {
     const price = quotes[sym]?.price ?? h.avgCost;
     // Valeur pour le joueur : ses titres moins ce que la Banque a prêté. `exposure` = ce qui bouge avec le cours.
@@ -122,7 +122,7 @@ export default function PortfolioPage() {
         </StatCard>
       </div>
 
-      <BankCard staked={portfolioCost} perDay={capitalPerDay(game.holdings, prices)} />
+      <BankCard staked={portfolioCost} perDay={capitalPerDay(game.holdings, prices) * (1 + city.effects.capitalBoost)} />
 
       <div className="grid gap-4 grid-cols-1 xl:grid-cols-12">
         <Card title="Positions" icon={Wallet} className="xl:col-span-8 overflow-x-auto">

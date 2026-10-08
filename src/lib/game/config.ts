@@ -182,6 +182,21 @@ export interface BuildingType {
   serves?: number;
   /** Pollution émise par jour (négatif : le bâtiment en absorbe). */
   pollution?: number;
+  // ── Effets de ville : chacun relie un bâtiment à un système du jeu (plafonds dans CITY_EFFECT_CAPS) ──
+  /** Tourisme : le revenu du bâtiment suit l'attrait de la ville (satisfaction, pollution) et ses visiteurs. */
+  tourist?: boolean;
+  /** Transports : visiteurs en plus (0,1 = +10 % de revenus touristiques). */
+  visitors?: number;
+  /** Transports : nouveaux habitants en plus chaque jour (0,15 = +15 %). */
+  growthBoost?: number;
+  /** Commerce extérieur : part du prix plein gagnée sur les surplus exportés (0,05 = 5 points). */
+  exportBonus?: number;
+  /** Entretien : vétusté ralentie (0,25 = −25 %). */
+  wearCut?: number;
+  /** Finance : capital produit par les placements (0,1 = +10 %). */
+  capitalBoost?: number;
+  /** Culture et loisirs : points de satisfaction (0,01 = 1 point). */
+  joy?: number;
   /** Population minimale pour débloquer le bâtiment. */
   unlockPop?: number;
   buildable?: boolean;
@@ -202,6 +217,11 @@ export const UPGRADES: Record<string, string> = {
 /** Nombre de jours simulés par la recherche « Prévisions de la ville ». */
 export const FORECAST_DAYS = 7;
 
+/** Plafond de chaque effet de ville : empiler le même bâtiment ne suffit pas, il faut varier. */
+export const CITY_EFFECT_CAPS = { visitors: 1, growthBoost: 0.45, exportBonus: 0.1, wearCut: 0.75, capitalBoost: 0.5, joy: 0.06 };
+/** Attrait touristique : 1 pour une satisfaction de 75 % sans pollution ; il multiplie les revenus des bâtiments touristiques. */
+export const TOURISM = { base: 0.4, perSatisfaction: 0.8, perPollution: 2, min: 0.3, max: 1.2 };
+
 export const BUILDINGS: BuildingType[] = [
   // 🏠 Logements
   { id: "house_s", name: "Petit quartier", category: "housing", cost: 20_000, housing: 100, description: "+100 habitants" },
@@ -214,10 +234,14 @@ export const BUILDINGS: BuildingType[] = [
   // 🏪 Commerce & services
   { id: "shop", name: "Commerce", category: "commerce", cost: 15_000, jobs: 40, revenue: 240, energyUse: 5, description: "Boutiques de quartier" },
   { id: "market", name: "Marché couvert", category: "commerce", cost: 60_000, jobs: 120, revenue: 1_040, energyUse: 15, unlockPop: 800, description: "Halle et commerçants" },
-  { id: "hotel", name: "Hôtel", category: "commerce", cost: 180_000, jobs: 150, revenue: 3_000, energyUse: 40, unlockPop: 2_500, description: "Peu d'emplois, beaucoup de revenus" },
+  { id: "museum", name: "Musée", category: "commerce", cost: 220_000, jobs: 80, revenue: 3_800, energyUse: 20, unlockPop: 2_000, tourist: true, joy: 0.01, description: "Tourisme : revenus selon l'attrait de la ville, +1 point de satisfaction" },
+  { id: "hotel", name: "Hôtel", category: "commerce", cost: 180_000, jobs: 150, revenue: 3_000, energyUse: 40, unlockPop: 2_500, tourist: true, description: "Tourisme : peu d'emplois, revenus selon l'attrait de la ville" },
   { id: "mall", name: "Centre commercial", category: "commerce", cost: 350_000, jobs: 600, revenue: 6_400, energyUse: 90, unlockPop: 4_000, pollution: 8, description: "Grande surface et galerie" },
+  { id: "stadium", name: "Stade", category: "commerce", cost: 900_000, jobs: 300, revenue: 16_000, energyUse: 150, unlockPop: 8_000, pollution: 10, tourist: true, joy: 0.02, description: "Tourisme : grands événements, +2 points de satisfaction" },
+  { id: "themepark", name: "Parc d'attractions", category: "commerce", cost: 2_500_000, jobs: 900, revenue: 44_000, energyUse: 400, unlockPop: 20_000, pollution: 30, tourist: true, joy: 0.02, description: "Tourisme : la grande attraction de la région, +2 points de satisfaction" },
   { id: "services", name: "Entreprise de services", category: "services", cost: 100_000, jobs: 150, revenue: 1_200, energyUse: 15, unlockPop: 600, description: "Bureaux, conseil, santé" },
   { id: "bank", name: "Banque", category: "services", cost: 400_000, jobs: 300, revenue: 6_000, energyUse: 40, unlockPop: 5_000, description: "Siège bancaire régional" },
+  { id: "bizdistrict", name: "Quartier d'affaires", category: "services", cost: 1_500_000, jobs: 900, revenue: 15_000, energyUse: 200, unlockPop: 10_000, capitalBoost: 0.1, description: "Vos placements en bourse produisent +10 % de capital" },
   { id: "tech", name: "Campus technologique", category: "services", cost: 1_200_000, jobs: 1_500, revenue: 22_000, energyUse: 300, unlockPop: 12_000, description: "Emplois qualifiés, très énergivore" },
 
   // 🏭 Industrie
@@ -226,6 +250,8 @@ export const BUILDINGS: BuildingType[] = [
   { id: "factory_m", name: "Usine moyenne", category: "industry", cost: 250_000, jobs: 500, revenue: 4_000, energyUse: 150, unlockPop: 1_500, pollution: 40, description: "Grosse consommatrice d'énergie" },
   { id: "factory_l", name: "Complexe industriel", category: "industry", cost: 1_000_000, jobs: 2_000, revenue: 18_000, energyUse: 600, unlockPop: 6_000, pollution: 150, description: "Pilier d'une grande ville" },
 
+  { id: "recycling", name: "Centre de recyclage", category: "industry", cost: 320_000, jobs: 90, revenue: 600, energyUse: 40, unlockPop: 3_500, pollution: -90, description: "Absorbe la pollution des usines, sans prendre la place d'un parc" },
+  { id: "port", name: "Port de commerce", category: "industry", cost: 600_000, jobs: 350, revenue: 2_500, energyUse: 60, unlockPop: 4_000, pollution: 25, exportBonus: 0.05, description: "Vos surplus d'énergie et de nourriture s'exportent 5 points plus cher" },
   { id: "foodplant", name: "Usine agroalimentaire", category: "industry", cost: 300_000, jobs: 350, revenue: 2_400, energyUse: 80, foodProd: 1_000, unlockPop: 3_000, pollution: 20, description: "Revenus et +1 000 nourriture/j" },
 
   // 🌾 Agriculture
@@ -248,6 +274,10 @@ export const BUILDINGS: BuildingType[] = [
   { id: "fire", name: "Caserne de pompiers", category: "public", cost: 90_000, jobs: 40, energyUse: 10, service: "safety", serves: 6_000, unlockPop: 2_500, description: "Protège 6 000 habitants" },
   { id: "park_l", name: "Grand parc", category: "public", cost: 140_000, jobs: 20, service: "park", serves: 10_000, unlockPop: 5_000, pollution: -150, description: "Espaces verts pour 10 000 habitants" },
   { id: "university", name: "Université", category: "public", cost: 500_000, jobs: 300, energyUse: 40, service: "school", serves: 20_000, unlockPop: 8_000, description: "Forme 20 000 habitants" },
+  { id: "workshop", name: "Ateliers municipaux", category: "public", cost: 200_000, jobs: 80, energyUse: 10, unlockPop: 2_500, wearCut: 0.25, description: "La vétusté de la ville avance 25 % moins vite" },
+  { id: "station", name: "Gare", category: "public", cost: 350_000, jobs: 120, energyUse: 40, unlockPop: 3_000, visitors: 0.1, growthBoost: 0.15, description: "+10 % de visiteurs pour le tourisme, +15 % de nouveaux habitants" },
+  { id: "police", name: "Commissariat", category: "public", cost: 260_000, jobs: 120, energyUse: 15, service: "safety", serves: 18_000, unlockPop: 6_000, description: "Protège 18 000 habitants" },
+  { id: "airport", name: "Aéroport régional", category: "public", cost: 3_000_000, jobs: 800, energyUse: 500, unlockPop: 15_000, pollution: 120, visitors: 0.3, description: "+30 % de visiteurs pour le tourisme, mais bruyant et polluant" },
   { id: "hospital", name: "Hôpital", category: "public", cost: 450_000, jobs: 250, energyUse: 40, service: "hospital", serves: 12_000, unlockPop: 5_000, description: "Soigne 12 000 habitants" },
 
   // 🏛️ Bâtiments de départ (non constructibles)
