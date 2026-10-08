@@ -89,6 +89,9 @@ begin
   return found;
 end $$;
 
+-- Les deux fonctions utilitaires ne servent qu'aux fonctions ci-dessus : pas d'appel direct depuis le site.
+revoke all on function public.playable_countries() from public, anon, authenticated;
+revoke all on function public.cities_per_country() from public, anon, authenticated;
 revoke all on function public.join_world_v2(text[]) from public, anon;
 revoke all on function public.move_country(text) from public, anon;
 grant execute on function public.join_world_v2(text[]) to authenticated;
