@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   Bitcoin, Building2, ChartPie, ClipboardCheck, Telescope, Check, Crosshair, DollarSign, Receipt, Rss, Earth, Euro, Gem, FlaskConical, Filter, History, Landmark, LayoutGrid, Lock, Network, Newspaper, PieChart, Workflow,
-  Coins, CreditCard, Factory, HandCoins, Layers, Package, Percent, Route, ShieldCheck, Ship, Ticket, UserPlus, Wrench,
+  Coins, CreditCard, Factory, HandCoins, Layers, Package, Percent, Route, ShieldCheck, Ship, Ticket, UserPlus, Wrench, X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useGame } from "@/store/game";
@@ -52,8 +52,9 @@ export default function ResearchPage() {
 
   // Téléphone : liste par branche au lieu de l'arbre (trop large pour l'écran)
   const phone = useMedia("(max-width: 639px)");
-  const detail = useRef<HTMLDivElement>(null);
-  const pick = (id: string) => { setSelected(id); if (phone) setTimeout(() => detail.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50); };
+  // Téléphone : la fiche s'ouvre en panneau par-dessus la liste (plus besoin de descendre tout en bas de la page)
+  const [sheet, setSheet] = useState(false);
+  const pick = (id: string) => { setSelected(id); if (phone) setSheet(true); };
   const branches = (Object.keys(BRANCH_COLOR) as Branch[]).filter((b) => b !== "Racine");
 
   return (
@@ -174,8 +175,12 @@ export default function ResearchPage() {
         )}
 
         {/* Détail de la compétence choisie */}
-        <div ref={detail} className={phone ? "order-2 scroll-mt-20" : "order-1 sticky top-[72px] z-10"}>
-          <Card className={phone ? "" : "shadow-md"}>
+        {(!phone || sheet) && (
+        <div className={phone ? "fixed inset-0 z-[45] flex items-end bg-navy/40 appear" : "order-1 sticky top-[72px] z-10"} onClick={phone ? () => setSheet(false) : undefined}>
+         <div className={phone ? "max-h-[85vh] w-full overflow-y-auto rounded-t-[18px] bg-card" : ""} onClick={(e) => e.stopPropagation()}
+           role={phone ? "dialog" : undefined} aria-modal={phone ? true : undefined} aria-label={phone ? sel.name : undefined}>
+          {phone && <div className="flex justify-end px-2 pt-2"><button onClick={() => setSheet(false)} aria-label="Fermer" className="rounded-full p-2 text-muted hover:bg-slate-100"><X size={18} /></button></div>}
+          <Card className={phone ? "!border-0 !pt-0 !shadow-none" : "shadow-md"}>
            <div className="sm:flex sm:items-center sm:gap-6">
             <div className="min-w-0 sm:flex-1">
             <div className="flex items-center gap-3 mb-3 sm:mb-1.5">
@@ -225,7 +230,9 @@ export default function ResearchPage() {
            </div>
             <p className="text-[11px] text-muted mt-3 pt-2.5 border-t border-line">La recherche ouvre des marchés et des outils, et améliore la ville, la Banque et le commerce. Elle ne touche jamais aux cours de bourse.</p>
           </Card>
+         </div>
         </div>
+        )}
       </div>
     </>
   );

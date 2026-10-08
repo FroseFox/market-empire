@@ -95,6 +95,7 @@ export default function PortfolioPage() {
   }).sort((a, b) => b.value - a.value);
   const pnl = portfolio - portfolioCost;
   const [split, setSplit] = useState<Split>("Lignes");
+  const [allTx, setAllTx] = useState(false); // téléphone : historique complet déplié
   const canSplit = hasResearch(game, "portfolio_breakdown");
   const showGains = hasResearch(game, "realized_pnl");
   const view: Split = canSplit ? split : "Lignes";
@@ -112,8 +113,8 @@ export default function PortfolioPage() {
   return (
     <>
       <PageHeader icon={Wallet} title="Portefeuille" subtitle="Vos investissements et leur performance" />
-      <div className="grid gap-4 grid-cols-1 sm:grid-cols-3 mb-4">
-        <StatCard icon={Wallet} tint="bg-primary-soft text-primary" label="Valeur du portefeuille" value={eur(portfolio)}>{rows.length} ligne{rows.length > 1 ? "s" : ""}</StatCard>
+      <div className="grid gap-3 sm:gap-4 grid-cols-2 sm:grid-cols-3 mb-4">
+        <div className="col-span-2 sm:col-span-1"><StatCard icon={Wallet} tint="bg-primary-soft text-primary" label="Valeur du portefeuille" value={eur(portfolio)}>{rows.length} ligne{rows.length > 1 ? "s" : ""}</StatCard></div>
         <StatCard icon={TrendingUp} tint="bg-success-soft text-success" label="Performance totale" value={signedEur(pnl)}>
           {portfolioCost > 0 ? <Delta value={pnl / portfolioCost} suffix="depuis l'achat" /> : "—"}
         </StatCard>
@@ -129,7 +130,26 @@ export default function PortfolioPage() {
           {rows.length === 0 ? (
             <Empty>Aucune position pour l&apos;instant. <Link href="/marches" className="text-primary font-medium">Parcourir les marchés →</Link></Empty>
           ) : (
-            <table className="w-full text-[13px]">
+            <>
+            {/* Téléphone : une ligne par position, sans tableau à faire défiler */}
+            <ul className="divide-y divide-line sm:hidden">
+              {rows.map((r) => (
+                <li key={r.sym}>
+                  <Link href="/marches" onClick={() => focusAsset(r.sym)} className="flex items-center gap-3 py-2.5">
+                    <CompanyLogo symbol={r.sym} size={34} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[14px] font-semibold">{ASSET_BY_SYMBOL[r.sym]?.name ?? r.sym}</span>
+                      <span className="block truncate text-[12px] text-muted tabular">{qtyFmt(r.h.qty)} × {eur2(r.price)} <Delta value={r.day} /></span>
+                    </span>
+                    <span className="shrink-0 text-right">
+                      <span className="block text-[14px] font-semibold tabular">{eur(r.value)}</span>
+                      <span className={`block text-[12px] font-medium tabular ${tone(r.pnl)}`}>{signedEur(r.pnl)}{r.stake > 0 ? ` · ${pctPlain(r.pnl / r.stake)}` : ""}</span>
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+            <table className="hidden w-full text-[13px] sm:table">
               <thead className="text-muted text-[12px]"><tr className="border-b border-line">
                 <th className="text-left font-medium py-2">Action</th><th className="text-right font-medium">Qté</th>
                 <th className="text-right font-medium hidden sm:table-cell">PRU</th><th className="text-right font-medium">Prix</th>
@@ -159,6 +179,7 @@ export default function PortfolioPage() {
                 ))}
               </tbody>
             </table>
+            </>
           )}
         </Card>
 
@@ -187,17 +208,21 @@ export default function PortfolioPage() {
             : <LockLink label="Plus-values réalisées" />}>
           {game.transactions.length === 0 ? <Empty>Aucune opération.</Empty> : (
             <ul className="divide-y divide-line text-[13px]">
-              {game.transactions.slice(0, 25).map((t) => (
-                <li key={t.id} className="flex items-center justify-between py-2">
-                  <span>{t.label}{t.price ? <span className="text-muted"> · {eur2(t.price)}</span> : null}
+              {game.transactions.slice(0, 25).map((t, i) => (
+                <li key={t.id} className={`items-center justify-between gap-3 py-2 ${i >= 8 && !allTx ? "hidden sm:flex" : "flex"}`}>
+                  <span className="min-w-0">{t.label}{t.price ? <span className="text-muted"> · {eur2(t.price)}</span> : null}
+                    <span className="block text-[11px] text-muted sm:hidden">{new Date(t.at).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
                     {showGains && t.gain !== undefined && <span className={`ml-2 text-[11px] font-medium ${tone(t.gain)}`}>{t.gain >= 0 ? "plus-value" : "moins-value"} {signedEur(t.gain)}</span>}
                   </span>
-                  <span className="flex items-center gap-4">
-                    <span className={`tabular font-medium ${tone(t.amount)}`}>{signedEur(t.amount)}</span>
-                    <span className="text-muted text-[11px] w-28 text-right">{new Date(t.at).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
+                  <span className="flex shrink-0 items-center gap-4">
+                    <span className={`whitespace-nowrap tabular font-medium ${tone(t.amount)}`}>{signedEur(t.amount)}</span>
+                    <span className="hidden text-muted text-[11px] w-28 text-right sm:inline">{new Date(t.at).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
                   </span>
                 </li>
               ))}
+              {!allTx && game.transactions.length > 8 && (
+                <li className="pt-2.5 sm:hidden"><button onClick={() => setAllTx(true)} className="w-full rounded-[10px] border border-line py-2 text-[13px] font-semibold text-primary">Voir les opérations plus anciennes</button></li>
+              )}
             </ul>
           )}
         </Card>

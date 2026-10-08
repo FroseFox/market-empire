@@ -86,7 +86,7 @@ export default function EconomyPage() {
       )}
 
       {/* Chiffres clés */}
-      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 mb-4">
+      <div className="grid gap-3 sm:gap-4 grid-cols-2 xl:grid-cols-4 mb-4">
         <StatCard icon={Coins} tint="bg-amber-50 text-amber-500" label="Patrimoine total" value={eur(netWorth)}>
           <Delta value={wealthChange} suffix={`(${period === "Tout" ? "depuis le début" : period})`} />
         </StatCard>
@@ -111,7 +111,7 @@ export default function EconomyPage() {
 
         {/* Revenus / dépenses */}
         <Card title="Revenus / Dépenses" className="xl:col-span-4">
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[13px] mb-3">
+          <div className="grid grid-cols-2 gap-x-3 sm:gap-x-4 gap-y-1.5 text-[12px] sm:text-[13px] mb-3">
             <div className="text-muted col-span-1 font-medium">Revenus / jour</div>
             <div className="text-muted col-span-1 font-medium">Dépenses / jour</div>
             <Row label="Impôts" v={city.income.taxes} />
@@ -144,14 +144,14 @@ export default function EconomyPage() {
       </div>
 
       <div className="grid gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-4">
-        <Card title="Ressources" icon={Zap}>
+        <Card title="Ressources" icon={Zap} fold foldHint={<span className="inline-flex items-center gap-1"><Zap size={13} /><b className={tone(city.energy.balance)}>{signedNum(city.energy.balance)}</b><Wheat size={13} className="ml-1.5" /><b className={tone(city.food.balance)}>{signedNum(city.food.balance)}</b></span>}>
           <div className="grid grid-cols-2 gap-3">
             <Resource icon={Zap} label="Énergie" prod={city.energy.prod} use={city.energy.use} />
             <Resource icon={Wheat} label="Nourriture" prod={city.food.prod} use={city.food.use} />
           </div>
         </Card>
 
-        <Card title="Balance commerciale" icon={Globe2}>
+        <Card title="Balance commerciale" icon={Globe2} fold foldHint={<b className={tone(city.tradeBalance)}>{signedEur(city.tradeBalance)}/j</b>}>
           <div className="grid grid-cols-2 gap-3 mb-3">
             <div className="rounded-[12px] bg-slate-50 p-3"><div className="text-[12px] text-muted">Exportations</div><div className="font-bold text-success tabular">{eur(city.exportsValue)}/j</div></div>
             <div className="rounded-[12px] bg-slate-50 p-3"><div className="text-[12px] text-muted">Importations</div><div className="font-bold text-danger tabular">{eur(city.importsValue)}/j</div></div>
@@ -199,7 +199,7 @@ export default function EconomyPage() {
       </div>
 
       {/* Bilan : pourquoi le patrimoine a bougé */}
-      <Card title={`Bilan · ${period === "Tout" ? "depuis le début" : period}`} icon={Scale} className="mt-4"
+      <Card title={`Bilan · ${period === "Tout" ? "depuis le début" : period}`} icon={Scale} className="mt-4" fold foldHint={<b className={tone(report.end - report.start)}>{signedEur(report.end - report.start)}</b>}
         extra={<Segmented options={["7 jours", "30 jours", "Tout"] as Period[]} value={period} onChange={setPeriod} />}>
         {report.days === 0 && report.end === report.start ? (
           <p className="text-[13px] text-muted">Le bilan se remplit dès le premier jour de ville ou la première opération.</p>
@@ -224,7 +224,7 @@ export default function EconomyPage() {
       </Card>
 
       {/* D'où vient ma richesse ? */}
-      <Card title="D'où vient ma richesse ?" icon={Sparkles} className="mt-4">
+      <Card title="D'où vient ma richesse ?" icon={Sparkles} className="mt-4" fold>
         <div className="flex h-3 rounded-full overflow-hidden mb-3">
           {wealthParts.map((p) => <div key={p.label} className={p.c} style={{ width: `${(p.v / wealthTotal) * 100}%` }} />)}
         </div>
@@ -243,15 +243,17 @@ export default function EconomyPage() {
   );
 }
 
+const signedNum = (v: number) => `${v >= 0 ? "+" : "−"}${num(Math.abs(Math.round(v)))}`;
+
 function Row({ label, v }: { label: string; v: number }) {
-  return <div className="flex justify-between"><span className="text-muted">{label}</span><span className={`tabular font-medium ${tone(v)}`}>{signedEur(v)}</span></div>;
+  return <div className="flex justify-between gap-1.5"><span className="min-w-0 truncate text-muted">{label}</span><span className={`whitespace-nowrap tabular font-medium ${tone(v)}`}>{signedEur(v)}</span></div>;
 }
 
 function BilanRow({ label, hint, v, value, strong }: { label: string; hint?: string; v?: number; value?: string; strong?: boolean }) {
   return (
     <div className={`flex items-baseline justify-between gap-3 ${strong ? "rounded-[10px] bg-slate-50 px-3 py-2 font-semibold" : "px-3"}`}>
       <span>{label}{hint && <span className="block text-[11px] text-muted font-normal">{hint}</span>}</span>
-      <span className={`tabular font-semibold ${v !== undefined ? tone(v) : ""}`}>{value ?? signedEur(v ?? 0)}</span>
+      <span className={`whitespace-nowrap tabular font-semibold ${v !== undefined ? tone(v) : ""}`}>{value ?? signedEur(v ?? 0)}</span>
     </div>
   );
 }

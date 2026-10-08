@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowDownRight, ArrowUpRight, ChevronRight, Lock } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, ChevronDown, ChevronRight, Lock } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { pct } from "@/lib/format";
 
@@ -29,22 +29,32 @@ export function LockTag({ children = "Verrouillé", className = "" }: { children
   );
 }
 
-export function Card({ title, icon: Icon, action, extra, className = "", children }: { title?: string; icon?: LucideIcon; action?: { label: string; href: string }; extra?: React.ReactNode; className?: string; children: React.ReactNode }) {
+/** `fold` : sur téléphone, la carte est repliée (titre seul, avec `foldHint` en résumé) et s'ouvre d'un toucher.
+ *  Sur grand écran elle est toujours ouverte. Pour les blocs secondaires des pages longues. */
+export function Card({ title, icon: Icon, action, extra, className = "", children, fold = false, foldHint }: { title?: string; icon?: LucideIcon; action?: { label: string; href: string }; extra?: React.ReactNode; className?: string; children: React.ReactNode; fold?: boolean; foldHint?: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const closed = fold && !open; // n'a d'effet que sous 640 px (classes « sm: »)
+  const heading = <>{Icon && <Icon size={18} className="shrink-0 text-primary" strokeWidth={1.9} />}<h2 className="text-[16px] font-semibold">{title}</h2></>;
   return (
-    <section className={`card p-5 appear ${className}`}>
+    <section className={`card p-4 sm:p-5 appear ${className}`}>
       {title && (
-        <div className="flex flex-wrap items-center gap-2 mb-4">
-          {Icon && <Icon size={18} className="text-primary" strokeWidth={1.9} />}
-          <h2 className="text-[16px] font-semibold">{title}</h2>
+        <div className={`flex flex-wrap items-center gap-2 ${closed ? "sm:mb-4" : "mb-4"}`}>
+          {fold ? (
+            <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className="flex min-w-0 flex-1 items-center gap-2 text-left sm:pointer-events-none sm:flex-none">
+              {heading}
+              {closed && foldHint && <span className="ml-auto min-w-0 truncate text-[12px] font-medium text-muted sm:hidden">{foldHint}</span>}
+              <ChevronDown size={18} className={`shrink-0 text-muted transition-transform sm:hidden ${closed && foldHint ? "" : "ml-auto"} ${open ? "rotate-180" : ""}`} />
+            </button>
+          ) : heading}
           {action && (
             <Link href={action.href} className="ml-auto text-[12px] text-primary font-medium inline-flex items-center gap-0.5 hover:underline">
               {action.label}<ChevronRight size={14} />
             </Link>
           )}
-          {extra && <div className="ml-auto">{extra}</div>}
+          {extra && <div className={`ml-auto ${closed ? "hidden sm:block" : ""}`}>{extra}</div>}
         </div>
       )}
-      {children}
+      {fold ? <div className={closed ? "hidden sm:block" : undefined}>{children}</div> : children}
     </section>
   );
 }
@@ -53,21 +63,22 @@ export function Delta({ value, suffix, className = "" }: { value: number; suffix
   const up = value >= 0;
   const Icon = up ? ArrowUpRight : ArrowDownRight;
   return (
-    <span className={`inline-flex items-center gap-0.5 text-[12px] font-semibold tabular ${up ? "text-success" : "text-danger"} ${className}`}>
-      <Icon size={14} strokeWidth={2.4} />{pct(value)}{suffix && <span className="font-normal text-muted ml-1">{suffix}</span>}
+    <span className={`inline-flex flex-wrap items-center gap-x-1 text-[12px] font-semibold tabular ${up ? "text-success" : "text-danger"} ${className}`}>
+      <span className="inline-flex items-center gap-0.5 whitespace-nowrap"><Icon size={14} strokeWidth={2.4} />{pct(value)}</span>{suffix && <span className="whitespace-nowrap font-normal text-muted">{suffix}</span>}
     </span>
   );
 }
 
 export function StatCard({ icon: Icon, tint, label, value, children, href }: { icon: LucideIcon; tint: string; label: string; value: string; children?: React.ReactNode; href?: string }) {
   const body = (
-    <div className="card p-5 flex items-center gap-4 appear h-full hover:border-slate-300 transition-colors">
-      <div className={`h-12 w-12 shrink-0 rounded-full grid place-items-center ${tint}`}><Icon size={22} strokeWidth={1.9} /></div>
+    <div className="card p-3.5 sm:p-5 flex items-center gap-4 appear h-full hover:border-slate-300 transition-colors">
+      {/* Téléphone : cartes deux par ligne, sans l'icône, pour laisser la place au chiffre */}
+      <div className={`hidden sm:grid h-12 w-12 shrink-0 rounded-full place-items-center ${tint}`}><Icon size={22} strokeWidth={1.9} /></div>
       <div className="min-w-0">
-        <div className="text-[13px] text-muted font-medium">{label}</div>
+        <div className="truncate text-[12px] sm:text-[13px] text-muted font-medium">{label}</div>
         {/* Les très grands montants passent en plus petit plutôt que d'être coupés */}
-        <div title={value} className={`${value.length > 13 ? "text-[19px]" : value.length > 11 ? "text-[22px]" : "text-[26px]"} font-bold leading-tight tabular truncate`}>{value}</div>
-        <div className="text-[12px] text-muted">{children}</div>
+        <div title={value} className={`${value.length > 13 ? "text-[15px] sm:text-[19px]" : value.length > 11 ? "text-[17px] sm:text-[22px]" : "text-[20px] sm:text-[26px]"} font-bold leading-tight tabular truncate`}>{value}</div>
+        <div className="text-[11px] sm:text-[12px] text-muted">{children}</div>
       </div>
     </div>
   );
