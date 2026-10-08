@@ -30,6 +30,7 @@ export default function WorldPage() {
   const world = useWorld();
   const [tab, setTab] = useState<Tab>("Carte");
   const [sort, setSort] = useState<Sort>("Patrimoine");
+  const [rows, setRows] = useState(100); // lignes du classement affichées
 
   const auth = useAuth();
   const onlineCountry = useOnline((s) => s.country);
@@ -90,6 +91,8 @@ export default function WorldPage() {
   // La carte montre tous les joueurs ; le classement écarte les sauvegardes signalées comme impossibles
   const inRanking = players.filter((p) => p.isMe || p.ranked !== false);
   const ranked = [...inRanking].sort((a, b) => sort === "Patrimoine" ? b.netWorth - a.netWorth : sort === "Population" ? b.population - a.population : b.perf - a.perf);
+  // Le tableau n'affiche que le haut du classement (plus la ligne du joueur) : inutile de dessiner mille lignes
+  const shownRows = ranked.map((p, i) => ({ p, i })).filter(({ p, i }) => i < rows || p.isMe);
   const myRank = [...inRanking].sort((a, b) => b.netWorth - a.netWorth).findIndex((p) => p.isMe) + 1;
 
   return (
@@ -232,7 +235,7 @@ export default function WorldPage() {
                   <th className="text-right font-medium pl-3">Patrimoine</th><th className="text-right font-medium pl-3">Population</th><th className="text-right font-medium pl-3">Bourse</th><th className="w-10"><span className="sr-only">Visiter</span></th>
                 </tr></thead>
                 <tbody>
-                  {ranked.map((p, i) => (
+                  {shownRows.map(({ p, i }) => (
                     <tr key={p.id} className={`border-b border-line/70 ${p.isMe ? "bg-primary-soft/60" : ""}`}>
                       <td className="py-2.5 font-bold tabular">{i < 3 ? ["🥇", "🥈", "🥉"][i] : i + 1}</td>
                       <td className="font-semibold">{p.cityName}{p.isMe && <span className="ml-2 text-[10px] rounded bg-primary text-white px-1.5 py-0.5">Vous</span>}</td>
@@ -256,6 +259,11 @@ export default function WorldPage() {
                   ))}
                 </tbody>
               </table>
+              {ranked.length > rows && (
+                <button onClick={() => setRows((n) => n + 100)} className="mt-3 w-full rounded-[10px] border border-line py-2 text-[13px] font-semibold text-primary hover:bg-primary-soft">
+                  Voir les 100 suivants · {num(ranked.length - rows)} autres villes
+                </button>
+              )}
             </div>
           )}
           <p className="text-[11px] text-muted mt-3">Le classement ne montre que le nom du compte et ce que chaque joueur publie : nom de ville, patrimoine, population et performance boursière. Mis à jour toutes les 2 minutes.</p>
