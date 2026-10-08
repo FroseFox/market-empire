@@ -18,7 +18,7 @@ import { eur } from "@/lib/format";
 const PITCH: { icon: LucideIcon; title: string; text: string }[] = [
   { icon: LineChart, title: "Investissez sur les vrais marchés", text: "Actions, ETF, matières premières et cryptos, aux cours réels. Aucun argent réel en jeu." },
   { icon: Building2, title: "Développez votre ville", text: "Vos gains financent logements, entreprises et énergie." },
-  { icon: Globe2, title: "Prenez votre place dans le monde", text: "Un territoire, un classement, et bientôt le commerce entre joueurs." },
+  { icon: Globe2, title: "Prenez votre place dans le monde", text: "Un pays à partager avec d'autres villes, un classement, des alliances et du commerce entre joueurs." },
 ];
 
 /** Cadre commun : présentation du jeu à gauche, action à droite. */
