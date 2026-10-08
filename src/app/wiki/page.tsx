@@ -466,7 +466,8 @@ export default function WikiPage() {
             ]} />
           </Sec>
 
-          <Sec id="recherche" brief="Elle ouvre des marchés et des outils. Jamais de bonus sur vos gains.">
+          <Sec id="recherche" brief="Elle ouvre des marchés et des outils, et améliore la ville, la Banque et le commerce.">
+            <p>Chaque recherche se paie une fois, avec vos liquidités, et reste acquise. Certaines en demandent d’autres avant. Aucune ne touche aux cours de bourse : ils restent ceux du vrai marché.</p>
             <Table head={["Branche", "Recherche", "Prix", "Après", "Ce qu’elle apporte"]}
               rows={RESEARCH.filter((n) => n.id !== "hq").map((n) => [
                 <span key="b" className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: BRANCH_COLOR[n.branch] }} />{n.branch}</span>,

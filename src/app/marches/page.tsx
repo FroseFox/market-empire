@@ -5,7 +5,7 @@ import { ChevronRight, Layers, LineChart, Lock, Search, Wallet, X } from "lucide
 import { useDerived, useGame } from "@/store/game";
 import { ASSETS, ASSET_BY_SYMBOL, FAMILIES, KIND_LABEL, familyOf, flag, regionOf, type Asset, type AssetKind, type Family, type Region } from "@/lib/market/universe";
 import { simulatedHistory, type Range } from "@/lib/market/simulate";
-import { cityLeverage, feeFactor, hasResearch, holdingStake, holdingValue, investCap, investRoom, liquidationPrice, maxBuyAmount, sharesFor, tradeFee } from "@/lib/game/engine";
+import { cityLeverage, feeFactor, hasResearch, interestRate, holdingStake, holdingValue, investCap, investRoom, liquidationPrice, maxBuyAmount, sharesFor, tradeFee } from "@/lib/game/engine";
 import { LEVERAGE } from "@/lib/game/config";
 import { RESEARCH_BY_ID } from "@/lib/game/research";
 import { neighbors } from "@/lib/market/relations";
@@ -413,7 +413,7 @@ function AssetPanel({ symbol, onSelect }: { symbol: string; onSelect: (s: string
           <div className="flex justify-between gap-3"><span>Si le cours perd 1 %</span><span className="whitespace-nowrap font-medium text-danger">{signedEur(-gross * 0.01)}</span></div>
           <div className="flex justify-between gap-3"><span>Vendue d&apos;office si le cours perd</span><span className="whitespace-nowrap">{pctPlain((1 - LEVERAGE.liquidation) / lev)}</span></div>
           <div className="flex justify-between gap-3"><span>Frais ({(0.1 * feeRate).toLocaleString("fr-FR", { maximumFractionDigits: 3 })} % du montant investi{feeRate < 1 ? ", réduits" : ""})</span><span className="whitespace-nowrap">{eur2(fee)}</span></div>
-          <div className="flex justify-between gap-3"><span>Intérêts par jour de ville</span><span className="whitespace-nowrap">{eur2((gross - stake) * LEVERAGE.dayRate)}</span></div>
+          <div className="flex justify-between gap-3"><span>Intérêts par jour de ville</span><span className="whitespace-nowrap">{eur2((gross - stake) * interestRate(game))}</span></div>
           <div className="flex justify-between gap-3"><span>Liquidités disponibles</span><span className="whitespace-nowrap">{eur(game.cash)}</span></div>
           {Number.isFinite(room) && <div className="flex justify-between gap-3"><span>Mise encore permise par la Banque</span><span className={`whitespace-nowrap ${overCap ? "font-semibold text-danger" : ""}`}>{eur(room)} sur {eur(investCap(game))}</span></div>}
         </div>
