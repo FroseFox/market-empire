@@ -308,6 +308,8 @@ export function useDerived() {
   const city = E.computeCity(game);
   const portfolio = E.portfolioValue(game.holdings, prices);
   const cost = E.portfolioCost(game.holdings);
-  const netWorth = game.cash + portfolio + city.assetValue;
-  return { game, quotes, prices, city, portfolio, portfolioCost: cost, netWorth };
+  // Les parts de villes comptent dans le patrimoine, à part du portefeuille de bourse réelle
+  const cityShares = E.sharesValue(game);
+  const netWorth = game.cash + portfolio + cityShares + city.assetValue;
+  return { game, quotes, prices, city, portfolio, portfolioCost: cost, cityShares, netWorth };
 }

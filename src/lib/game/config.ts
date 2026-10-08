@@ -318,6 +318,22 @@ export const HUB_FEE_FACTOR = 0.5;
 export const CONTRACT_RATIO = 0.85;
 export const MAX_CONTRACTS = 6;
 
+// ─── Bourse des villes ────────────────────────────────────────
+// Investir dans la ville d'un autre joueur. Une ville compte `total` parts ; son propriétaire en met jusqu'à
+// `maxFloat` en vente. Le prix d'une part suit le patrimoine publié de la ville (aucun événement inventé).
+// L'argent ne sort jamais de nulle part : l'acheteur paie le propriétaire, seul le propriétaire rachète.
+export const SHARES = {
+  total: 1_000,
+  /** Parts qu'un propriétaire peut vendre au plus : il garde toujours la majorité. */
+  maxFloat: 490,
+  /** Patrimoine minimal pris en compte pour le prix d'une part. */
+  minValue: 100_000,
+  /** Nombre de villes différentes dont on peut détenir des parts. */
+  maxLines: 12,
+  /** Population minimale pour acheter des parts ou mettre sa ville en bourse (rang « Petite ville »). */
+  minPop: 1_500,
+};
+
 // ─── Tensions de la ville ─────────────────────────────────────
 /** Pollution nette pour 100 habitants → points de satisfaction perdus (plafonnés). */
 export const POLLUTION_FACTOR = 0.04;
@@ -358,11 +374,12 @@ export const ORIENTATION_CHANGE_COST = 150_000;
 
 // ─── Fonctions qui s'ouvrent avec le rang ─────────────────────
 /** Pour ne pas tout montrer d'un coup : chaque système apparaît au rang où il devient utile. */
-export type FeatureId = "firms" | "orientation" | "trade" | "hubs" | "projects";
+export type FeatureId = "firms" | "orientation" | "trade" | "shares" | "hubs" | "projects";
 export const FEATURES: { id: FeatureId; rank: number; label: string; text: string; href: string }[] = [
   { id: "firms", rank: 1, label: "Entreprises implantées", text: "Une entreprise dont vous êtes actionnaire peut ouvrir un site dans votre ville (bouton Entreprises).", href: "/ville" },
   { id: "orientation", rank: ORIENTATION_MIN_RANK, label: "Orientation de la ville", text: "Choisissez ce que votre ville veut être : industrielle, verte, d'affaires ou marchande (bouton Objectifs).", href: "/ville" },
   { id: "trade", rank: 2, label: "Commerce entre joueurs", text: "Achetez par contrat le surplus d'énergie ou de nourriture d'un autre joueur (Monde › Commerce).", href: "/monde" },
+  { id: "shares", rank: 2, label: "Bourse des villes", text: "Achetez des parts de la ville d'un autre joueur pour toucher une part de ses revenus, ou vendez des parts de la vôtre pour lever de l'argent (Monde › Bourse des villes).", href: "/monde" },
   { id: "hubs", rank: 2, label: "Places financières", text: "Ouvrez un bureau dans une place financière pour réduire vos frais de courtage (Monde).", href: "/monde" },
   { id: "projects", rank: 3, label: "Grands projets et territoire", text: "Agrandissez votre territoire et lancez des projets qui marquent votre ville (bouton Objectifs).", href: "/ville" },
 ];
