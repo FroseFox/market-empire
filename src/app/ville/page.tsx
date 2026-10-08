@@ -593,7 +593,7 @@ function TestMode() {
             <button className={tool} onClick={() => { const name = forceEvent(); notify(name ? `Événement déclenché : ${name}` : "Aucun événement possible dans cette ville", name ? "ok" : "error"); }}>Déclencher un événement</button>
             {kept && <ConfirmButton onConfirm={leaveSandbox} confirmLabel="Confirmer : revenir à ma vraie partie" className={tool}>Quitter le mode test</ConfirmButton>}
           </div>
-          <p className="mt-2">Pour revenir à votre partie, déconnectez-vous (menu du compte, en haut) puis reconnectez-vous avec Discord.</p>
+          <p className="mt-2">Pour revenir à votre partie, déconnectez-vous (menu du compte, en haut) puis reconnectez-vous avec votre compte.</p>
     </div>
   );
 }

@@ -6,7 +6,7 @@ import { MAX_ACCOUNTS, addAccount, deleteAccount, logout, switchAccount, useAuth
 import { saveNow } from "@/lib/online";
 import { useGame } from "@/store/game";
 import { loginWithDiscord } from "@/lib/auth";
-import { DiscordIcon } from "@/components/DiscordButton";
+import { DiscordIcon, ProviderTag } from "@/components/DiscordButton";
 
 /** Avatar d'un compte, ou son initiale. */
 export function Face({ a, size }: { a: Account; size: number }) {
@@ -64,7 +64,7 @@ export default function AccountMenu() {
           : <span className="h-8 w-8 rounded-full bg-[#5865F2] text-white grid place-items-center text-[13px] font-semibold">{user.name[0]}</span>}
         <span className="hidden sm:block leading-tight text-left">
           <span className="block text-[13px] font-semibold max-w-[140px] truncate">{user.name}</span>
-          <span className="flex items-center gap-1 text-[11px] text-muted"><DiscordIcon size={11} />Discord</span>
+          <span className="flex items-center gap-1 text-[11px] text-muted"><ProviderTag via={user.via} /></span>
         </span>
         <ChevronDown size={14} className="text-muted hidden sm:block" />
       </button>

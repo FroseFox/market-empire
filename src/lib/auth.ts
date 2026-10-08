@@ -1,13 +1,16 @@
 "use client";
-// Connexion avec Discord (Supabase Auth), sans bibliothèque : quelques appels HTTP.
-// - « Se connecter » envoie vers Discord, qui renvoie sur le site avec la session dans l'URL (#access_token=…).
+// Connexion avec Discord ou Google (Supabase Auth), sans bibliothèque : quelques appels HTTP.
+// - « Se connecter » envoie vers Discord ou Google, qui renvoie sur le site avec la session dans l'URL (#access_token=…).
+// - Google n'est proposé que s'il est activé dans Supabase (Authentication › Providers) : le site le demande au serveur.
 // - La session est gardée dans le navigateur et renouvelée automatiquement.
 // - Plusieurs comptes peuvent rester mémorisés sur l'appareil : on passe de l'un à l'autre sans se reconnecter.
 // Seul le site publié l'utilise ; la page claude.ai a sa propre identité.
 import { create } from "zustand";
 import { BASE_PATH, STATIC_MODE, SUPABASE_ANON, SUPABASE_URL } from "@/lib/market/client";
 
-export interface Account { id: string; name: string; avatar: string | null }
+/** `via` = le service qui a servi à se connecter (absent sur les sessions d'avant Google : c'était Discord). */
+export type Provider = "discord" | "google" | "email";
+export interface Account { id: string; name: string; avatar: string | null; via?: Provider }
 interface Session { access: string; refresh: string; exp: number; user: Account }
 
 interface AuthStore {
@@ -54,12 +57,15 @@ const authFetch = (path: string, init: RequestInit = {}, token?: string) =>
     signal: AbortSignal.timeout(10_000),
   });
 
-function accountFrom(u: { id: string; user_metadata?: Record<string, unknown> }): Account {
+/** Images de profil acceptées : celles de Discord et de Google, rien d'autre. */
+const AVATAR_HOSTS = ["https://cdn.discordapp.com/", "https://lh3.googleusercontent.com/"];
+function accountFrom(u: { id: string; user_metadata?: Record<string, unknown>; app_metadata?: Record<string, unknown> }): Account {
   const m = u.user_metadata ?? {};
+  const p = u.app_metadata?.provider, via: Provider = p === "google" ? "google" : p === "email" ? "email" : "discord";
   const claims = (m.custom_claims ?? {}) as Record<string, unknown>;
   const name = [claims.global_name, m.full_name, m.name].find((v) => typeof v === "string" && v.trim()) as string | undefined;
-  const avatar = typeof m.avatar_url === "string" && m.avatar_url.startsWith("https://cdn.discordapp.com/") ? m.avatar_url : null;
-  return { id: u.id, name: (name ?? "Joueur").trim().slice(0, 40), avatar };
+  const avatar = typeof m.avatar_url === "string" && AVATAR_HOSTS.some((h) => (m.avatar_url as string).startsWith(h)) ? m.avatar_url : null;
+  return { id: u.id, name: (name ?? "Joueur").trim().slice(0, 40), avatar, via };
 }
 
 async function fromTokens(access: string, refresh: string, expiresIn: number): Promise<Session | null> {
@@ -116,9 +122,18 @@ export async function initAuth() {
   if (session.exp - Date.now() < 60_000) await refreshSession();
 }
 
-export function loginWithDiscord() {
+function loginWith(provider: "discord" | "google") {
   const back = `${location.origin}${BASE_PATH}/`;
-  location.href = `${SUPABASE_URL}/auth/v1/authorize?provider=discord&redirect_to=${encodeURIComponent(back)}`;
+  location.href = `${SUPABASE_URL}/auth/v1/authorize?provider=${provider}&redirect_to=${encodeURIComponent(back)}`;
+}
+export const loginWithDiscord = () => loginWith("discord");
+export const loginWithGoogle = () => loginWith("google");
+
+let googleAsked: Promise<boolean> | null = null;
+/** Google est-il activé dans Supabase ? Demandé une fois au serveur ; `false` s'il ne répond pas (le bouton reste caché). */
+export function googleEnabled(): Promise<boolean> {
+  googleAsked ??= authFetch("settings").then((r) => (r.ok ? r.json() : null)).then((j) => j?.external?.google === true).catch(() => false);
+  return googleAsked;
 }
 
 /** Domaine des comptes de test : l'identifiant « test » correspond au compte test@marketempire.test dans Supabase. */

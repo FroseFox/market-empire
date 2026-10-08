@@ -41,7 +41,7 @@ export default function ShareMarket({ players }: { players: PublicPlayer[] }) {
     return () => { alive = false; };
   }, [online]);
 
-  if (!online) return <Card><Empty>La bourse des villes est disponible sur le site publié, une fois connecté avec Discord.</Empty></Card>;
+  if (!online) return <Card><Empty>La bourse des villes est disponible sur le site publié, une fois connecté.</Empty></Card>;
   if (ready === undefined) return <Card><Empty>Chargement de la bourse des villes…</Empty></Card>;
   if (!ready) return <Card><Empty>Bourse des villes indisponible pour le moment.</Empty></Card>;
 

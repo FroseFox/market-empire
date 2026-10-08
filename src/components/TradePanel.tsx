@@ -52,7 +52,7 @@ export default function TradePanel() {
     setBusy(false);
   };
 
-  if (!online) return <Card><Empty>Le commerce entre joueurs est disponible sur le site publié, une fois connecté avec Discord.</Empty></Card>;
+  if (!online) return <Card><Empty>Le commerce entre joueurs est disponible sur le site publié, une fois connecté.</Empty></Card>;
 
   return (
     <div className="grid items-start gap-4 grid-cols-1 xl:grid-cols-12">
