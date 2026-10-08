@@ -414,7 +414,7 @@ export default function WikiPage() {
               <><b>Installer l’appli</b> : sur téléphone comme sur ordinateur, le jeu peut s’installer comme une appli, avec son icône et en plein écran. Utilisez le bouton « Installer l’appli » (menu de gauche sur ordinateur, bouton « Plus » sur téléphone). Sur iPhone : bouton Partager de Safari, puis « Sur l’écran d’accueil ». L’appli se met à jour toute seule et demande une connexion internet.</>,
               <><b>Plusieurs comptes</b> : le menu du compte (en haut à droite) garde en mémoire les comptes déjà connectés sur l’appareil, jusqu’à {MAX_ACCOUNTS}. « Ajouter un compte » en connecte un autre ; ensuite, un clic suffit pour passer de l’un à l’autre. La partie en cours est enregistrée avant chaque changement.</>,
               <><b>Se déconnecter</b> : dans le menu du compte. Le compte est alors oublié sur cet appareil ; sur un ordinateur partagé, pensez-y avant de partir.</>,
-              <><b>Recommencer la partie</b> : dans la Ville, bouton « Options », tout en bas. Tout est effacé, il faut confirmer.</>,
+              <><b>Recommencer la partie</b> : dans la Ville, bouton « Options », tout en bas. Il faut confirmer. En ligne, la partie effacée reste récupérable au même endroit pendant 7 jours.</>,
               <><b>Supprimer mon compte</b> : dans le menu du compte. Le compte et la sauvegarde en ligne sont effacés pour de bon.</>,
             ]} />
             <Callout tone="tip" title="Conseil.">Évitez de laisser le jeu ouvert sur deux appareils en même temps : fermez l’un avant de jouer sur l’autre, pour ne pas reprendre une partie plus ancienne.</Callout>

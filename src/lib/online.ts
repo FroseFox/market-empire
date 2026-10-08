@@ -476,6 +476,30 @@ export function playOffline() {
   useOnline.setState({ phase: "ready" });
 }
 
+// ─── Filet de sécurité : une partie effacée par « Recommencer » reste récupérable ───
+/** Durée pendant laquelle le serveur garde la partie d'avant une remise à zéro. */
+export const BACKUP_DAYS = 7;
+/** Date à laquelle une partie a été mise de côté par le serveur, ou `null` s'il n'y en a pas (ou plus). */
+export async function backupAt(): Promise<number | null> {
+  if (!active) return null;
+  const rows = await restAsUser<{ backup_at: string | null }[]>("saves?select=backup_at&limit=1");
+  const at = rows?.[0]?.backup_at ? Date.parse(rows[0].backup_at) : NaN;
+  return Number.isFinite(at) && Date.now() - at < BACKUP_DAYS * 86_400_000 ? at : null;
+}
+/** Reprend la partie mise de côté : elle remplace la partie en cours. `false` s'il n'y en a pas ou si le serveur ne répond pas. */
+export async function restoreBackup(): Promise<boolean> {
+  const uid = active;
+  if (!uid || writing) return false;
+  writing = true;
+  if (timer) { clearTimeout(timer); timer = null; }
+  try {
+    if (!(await rpc<boolean>("restore_save", {}))) return false;
+    await pull(uid);
+    adoptCountry();
+    return true;
+  } catch { return false; } finally { writing = false; }
+}
+
 /** Enregistre tout de suite ce qui ne l'est pas encore (avant de changer de compte, par exemple).
  *  Le serveur n'accepte qu'une écriture toutes les 20 secondes : s'il refuse, on attend son feu vert et on réessaie.
  *  Renvoie `false` si la partie n'a pas pu être enregistrée. */

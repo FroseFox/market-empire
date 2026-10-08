@@ -5,6 +5,8 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useDerived, useGame } from "@/store/game";
+import { useAuth } from "@/lib/auth";
+import { BACKUP_DAYS, backupAt, restoreBackup, saveNow, useOnline } from "@/lib/online";
 import { BUILDINGS, BUILDING_BY_ID, CATEGORY_LABELS, CITY_RANKS, SERVICES, SERVICE_IDS, DEMOLISH_REFUND, EXPORT_RATIO, MAINTENANCE_RATE, RESOURCE_PRICES, type BuildingType, type Category } from "@/lib/game/config";
 import { Button, ConfirmButton, Progress, LockTag } from "@/components/ui";
 import IsoCity from "@/components/City3D";
@@ -601,6 +603,32 @@ function TestMode() {
 function MoreMenu() {
   const skipDay = useGame((s) => s.skipDay);
   const reset = useGame((s) => s.reset);
+  const notify = useGame((s) => s.notify);
+  const cityName = useGame((s) => s.game.cityName);
+  const account = useAuth((s) => s.user?.name);
+  const online = useOnline((s) => s.phase === "ready") && !!account;
+  // Partie effacée que le serveur garde encore (date de mise de côté), s'il y en a une
+  const [lost, setLost] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!online) return;
+    let on = true;
+    backupAt().then((at) => { if (on) setLost(at); }).catch(() => {});
+    return () => { on = false; };
+  }, [online]);
+  // Recommencer : la remise à zéro est envoyée tout de suite au serveur, qui met la partie d'avant de côté
+  const restart = async () => {
+    reset();
+    if (!online) return;
+    await saveNow();
+    setLost(await backupAt().catch(() => null));
+  };
+  const recover = async () => {
+    setBusy(true);
+    const ok = await restoreBackup();
+    setBusy(false);
+    if (ok) { setLost(null); notify("Partie récupérée"); } else notify("Récupération impossible, réessayez dans un instant.", "error");
+  };
   return (
     <div className="space-y-4">
       <TestMode />
@@ -617,9 +645,21 @@ function MoreMenu() {
       <div className="flex flex-wrap items-center gap-3 border-t border-line pt-3">
         {/* Outil de test : absent du site publié */}
         {DEV && <Button variant="secondary" onClick={() => skipDay(1)} title="Outil de test (développement uniquement)" className="inline-flex items-center gap-1.5"><FastForward size={15} />Avancer d&apos;un jour</Button>}
-        <ConfirmButton onConfirm={reset} confirmLabel="Confirmer : tout effacer"
+        <ConfirmButton onConfirm={restart} confirmLabel={`Confirmer : effacer « ${cityName} »`}
           className="inline-flex items-center gap-1 text-[12px] text-danger hover:underline"><RotateCcw size={13} />Recommencer la partie</ConfirmButton>
       </div>
+      <p className="text-[11px] text-muted">
+        {account ? <>Compte : <b className="font-semibold text-ink">{account}</b>. </> : null}
+        {online ? `Recommencer efface la ville, l'argent et les placements de ce compte. La partie effacée reste récupérable ici pendant ${BACKUP_DAYS} jours.` : "Recommencer efface la ville, l'argent et les placements. Hors ligne, c'est définitif."}
+      </p>
+      {lost !== null && (
+        <div className="rounded-[12px] border border-amber-300 bg-amber-50 p-3 text-[12px] text-amber-900">
+          <div className="text-[13px] font-semibold">Une partie effacée peut être récupérée</div>
+          <p className="mt-1">Elle a été remplacée le {new Date(lost).toLocaleString("fr-FR", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" })}. Elle est gardée jusqu&apos;au {new Date(lost + BACKUP_DAYS * 86_400_000).toLocaleDateString("fr-FR", { day: "numeric", month: "long" })}. La reprendre remplace la partie en cours.</p>
+          <ConfirmButton onConfirm={recover} disabled={busy} confirmLabel="Confirmer : reprendre la partie effacée"
+            className="mt-2 inline-flex items-center gap-1.5 rounded-[10px] bg-amber-600 px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-amber-700 disabled:opacity-50"><RotateCcw size={13} />{busy ? "Récupération…" : "Récupérer ma partie"}</ConfirmButton>
+        </div>
+      )}
     </div>
   );
 }
