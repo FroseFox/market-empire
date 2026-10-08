@@ -7,7 +7,7 @@ import {
   NEED_PER_RANK, POLLUTION_FACTOR, POLLUTION_MAX, PRESTIGE_PER_GOAL, PRESTIGE_PER_RANK, PROJECTS, PROJECT_BY_ID,
   FEATURES, ORIENTATION_BY_ID, ORIENTATION_CHANGE_COST, ORIENTATION_MIN_RANK, type FeatureId, type OrientationId,
   RENOVATE_RATE, TERRITORY, WEAR_MAINTENANCE, WEAR_PER_DAY, WEAR_SATISFACTION,
-  BANK, CAPITAL, LEVERAGE, SHARES, CITY_RANKS, FORECAST_DAYS, GOALS, UPGRADES, SERVICES, SERVICE_BONUS, SERVICE_IDS,
+  ALLIANCE, BANK, CAPITAL, LEVERAGE, SHARES, CITY_RANKS, FORECAST_DAYS, GOALS, UPGRADES, SERVICES, SERVICE_BONUS, SERVICE_IDS,
   STARTING_BUILDINGS, STARTING_CASH, STARTING_POPULATION, START_GRANT, TAX_PER_RESIDENT, TRADE_FEE_MIN, TRADE_FEE_RATE,
   type BuildingType, type Category, type Goal, type ServiceId, type Specialty,
 } from "./config";
@@ -109,6 +109,8 @@ export interface GameState {
   bank?: number;
   /** Capital produit par les placements, dépensé pour les gros bâtiments. */
   capital?: number;
+  /** Alliance du joueur (copie de ce que le serveur connaît) ; absente quand il n'en a pas. */
+  alliance?: AllianceState;
   /** Bourse des villes : copie de ce que le serveur connaît (parts détenues, actionnaires, paiements déjà encaissés). */
   shares?: ShareState;
   /** Ancien système (positions à levier séparées) : converti en lignes du portefeuille au chargement. */
@@ -129,6 +131,9 @@ export interface CityStake { city: string; name: string; qty: number; cost: numb
 export interface Shareholder { holder: string; name: string; qty: number }
 /** `credit` = total reçu des autres joueurs (ventes de parts, rachats) et déjà versé dans les liquidités. */
 export interface ShareState { credit: number; float: number; sold: number; held: CityStake[]; holders: Shareholder[] }
+
+/** `members` = identifiants de toutes les villes de l'alliance (le joueur compris), `gift` = ce qu'il a versé à la caisse. */
+export interface AllianceState { id: string; name: string; tag: string; treasury: number; leader: string | null; members: string[]; gift: number }
 
 export type Prices = Record<string, number>;
 
@@ -209,7 +214,7 @@ export interface CityStats {
 
 /** Ce dont le calcul de la ville a besoin ; seuls les bâtiments et la population sont obligatoires. */
 export type CityInput = Pick<GameState, "buildings" | "population">
-  & Partial<Pick<GameState, "branches" | "holdings" | "country" | "wear" | "projects" | "contracts" | "territory" | "orientation" | "shares">>;
+  & Partial<Pick<GameState, "branches" | "holdings" | "country" | "wear" | "projects" | "contracts" | "territory" | "orientation" | "shares" | "alliance">>;
 
 /** Côté de la carte du joueur (elle s'agrandit avec le territoire). */
 export const mapSize = (state: Partial<Pick<GameState, "territory">>) => TERRITORY[clamp(state.territory ?? 0, 0, TERRITORY.length - 1)].size;
@@ -226,7 +231,7 @@ export function computeCity(state: CityInput): CityStats {
   const projects = (state.projects ?? []).map((id) => PROJECT_BY_ID[id]).filter(Boolean);
   // Revenus d'une catégorie : spécialité du pays et grands projets
   const orientation = state.orientation ? ORIENTATION_BY_ID[state.orientation] : undefined;
-  const revBoost = (cat: Category) => 1 + (specialty === cat ? bonus : 0) + (orientation?.revenue?.[cat] ?? 0)
+  const revBoost = (cat: Category) => 1 + (specialty === cat ? bonus : 0) + (orientation?.revenue?.[cat] ?? 0) + allianceBonus(state)
     + projects.reduce((a, p) => a + (p.perk.kind === "revenue" && p.perk.category === cat ? p.perk.bonus : 0), 0);
 
   let housing = 0, jobs = 0, energyProd = 0, energyUse = 0, foodProd = 0, bRevenue = 0, cityValue = 0, assetValue = 0, emitted = 0, absorbed = 0;
@@ -309,14 +314,17 @@ export function computeCity(state: CityInput): CityStats {
   const buildingsIncome = bRevenue * staffing;
 
   // Commerce : les contrats entre joueurs passent d'abord (meilleur prix des deux côtés), le reste au prix du marché
-  const contracted = (resource: Contract["resource"], side: Contract["side"]) =>
-    (state.contracts ?? []).reduce((a, c) => a + (c.resource === resource && c.side === side ? c.qty : 0), 0);
+  // Entre alliés, le contrat se fait à un prix encore meilleur ; ces contrats-là sont servis en premier.
+  const allies = state.alliance?.members ?? [];
+  const contracted = (resource: Contract["resource"], side: Contract["side"], allied = false) =>
+    (state.contracts ?? []).reduce((a, c) => a + (c.resource === resource && c.side === side && (!allied || allies.includes(c.partner)) ? c.qty : 0), 0);
   const trade = (balance: number, resource: Contract["resource"], price: number) => {
     const surplus = Math.max(0, balance), deficit = Math.max(0, -balance);
     const sold = Math.min(surplus, contracted(resource, "sell")), bought = Math.min(deficit, contracted(resource, "buy"));
+    const soldAlly = Math.min(sold, contracted(resource, "sell", true)), boughtAlly = Math.min(bought, contracted(resource, "buy", true));
     return {
-      exports: (sold * CONTRACT_RATIO + (surplus - sold) * EXPORT_RATIO) * price,
-      imports: (bought * CONTRACT_RATIO + (deficit - bought)) * price,
+      exports: (soldAlly * ALLIANCE.contract.sell + (sold - soldAlly) * CONTRACT_RATIO + (surplus - sold) * EXPORT_RATIO) * price,
+      imports: (boughtAlly * ALLIANCE.contract.buy + (bought - boughtAlly) * CONTRACT_RATIO + (deficit - bought)) * price,
       sold, bought,
     };
   };
@@ -769,7 +777,7 @@ export function chooseOrientation(state: GameState, id: OrientationId, at: numbe
 }
 
 /** Une fonction du jeu est-elle ouverte ? Par le rang, ou parce que le joueur s'en sert déjà. */
-export function featureOpen(state: Pick<GameState, "population"> & Partial<Pick<GameState, "branches" | "orientation" | "contracts" | "hubs" | "projects" | "territory" | "shares">>, id: FeatureId): boolean {
+export function featureOpen(state: Pick<GameState, "population"> & Partial<Pick<GameState, "branches" | "orientation" | "contracts" | "hubs" | "projects" | "territory" | "shares" | "alliance">>, id: FeatureId): boolean {
   const f = FEATURES.find((x) => x.id === id);
   if (!f || cityRank(state.population) >= f.rank) return true;
   switch (id) {
@@ -777,6 +785,7 @@ export function featureOpen(state: Pick<GameState, "population"> & Partial<Pick<
     case "orientation": return !!state.orientation;
     case "trade": return !!state.contracts?.length;
     case "shares": return !!state.shares?.held.length || !!state.shares?.sold;
+    case "alliances": return !!state.alliance;
     case "hubs": return !!state.hubs?.length;
     case "projects": return !!state.projects?.length || !!state.territory;
   }
@@ -849,6 +858,31 @@ export function absenceReport(before: GameState, after: GameState): AbsenceRepor
 export function prestige(state: Pick<GameState, "population"> & Partial<Pick<GameState, "goals" | "projects">>): number {
   return cityRank(state.population) * PRESTIGE_PER_RANK + (state.goals?.length ?? 0) * PRESTIGE_PER_GOAL
     + PROJECTS.reduce((a, p) => a + (state.projects?.includes(p.id) ? p.prestige : 0), 0);
+}
+
+// ─── Alliances ────────────────────────────────────────────────
+
+/** Niveau d'une alliance d'après sa caisse commune (0 au départ). */
+export function allianceLevel(treasury: number): number {
+  let level = 0;
+  ALLIANCE.levels.forEach((need, i) => { if (treasury >= need) level = i; });
+  return level;
+}
+/** Bonus sur les revenus des bâtiments que l'alliance du joueur lui apporte. */
+export const allianceBonus = (state: Partial<Pick<GameState, "alliance">>) =>
+  (state.alliance ? allianceLevel(state.alliance.treasury) * ALLIANCE.bonusPerLevel : 0);
+
+/** Reprend l'alliance connue du serveur (`null` = le joueur n'en a pas). */
+export function setAlliance(state: GameState, alliance: AllianceState | null): GameState {
+  if (JSON.stringify(state.alliance ?? null) === JSON.stringify(alliance)) return state;
+  const next = { ...state };
+  if (alliance) next.alliance = alliance; else delete next.alliance;
+  return next;
+}
+
+/** Débite ce que le serveur a enregistré pour l'alliance (fondation, versement à la caisse) : de l'argent qui ne revient pas. */
+export function payAlliance(state: GameState, cost: number, label: string, at: number): GameState {
+  return { ...state, cash: round2(state.cash - cost), today: spend(state, "extra", -cost), transactions: addTx(state, { kind: "research", label, amount: -cost, at }) };
 }
 
 // ─── Bourse des villes ────────────────────────────────────────

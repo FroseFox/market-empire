@@ -4,7 +4,7 @@ import Link from "next/link";
 import { BookOpen } from "lucide-react";
 import { useGame } from "@/store/game";
 import {
-  ACTIVE_RATIO, BANK, BRANCH_COST, CITIES_PER_COUNTRY, SHARES, CAPITAL, LEVERAGE, BRANCH_EFFECTS, BRANCH_MIN_VALUE, BUILDINGS, BUILDING_BY_ID, CATEGORY_LABELS, CITY_RANKS, CONTRACT_RATIO, COUNTRY_PRICES,
+  ACTIVE_RATIO, ALLIANCE, BANK, BRANCH_COST, CITIES_PER_COUNTRY, SHARES, CAPITAL, LEVERAGE, BRANCH_EFFECTS, BRANCH_MIN_VALUE, BUILDINGS, BUILDING_BY_ID, CATEGORY_LABELS, CITY_RANKS, CONTRACT_RATIO, COUNTRY_PRICES,
   DAY_LENGTH_MINUTES, DEMOLISH_REFUND, ENERGY_PER_RESIDENT, EXPORT_RATIO, FOOD_PER_RESIDENT, GOALS, HUB_DESK_COST, HUB_FEE_FACTOR, MAINTENANCE_RATE,
   FEATURES, ORIENTATIONS, ORIENTATION_CHANGE_COST, ORIENTATION_MIN_RANK,
   MAX_CATCHUP_DAYS, MAX_CONTRACTS, NEED_PER_RANK, POLLUTION_MAX, PROJECTS, RENOVATE_RATE, RESOURCE_PRICES, SERVICES, SERVICE_IDS, SPECIALTY_BONUS,
@@ -20,7 +20,7 @@ import { compactEur, eur, num } from "@/lib/format";
 
 const SECTIONS = [
   ["demarrer", "Démarrer"], ["jouer", "Comment jouer"], ["pages", "Les pages du jeu"], ["chiffres", "Lire les chiffres"], ["soucis", "Que faire si…"], ["temps", "Le temps"], ["bourse", "Bourse"], ["ville", "Ville"], ["batiments", "Bâtiments"], ["equipements", "Équipements et tensions"],
-  ["progression", "Rangs, objectifs, projets"], ["entreprises", "Entreprises implantées"], ["monde", "Monde et pays"], ["commerce", "Commerce"], ["bourse-villes", "Bourse des villes"], ["recherche", "Recherche"], ["notifications", "Notifications"],
+  ["progression", "Rangs, objectifs, projets"], ["entreprises", "Entreprises implantées"], ["monde", "Monde et pays"], ["commerce", "Commerce"], ["bourse-villes", "Bourse des villes"], ["alliances", "Alliances"], ["recherche", "Recherche"], ["notifications", "Notifications"],
 ] as const;
 const CATS: Category[] = ["housing", "commerce", "services", "industry", "agriculture", "energy", "public"];
 const pct = (v: number, d = 0) => `${(v * 100).toLocaleString("fr-FR", { maximumFractionDigits: d })} %`;
@@ -249,6 +249,17 @@ export default function WikiPage() {
               <li>L&apos;argent ne sort jamais de nulle part : il passe toujours d&apos;un joueur à l&apos;autre. Seul le propriétaire peut racheter ses parts.</li>
               <li>Ouvert à partir de {SHARES.minPop.toLocaleString("fr-FR")} habitants, pour acheter comme pour vendre. Jusqu&apos;à {SHARES.maxLines} villes différentes.</li>
             </ul>
+          </Section>
+
+          <Section id="alliances" title="Alliances">
+            <ul className="list-disc space-y-1.5 pl-5">
+              <li>Dans Monde › Alliances, fondez une alliance ({compactEur(ALLIANCE.cost)}) ou rejoignez-en une. Jusqu&apos;à {ALLIANCE.maxMembers} villes, à partir de {ALLIANCE.minPop.toLocaleString("fr-FR")} habitants.</li>
+              <li><b>Caisse commune</b> : chaque membre peut y verser de l&apos;argent. Il ne se retire pas : il fait monter le niveau de l&apos;alliance.</li>
+              <li>Chaque niveau ajoute <b>+{Math.round(ALLIANCE.bonusPerLevel * 100)} %</b> aux revenus des bâtiments de tous les membres.</li>
+              <li><b>Commerce entre alliés</b> : sur un contrat, le vendeur touche {Math.round(ALLIANCE.contract.sell * 100)} % du prix plein et l&apos;acheteur paie {Math.round(ALLIANCE.contract.buy * 100)} %, au lieu de {Math.round(CONTRACT_RATIO * 100)} % des deux côtés.</li>
+              <li>Quitter une alliance est libre ; ce que vous avez versé reste dans sa caisse. Si le chef part, le membre qui a le plus versé le remplace.</li>
+            </ul>
+            <Table head={["Niveau", "Caisse commune", "Bonus de revenus"]} rows={ALLIANCE.levels.map((n, i) => [String(i), i ? compactEur(n) : "Départ", `+${Math.round(i * ALLIANCE.bonusPerLevel * 100)} %`])} />
           </Section>
 
           <Section id="recherche" title="Recherche">
