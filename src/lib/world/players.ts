@@ -79,6 +79,8 @@ type Row = { id: string; name: string; avatar: string | null; country: string | 
 let lastLoad = 0;
 /** Délai minimal entre deux lectures du classement, et rythme de relecture tant que la page Monde reste ouverte. */
 const RELOAD_MIN = 30_000, RELOAD_EVERY = 120_000;
+/** Lecture du classement : lignes par requête (le serveur n'en rend pas plus de 1 000) et nombre de requêtes au plus. */
+const PAGE = 1000, MAX_PAGES = 3;
 /** Site publié : classement lu dans Supabase, seulement quand la page Monde est ouverte. Toujours relu sur le serveur :
  *  une liste gardée en mémoire montrait des joueurs dans leur ancien pays plusieurs minutes après un déménagement. */
 async function loadOnline(fresh = false) {
@@ -86,13 +88,31 @@ async function loadOnline(fresh = false) {
   // il sort seulement du classement. On lit donc la table complète avec son signalement, en une seule requête.
   // Secours : la vue « ranking » (sans les joueurs signalés), puis la table sans la colonne de signalement.
   const cols = "id,name,avatar,country,city_name,net_worth,population,perf,day,updated_at";
-  const tail = "&order=net_worth.desc&limit=300", ttl = fresh ? 0 : undefined;
-  const rows = (await rest<Row[]>(`players?select=${cols},flagged,income,share_float,share_sold,alliance,alliance_gift,tester${tail}`, ttl))
-    ?? (await rest<Row[]>(`players?select=${cols},flagged,income,share_float,share_sold,alliance,alliance_gift${tail}`, ttl))
-    ?? (await rest<Row[]>(`players?select=${cols},flagged,income,share_float,share_sold${tail}`, ttl))
-    ?? (await rest<Row[]>(`players?select=${cols},flagged${tail}`, ttl))
-    ?? (await rest<Row[]>(`ranking?select=${cols}${tail}`, ttl))
-    ?? (await rest<Row[]>(`players?select=${cols}${tail}`, ttl));
+  // Tous les joueurs, page par page : la carte doit montrer chaque ville (au plus 20 par pays), pas seulement les 300 plus riches.
+  const ttl = fresh ? 0 : undefined;
+  const page = (n: number) => `&order=net_worth.desc,id.asc&limit=${PAGE}&offset=${n * PAGE}`;
+  const variants = [
+    `players?select=${cols},flagged,income,share_float,share_sold,alliance,alliance_gift,tester`,
+    `players?select=${cols},flagged,income,share_float,share_sold,alliance,alliance_gift`,
+    `players?select=${cols},flagged,income,share_float,share_sold`,
+    `players?select=${cols},flagged`,
+    `ranking?select=${cols}`,
+    `players?select=${cols}`,
+  ];
+  let rows: Row[] | null = null;
+  for (const q of variants) {
+    const first = await rest<Row[]>(q + page(0), ttl);
+    if (!first) continue;
+    // Pages suivantes avec la même requête ; une page qui échoue n'efface pas ce qui est déjà lu
+    const all: Row[] = [...first], seen = new Set<string>(first.map((r) => r.id));
+    for (let n = 1; n < MAX_PAGES && all.length === n * PAGE; n++) {
+      const more = await rest<Row[]>(q + page(n), ttl);
+      if (!more) break;
+      for (const r of more) if (!seen.has(r.id)) { seen.add(r.id); all.push(r); }
+    }
+    rows = all;
+    break;
+  }
   // Échec : on réessaiera à la prochaine ouverture de la page, sans attendre 5 minutes
   if (!rows) { lastLoad = 0; emit({ status: "offline", players: [], me: null }); return; }
   const me = useAuth.getState().user?.id ?? null;
