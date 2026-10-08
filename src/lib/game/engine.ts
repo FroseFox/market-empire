@@ -6,12 +6,12 @@ import {
   BRANCH_COST, BRANCH_EFFECTS, BRANCH_MIN_VALUE, CONTRACT_RATIO, FINANCE_FEE_FACTOR, HUB_DESK_COST, HUB_FEE_FACTOR,
   NEED_PER_RANK, POLLUTION_FACTOR, POLLUTION_MAX, PRESTIGE_PER_GOAL, PRESTIGE_PER_RANK, PROJECTS, PROJECT_BY_ID,
   FEATURES, ORIENTATION_BY_ID, ORIENTATION_CHANGE_COST, ORIENTATION_MIN_RANK, type FeatureId, type OrientationId,
-  RENOVATE_RATE, TERRITORY, WEAR_MAINTENANCE, WEAR_PER_DAY, WEAR_SATISFACTION,
+  RENOVATE_RATE, TERRITORY, LAND_VERSION, WEAR_MAINTENANCE, WEAR_PER_DAY, WEAR_SATISFACTION,
   ALLIANCE, BANK, BLOCKADE, CAPITAL, CITY_EFFECT_CAPS, LEVERAGE, SANDBOX, SHARES, TOURISM, CITY_RANKS, FORECAST_DAYS, GOALS, UPGRADES, SERVICES, SERVICE_BONUS, SERVICE_IDS,
   STARTING_BUILDINGS, STARTING_CASH, STARTING_POPULATION, START_GRANT, TAX_PER_RESIDENT, TRADE_FEE_MIN, TRADE_FEE_RATE,
   type BuildingType, type Category, type Goal, type ServiceId, type Specialty,
 } from "./config";
-import { isBuildable, layoutFrom, placeTile, type Plot } from "./layout";
+import { buildableCount, isBuildable, layoutFrom, mapBounds, placeTile, type Plot } from "./layout";
 import { HUBS, HUB_BY_NAME, PLAYABLE, countryBonus, countryPrice, countrySpecialty, type Hub } from "../world/countries";
 import { ASSET_BY_SYMBOL, familyOf, regionOf, type Asset } from "../market/universe";
 import { RESEARCH_BY_ID, RETIRED_RESEARCH, STARTING_RESEARCH, researchFx } from "./research";
@@ -102,6 +102,9 @@ export interface GameState {
   orientation?: OrientationId;
   /** Agrandissements du territoire achetés (indice dans TERRITORY). */
   territory?: number;
+  /** Version des règles de territoire de cette partie (voir LAND_VERSION), et paliers reçus sans payer à la conversion. */
+  landV?: number;
+  landFree?: number;
   /** Coûts du jour en cours, versés dans l'historique au prochain passage de jour. */
   today?: DayCosts;
   /** Total des plus-values réalisées depuis que le jeu les enregistre. */
@@ -163,7 +166,8 @@ export function newGame(now: number, playerName = "Celyan", cityName = "Nova Cit
     cash: STARTING_CASH,
     population: STARTING_POPULATION,
     buildings: { ...STARTING_BUILDINGS },
-    plots: layoutFrom(STARTING_BUILDINGS),
+    plots: layoutFrom(STARTING_BUILDINGS, TERRITORY[0].size),
+    landV: LAND_VERSION,
     holdings: {},
     bank: 0,
     capital: 0,
@@ -237,7 +241,7 @@ export interface CityStats {
 
 /** Ce dont le calcul de la ville a besoin ; seuls les bâtiments et la population sont obligatoires. */
 export type CityInput = Pick<GameState, "buildings" | "population">
-  & Partial<Pick<GameState, "branches" | "holdings" | "country" | "wear" | "projects" | "contracts" | "territory" | "orientation" | "shares" | "alliance" | "event" | "day" | "research">>;
+  & Partial<Pick<GameState, "branches" | "holdings" | "country" | "wear" | "projects" | "contracts" | "territory" | "landFree" | "orientation" | "shares" | "alliance" | "event" | "day" | "research">>;
 
 /** Côté de la carte du joueur (elle s'agrandit avec le territoire). */
 export const mapSize = (state: Partial<Pick<GameState, "territory">>) => TERRITORY[clamp(state.territory ?? 0, 0, TERRITORY.length - 1)].size;
@@ -296,7 +300,7 @@ export function computeCity(state: CityInput): CityStats {
   // Les grands projets comptent dans le patrimoine (pas d'entretien)
   assetValue += projects.reduce((a, p) => a + p.cost, 0);
   // Le territoire acheté aussi
-  for (let i = 1; i <= Math.min(state.territory ?? 0, TERRITORY.length - 1); i++) assetValue += TERRITORY[i].cost;
+  for (let i = (state.landFree ?? 0) + 1; i <= Math.min(state.territory ?? 0, TERRITORY.length - 1); i++) assetValue += TERRITORY[i].cost;
 
   for (const key of FX_KEYS) fx[key] = Math.min(fx[key], CITY_EFFECT_CAPS[key]);
   // Recherches : elles s'ajoutent à l'effet des bâtiments, au-delà de leurs plafonds
@@ -886,7 +890,7 @@ export function featureOpen(state: Pick<GameState, "population"> & Partial<Pick<
     case "shares": return !!state.shares?.held.length || !!state.shares?.sold;
     case "alliances": return !!state.alliance;
     case "hubs": return !!state.hubs?.length;
-    case "projects": return !!state.projects?.length || !!state.territory;
+    case "projects": return !!state.projects?.length;
   }
 }
 
@@ -894,6 +898,11 @@ export function featureOpen(state: Pick<GameState, "population"> & Partial<Pick<
 export function buildPreview(state: CityInput, buildingId: string, city = computeCity(state)): { net: number; satisfaction: number; growth: number } {
   const after = computeCity({ ...state, buildings: { ...state.buildings, [buildingId]: (state.buildings[buildingId] ?? 0) + 1 } });
   return { net: after.net - city.net, satisfaction: after.satisfaction - city.satisfaction, growth: after.growth - city.growth };
+}
+
+/** Terrain occupé : carreaux bâtis et carreaux constructibles de la carte actuelle. */
+export function landUse(state: Pick<GameState, "plots"> & Partial<Pick<GameState, "territory">>): { used: number; total: number } {
+  return { used: state.plots.length, total: buildableCount(mapSize(state)) };
 }
 
 /** Prochain agrandissement du territoire, s'il en reste un. */
@@ -1225,6 +1234,15 @@ function removePlot(plots: Plot[], id: string): Plot[] {
 /** Répare une sauvegarde : plan manquant ou incohérent avec les bâtiments. */
 export function normalize(input: GameState): GameState {
   let state = input;
+  // Parties d'avant le territoire à acheter : on garde ce qui a été payé (40 ou 48), sinon la plus petite carte
+  // qui contient tout ce qui est déjà construit. Rien n'est démoli, et ces paliers offerts ne comptent pas dans le patrimoine.
+  if (state.landV !== LAND_VERSION) {
+    const old = state.territory ?? 0, free = TERRITORY.findIndex((t) => t.size === 32);
+    const fits = (size: number) => { const { lo, hi } = mapBounds(size); return state.plots.every((p) => p.x > lo && p.y > lo && p.x < hi - 1 && p.y < hi - 1); };
+    const need = Array.isArray(state.plots) ? TERRITORY.findIndex((t) => fits(t.size)) : free;
+    const territory = old >= 1 ? Math.min(old + free, TERRITORY.length - 1) : need < 0 ? free : Math.min(need, free);
+    state = { ...state, territory, landV: LAND_VERSION, landFree: Math.min(territory, free) };
+  }
   if (!Array.isArray(state.research)) state = { ...state, research: [...STARTING_RESEARCH] };
   else if (STARTING_RESEARCH.some((r) => !state.research.includes(r))) state = { ...state, research: [...new Set([...STARTING_RESEARCH, ...state.research])] };
   if (!Array.isArray(state.folders)) state = { ...state, folders: [] };

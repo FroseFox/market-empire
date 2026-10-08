@@ -12,8 +12,8 @@ import { MARKER_LEVEL, type CityMarker, type CityMode, type CitySign, type Marke
 import CompanyLogo, { companyBadge } from "@/components/CompanyLogo";
 import { cityMarkers } from "@/lib/game/markers";
 import { useMedia } from "@/lib/useMedia";
-import { capitalCost, computeCity, activeBranches, branchAt, branchCost, buildPreview, featureOpen, mapSize, nextTerritory, orientationCost, branchLimit, buildingAudit, forecast, goalStatuses, hasResearch, isTileFree, prestige, renovateCost, upgradeOffer, type CityStats } from "@/lib/game/engine";
-import { BRANCH_EFFECTS, BRANCH_MIN_VALUE, FEATURES, FORECAST_DAYS, ORIENTATIONS, ORIENTATION_BY_ID, PROJECTS } from "@/lib/game/config";
+import { capitalCost, computeCity, landUse, activeBranches, branchAt, branchCost, buildPreview, featureOpen, mapSize, nextTerritory, orientationCost, branchLimit, buildingAudit, forecast, goalStatuses, hasResearch, isTileFree, prestige, renovateCost, upgradeOffer, type CityStats } from "@/lib/game/engine";
+import { BRANCH_EFFECTS, BRANCH_MIN_VALUE, FEATURES, FORECAST_DAYS, LAND_ALMOST_FULL, ORIENTATIONS, ORIENTATION_BY_ID, PROJECTS } from "@/lib/game/config";
 import { specialtyText } from "@/lib/world/countries";
 import { ASSET_BY_SYMBOL, familyOf } from "@/lib/market/universe";
 import type { Plot } from "@/lib/game/layout";
@@ -436,7 +436,7 @@ function Progression({ city, population, goals, onClaim }: { city: CityStats; po
   const buildProject = useGame((s) => s.buildProject);
   const expandTerritory = useGame((s) => s.expandTerritory);
   const chooseOrientation = useGame((s) => s.chooseOrientation);
-  const land = nextTerritory(game), size = mapSize(game);
+  const land = nextTerritory(game), size = mapSize(game), ground = landUse(game);
   const late = featureOpen(game, "projects"), canOrient = featureOpen(game, "orientation");
   const switchCost = orientationCost(game);
   const toCome = FEATURES.filter((f) => !featureOpen(game, f.id));
@@ -502,10 +502,10 @@ function Progression({ city, population, goals, onClaim }: { city: CityStats; po
           </ul>
         </div>
       )}
-      {late && (
       <div className="flex items-center justify-between gap-3 border-t border-line pt-3">
-        <div className="min-w-0">
-          <div className="text-[13px] font-medium">Territoire : {size} × {size} carreaux</div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline justify-between gap-2 text-[13px] font-medium"><span>Territoire : {size} × {size} carreaux</span><span className={`text-[11px] tabular ${ground.used >= ground.total * LAND_ALMOST_FULL ? "font-semibold text-amber-700" : "text-muted"}`}>{num(ground.used)} / {num(ground.total)} occupés</span></div>
+          <div className="my-1.5"><Progress value={ground.used / ground.total} tone={ground.used >= ground.total * LAND_ALMOST_FULL ? "bg-warning" : "bg-primary"} /></div>
           <div className="text-[11px] text-muted">
             {!land ? "Taille maximale atteinte." : city.rank < land.minRank ? `Agrandissement à ${land.size} × ${land.size} au rang « ${CITY_RANKS[land.minRank].name} ».` : `Agrandir à ${land.size} × ${land.size} : 4 carreaux de plus de chaque côté.`}
           </div>
@@ -514,7 +514,6 @@ function Progression({ city, population, goals, onClaim }: { city: CityStats; po
           : <ConfirmButton onConfirm={expandTerritory} disabled={land.cost > game.cash} confirmLabel="Confirmer"
               className="shrink-0 rounded-[10px] bg-primary px-3 py-2 text-[13px] font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40">{compactEur(land.cost)}</ConfirmButton>)}
       </div>
-      )}
       {late && (
       <div className="border-t border-line pt-3">
         <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted">Grands projets · {game.projects?.length ?? 0} / {PROJECTS.length}</div>
