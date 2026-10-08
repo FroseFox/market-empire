@@ -94,12 +94,12 @@ export default function WorldPage() {
 
   return (
     <>
-      <PageHeader icon={Globe2} title="Monde" subtitle="Carte économique des territoires et classement des joueurs">
+      <PageHeader icon={Globe2} title="Monde" subtitle="Carte des pays, villes des joueurs et classement">
         <Segmented options={(featureOpen(game, "trade") ? ["Carte", "Commerce", "Bourse", "Alliances", "Classement"] : ["Carte", "Bourse", "Alliances", "Classement"]) as Tab[]} value={tab} onChange={setTab} />
       </PageHeader>
 
       <div className="grid gap-2 sm:gap-4 grid-cols-3 mb-4">
-        <Stat icon={MapPin} label="Votre territoire" value={mine ? countryName(mine.country) : "—"}
+        <Stat icon={MapPin} label="Votre pays" value={mine ? countryName(mine.country) : "—"}
           sub={mine && PLAYABLE[mine.country] ? specialtyText(mine.country) : game.cityName} />
         <Stat icon={Trophy} label="Votre rang" value={myRank ? `${myRank}ᵉ` : "—"} sub={`sur ${num(inRanking.length)} joueur${inRanking.length > 1 ? "s" : ""} classé${inRanking.length > 1 ? "s" : ""}`} />
         <Stat icon={Users} label="Monde" value={`${num(players.length)} joueur${players.length > 1 ? "s" : ""}`} sub={`${Object.keys(PLAYABLE).length} pays · ${CITIES_PER_COUNTRY} villes par pays`} />
@@ -110,8 +110,10 @@ export default function WorldPage() {
           <Card className="xl:col-span-9 !p-3">
             <WorldMap owners={owners} cities={players} selected={selId} onSelect={setSelected} focus={mine?.country} />
             <div className="flex flex-wrap gap-x-5 gap-y-2 mt-3 px-1 text-[12px] text-muted">
-              <Legend color="#2563EB" label="Votre territoire" />
-              <Legend color="#C7D7E8" label="Pays habités" />
+              <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded-[3px] bg-primary" />Votre part du pays</span>
+              <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded-full bg-primary" />Votre ville</span>
+              <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded-full bg-slate-700" />Autres villes</span>
+              <span className="inline-flex items-center gap-1.5"><span className="flex h-3 w-5 overflow-hidden rounded-[3px]"><span className="flex-1 bg-[#E8C9A4]" /><span className="flex-1 bg-[#B9DDBE]" /></span>Parts des autres villes</span>
               <Legend color="#FBFCFE" label="Pays sans ville" border />
               <Legend color="#E7ECF2" label="Non jouables" />
               <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rotate-45 rounded-[2px] bg-amber-500" />Places financières</span>

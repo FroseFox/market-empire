@@ -49,9 +49,31 @@ function cityPoint(country: string, i: number, n: number): [number, number] {
   const s = SHAPES.find((x) => x.id === country);
   if (!s) return [MAP_W / 2, MAP_H / 2];
   if (n <= 1) return s.centroid as [number, number];
-  const r = Math.min(s.core[1][0] - s.core[0][0], s.core[1][1] - s.core[0][1]) * 0.3 * Math.sqrt((i + 0.5) / n), a = i * 2.39996;
+  const r = Math.min(s.core[1][0] - s.core[0][0], s.core[1][1] - s.core[0][1]) * 0.44 * Math.sqrt((i + 0.5) / n), a = i * 2.39996;
   return [s.centroid[0] + Math.cos(a) * r, s.centroid[1] + Math.sin(a) * r * 0.8];
 }
+
+/** Partage d'un pays entre ses villes : chaque ville reçoit la partie du pays la plus proche de son repère.
+ *  On part du rectangle qui entoure le pays et on le coupe par la médiatrice avec chaque autre ville ;
+ *  le dessin est ensuite découpé à la forme du pays. */
+function shareOf(box: [[number, number], [number, number]], seeds: [number, number][], i: number): string {
+  let poly: [number, number][] = [[box[0][0], box[0][1]], [box[1][0], box[0][1]], [box[1][0], box[1][1]], [box[0][0], box[1][1]]];
+  const [ax, ay] = seeds[i];
+  seeds.forEach(([bx, by], j) => {
+    if (j === i || !poly.length) return;
+    const nx = bx - ax, ny = by - ay, mx = (ax + bx) / 2, my = (ay + by) / 2;
+    const side = (p: [number, number]) => (p[0] - mx) * nx + (p[1] - my) * ny; // négatif : plus près de ma ville
+    const next: [number, number][] = [];
+    poly.forEach((p, n) => {
+      const q = poly[(n + 1) % poly.length], sp = side(p), sq = side(q);
+      if (sp <= 0) next.push(p);
+      if ((sp < 0 && sq > 0) || (sp > 0 && sq < 0)) { const t = sp / (sp - sq); next.push([p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]); }
+    });
+    poly = next;
+  });
+  return poly.length ? `M${poly.map((p) => `${p[0].toFixed(2)},${p[1].toFixed(2)}`).join("L")}Z` : "";
+}
+interface Zone { id: string; country: string; d: string; fill: string }
 
 /** Ce que la carte montre d'un pays habité : la ville mise en avant (la mienne, sinon la plus riche) et le nombre de villes. */
 export interface MapOwner { country: string; cityName: string; isMe: boolean; population: number; name?: string; count?: number }
@@ -88,21 +110,31 @@ function tint(id: string) {
 }
 
 /** Couche des pays : ne dépend pas du zoom (traits non mis à l'échelle), donc rarement redessinée. */
-const Countries = memo(function Countries({ owners, selected, onEnter, onSelect }: {
-  owners: Map<string, MapOwner>; selected: string | null;
+const Countries = memo(function Countries({ owners, zones, selected, onEnter, onSelect }: {
+  owners: Map<string, MapOwner>; zones: Zone[]; selected: string | null;
   onEnter: (id: string | null) => void; onSelect: (id: string) => void;
 }) {
   return (
     <g>
       {SHAPES.map((s, i) => {
         const o = owners.get(s.id);
-        const fill = o?.isMe ? "url(#me-fill)" : o ? tint(s.id) : PLAYABLE[s.id] ? C.playable : C.land;
+        const fill = PLAYABLE[s.id] || o ? C.playable : C.land; // un pays habité est recouvert par les parts de ses villes
         return (
           <path key={`${s.id}-${i}`} d={s.d} fill={fill} data-id={s.id}
-            stroke={o?.isMe ? C.meEdge : C.edge} strokeWidth={o?.isMe ? 1.2 : 0.6} vectorEffect="non-scaling-stroke"
+            stroke={C.edge} strokeWidth={0.6} vectorEffect="non-scaling-stroke"
             className="country cursor-pointer" onPointerEnter={() => onEnter(s.id)} onClick={() => onSelect(s.id)} />
         );
       })}
+      {/* Parts des villes : dessinées par-dessus le pays, découpées à sa forme. Elles laissent passer le survol et le clic. */}
+      <defs>{[...new Set(zones.map((z) => z.country))].map((id) => <clipPath key={id} id={`land-${id}`}><path d={SHAPES.find((s) => s.id === id)?.d ?? ""} /></clipPath>)}</defs>
+      <g pointerEvents="none">
+        {zones.map((z) => (
+          <g key={z.id} clipPath={`url(#land-${z.country})`}>
+            <path d={z.d} fill={z.fill} stroke="#FFFFFF" strokeWidth={1.6} vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
+          </g>
+        ))}
+        {[...new Set(zones.map((z) => z.country))].map((id) => <path key={id} d={SHAPES.find((s) => s.id === id)?.d ?? ""} fill="none" stroke={C.edge} strokeWidth={0.8} vectorEffect="non-scaling-stroke" />)}
+      </g>
       {selected && (() => {
         const s = SHAPES.find((x) => x.id === selected);
         return s ? <path d={s.d} fill="none" stroke={C.select} strokeWidth={2.2} vectorEffect="non-scaling-stroke" pointerEvents="none" strokeLinejoin="round" /> : null;
@@ -124,6 +156,17 @@ export default function WorldMap({ owners, cities, selected, onSelect, focus }: 
     return [...groups.values()].flatMap((list) => [...list].sort((a, b) => a.id.localeCompare(b.id)).map((c, i) => ({ ...c, at: cityPoint(c.country, i, list.length) })))
       .sort((a, b) => Number(a.isMe) - Number(b.isMe) || a.at[1] - b.at[1]);
   }, [cities]);
+  // Chaque pays habité est partagé entre ses villes : la mienne en bleu, les autres dans une teinte propre à chacune
+  const zones = useMemo<Zone[]>(() => {
+    const groups = new Map<string, typeof pins>();
+    for (const p of pins) groups.set(p.country, [...(groups.get(p.country) ?? []), p]);
+    return [...groups].flatMap(([country, list]) => {
+      const s = SHAPES.find((x) => x.id === country);
+      if (!s) return [];
+      const seeds = list.map((p) => p.at);
+      return list.map((p, i) => ({ id: p.id, country, d: shareOf(s.bounds, seeds, i), fill: p.isMe ? "url(#me-fill)" : tint(p.id) }));
+    });
+  }, [pins]);
   const [view, setViewState] = useState<View>({ k: 1, x: 0, y: 0 });
   const viewRef = useRef(view);
   const svg = useRef<SVGSVGElement>(null);
@@ -270,8 +313,9 @@ export default function WorldMap({ owners, cities, selected, onSelect, focus }: 
             <stop offset="100%" stopColor="#AFCDEB" />
           </radialGradient>
           <linearGradient id="me-fill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#3B82F6" />
-            <stop offset="100%" stopColor="#1D4ED8" />
+            {/* Ma part du pays */}
+            <stop offset="0%" stopColor="#4F8DF7" />
+            <stop offset="100%" stopColor="#2563EB" />
           </linearGradient>
           <clipPath id="sphere-clip"><path d={SPHERE} /></clipPath>
         </defs>
@@ -284,7 +328,7 @@ export default function WorldMap({ owners, cities, selected, onSelect, focus }: 
             <path d={GRATICULE} fill="none" stroke="#FFFFFF" strokeOpacity={0.45} strokeWidth={0.6} vectorEffect="non-scaling-stroke" />
           </g>
           <path d={LAND} fill="rgba(15,23,42,.16)" transform="translate(0.8,1.4)" />
-          <Countries owners={byCountry} selected={selected} onEnter={setHoverId} onSelect={select} />
+          <Countries owners={byCountry} zones={zones} selected={selected} onEnter={setHoverId} onSelect={select} />
           <path d={SPHERE} fill="none" stroke="#9DB7D3" strokeWidth={1} vectorEffect="non-scaling-stroke" />
         </g>
 
@@ -313,7 +357,7 @@ export default function WorldMap({ owners, cities, selected, onSelect, focus }: 
                 <title>{`${o.cityName} · ${o.isMe ? "votre ville" : o.name || "Joueur"}`}</title>
                 {o.isMe && <circle r={9} fill="none" stroke="#2563EB" strokeWidth={2} className="animate-ping motion-reduce:hidden" style={{ transformOrigin: "center", transformBox: "fill-box", animationDuration: "2.2s" }} />}
                 <g transform={`scale(${s})`}>
-                  <path d="M0 0 C-7 -9 -8 -13 -8 -16 A8 8 0 1 1 8 -16 C8 -13 7 -9 0 0Z" fill={o.isMe ? "#2563EB" : "#334155"} stroke="#FFFFFF" strokeWidth={1.8} />
+                  <path d="M0 0 C-7 -9 -8 -13 -8 -16 A8 8 0 1 1 8 -16 C8 -13 7 -9 0 0Z" fill={o.isMe ? "#1D4ED8" : "#334155"} stroke="#FFFFFF" strokeWidth={1.8} />
                   <circle cy={-16} r={3.2} fill="#FFFFFF" />
                 </g>
                 {(o.isMe || k >= 1.8) && (
