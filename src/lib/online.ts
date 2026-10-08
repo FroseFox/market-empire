@@ -150,7 +150,7 @@ async function flush(keepalive = false) {
       // On retient la date réellement enregistrée (relue sur le serveur quand la page reste ouverte)
       const stored = keepalive ? sentAt : await serverAt().catch(() => undefined);
       if (active === uid) setSynced(uid, typeof stored === "number" ? stored : sentAt);
-      if (!keepalive) { void publishCity(data.pl); void publishOffer(); void publishIncome(); void syncShares(); }
+      if (!keepalive) { void publishCity(data.pl); void publishOffer(); void publishIncome(); void syncShares(); void syncAlliance(); }
     }
   } catch {
     dirty = true;
@@ -275,6 +275,57 @@ export async function setShareFloat(n: number): Promise<boolean> {
   return !!ok;
 }
 
+// ─── Alliances ───
+// Le serveur tient la liste des membres et la caisse commune ; le jeu applique le bonus et débite les versements.
+
+export interface AllianceRow { id: string; name: string; tag: string; leader: string | null; treasury: number }
+/** Relit son alliance sur le serveur et l'applique à la partie. `false` si les alliances ne sont pas disponibles. */
+export async function syncAlliance(): Promise<boolean> {
+  const uid = active;
+  if (!uid) return false;
+  const mine = await restAsUser<{ alliance: string | null; alliance_gift: number }[]>(`players?select=alliance,alliance_gift&id=eq.${uid}&limit=1`);
+  if (!mine || active !== uid) return false;
+  let alliance: E.AllianceState | null = null;
+  const id = mine[0]?.alliance;
+  if (id) {
+    const [rows, members] = await Promise.all([
+      restAsUser<AllianceRow[]>(`alliances?select=id,name,tag,leader,treasury&id=eq.${id}&limit=1`),
+      restAsUser<{ id: string }[]>(`players?select=id&alliance=eq.${id}&limit=50`),
+    ]);
+    if (!rows?.[0] || !members || active !== uid) return false;
+    alliance = { id, name: String(rows[0].name).slice(0, 24), tag: String(rows[0].tag).slice(0, 4), treasury: Number(rows[0].treasury) || 0, leader: rows[0].leader, members: members.map((m) => m.id), gift: Number(mine[0].alliance_gift) || 0 };
+  }
+  const g = useGame.getState().game, next = E.setAlliance(g, alliance);
+  if (next !== g) useGame.setState({ game: next });
+  return true;
+}
+const pay = (cost: number, label: string) => useGame.setState({ game: E.payAlliance(useGame.getState().game, cost, label, Date.now()) });
+
+/** Fonde une alliance (le prix est débité une fois le serveur d'accord). `false` = refusé : nom ou sigle déjà pris ou invalide. */
+export async function createAlliance(name: string, tag: string, cost: number): Promise<boolean> {
+  const id = await rpc<string | null>("create_alliance", { p_name: name, p_tag: tag });
+  if (id) pay(cost, `Alliance fondée : ${name.trim()}`);
+  await syncAlliance();
+  return !!id;
+}
+export async function joinAlliance(id: string): Promise<boolean> {
+  const ok = await rpc<boolean>("join_alliance", { p_id: id });
+  await syncAlliance();
+  return !!ok;
+}
+export async function leaveAlliance(): Promise<boolean> {
+  const ok = await rpc<boolean>("leave_alliance", {});
+  await syncAlliance();
+  return !!ok;
+}
+/** Verse de l'argent à la caisse commune : il ne se retire pas. `false` = refusé. */
+export async function contributeAlliance(amount: number): Promise<boolean> {
+  const total = await rpc<number | null>("contribute_alliance", { p_amount: Math.floor(amount) });
+  if (total !== null && total !== undefined) pay(Math.floor(amount), "Versement à la caisse de l'alliance");
+  await syncAlliance();
+  return total !== null && total !== undefined;
+}
+
 /** Le compte est ouvert : on mémorise l'appareil et on sauvegarde à chaque changement. */
 function finish(uid: string, name: string) {
   try { localStorage.setItem(LINK_KEY, uid); } catch { /* stockage indisponible */ }
@@ -293,6 +344,7 @@ function finish(uid: string, name: string) {
   void syncContracts();
   void publishIncome();
   void syncShares();
+  void syncAlliance();
 }
 
 async function connect(uid: string, name: string) {

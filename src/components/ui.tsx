@@ -15,7 +15,7 @@ export function PageHeader({ icon: Icon, title, subtitle, children }: { icon: Lu
           <p className="text-muted text-[12px] sm:text-[13px]">{subtitle}</p>
         </div>
       </div>
-      {children && <div className="sm:ml-auto flex flex-wrap gap-2">{children}</div>}
+      {children && <div className="sm:ml-auto flex max-w-full min-w-0 flex-wrap gap-2">{children}</div>}
     </div>
   );
 }

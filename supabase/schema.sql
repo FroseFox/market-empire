@@ -65,6 +65,9 @@ create table public.saves (               -- sauvegarde privée, une ligne par j
 -- table city_shares (aucun accès direct), fonctions publish_income / set_share_float / buy_city_shares /
 -- buyback_city_shares / sync_shares / drop_my_shares.
 
+-- Alliances (migrations/20261008d_alliances.sql) : table alliances (lecture publique), players.alliance / alliance_gift,
+-- fonctions create_alliance / join_alliance / leave_alliance / contribute_alliance.
+
 -- ─── Droits ───
 -- Lecture publique : assets, asset_prices, market_series, news, players.
 -- saves : lecture de SA ligne uniquement (authenticated). Aucune écriture directe :

@@ -7,6 +7,7 @@ import { moveTo } from "@/lib/world/move";
 import CityVisit from "@/components/CityVisit";
 import TradePanel from "@/components/TradePanel";
 import ShareMarket from "@/components/ShareMarket";
+import AlliancePanel from "@/components/AlliancePanel";
 import { useGame } from "@/store/game";
 import { featureOpen, hasDesk } from "@/lib/game/engine";
 import { CITIES_PER_COUNTRY, CITY_RANKS, FEATURES } from "@/lib/game/config";
@@ -21,7 +22,7 @@ import { Card, ConfirmButton, Delta, Empty, PageHeader, Segmented } from "@/comp
 import DiscordButton from "@/components/DiscordButton";
 import { compactEur, eur, num } from "@/lib/format";
 
-type Tab = "Carte" | "Commerce" | "Bourse" | "Classement";
+type Tab = "Carte" | "Commerce" | "Bourse" | "Alliances" | "Classement";
 type Sort = "Patrimoine" | "Population" | "Bourse" | "Pays";
 
 export default function WorldPage() {
@@ -93,7 +94,7 @@ export default function WorldPage() {
   return (
     <>
       <PageHeader icon={Globe2} title="Monde" subtitle="Carte économique des territoires et classement des joueurs">
-        <Segmented options={(featureOpen(game, "trade") ? ["Carte", "Commerce", "Bourse", "Classement"] : ["Carte", "Bourse", "Classement"]) as Tab[]} value={tab} onChange={setTab} />
+        <Segmented options={(featureOpen(game, "trade") ? ["Carte", "Commerce", "Bourse", "Alliances", "Classement"] : ["Carte", "Bourse", "Alliances", "Classement"]) as Tab[]} value={tab} onChange={setTab} />
       </PageHeader>
 
       <div className="grid gap-2 sm:gap-4 grid-cols-3 mb-4">
@@ -193,7 +194,7 @@ export default function WorldPage() {
             )}
           </Card>
         </div>
-      ) : tab === "Commerce" ? <TradePanel /> : tab === "Bourse" ? <ShareMarket players={players} /> : (
+      ) : tab === "Commerce" ? <TradePanel /> : tab === "Bourse" ? <ShareMarket players={players} /> : tab === "Alliances" ? <AlliancePanel players={players} /> : (
         <Card>
           <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
             <h2 className="text-[16px] font-semibold flex items-center gap-2"><Trophy size={18} className="text-primary" />Classement</h2>

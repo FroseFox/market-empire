@@ -334,6 +334,23 @@ export const SHARES = {
   minPop: 1_500,
 };
 
+// ─── Alliances ────────────────────────────────────────────────
+// Une alliance réunit quelques villes. Sa caisse commune ne se retire pas : elle fait monter le niveau de l'alliance,
+// qui profite à tous ses membres. Les contrats de commerce entre alliés se font à de meilleurs prix.
+export const ALLIANCE = {
+  /** Prix pour fonder une alliance. */
+  cost: 250_000,
+  maxMembers: 8,
+  /** Population minimale pour fonder ou rejoindre une alliance (rang « Petite ville »). */
+  minPop: 1_500,
+  /** Caisse commune à atteindre pour chaque niveau (le niveau 0 est celui du départ). */
+  levels: [0, 1_000_000, 5_000_000, 20_000_000, 75_000_000, 250_000_000],
+  /** Revenus des bâtiments de tous les membres, par niveau. */
+  bonusPerLevel: 0.02,
+  /** Contrat entre alliés, en part du prix plein : le vendeur touche plus, l'acheteur paie moins (85 % sinon). */
+  contract: { sell: 0.95, buy: 0.8 },
+};
+
 // ─── Tensions de la ville ─────────────────────────────────────
 /** Pollution nette pour 100 habitants → points de satisfaction perdus (plafonnés). */
 export const POLLUTION_FACTOR = 0.04;
@@ -374,12 +391,13 @@ export const ORIENTATION_CHANGE_COST = 150_000;
 
 // ─── Fonctions qui s'ouvrent avec le rang ─────────────────────
 /** Pour ne pas tout montrer d'un coup : chaque système apparaît au rang où il devient utile. */
-export type FeatureId = "firms" | "orientation" | "trade" | "shares" | "hubs" | "projects";
+export type FeatureId = "firms" | "orientation" | "trade" | "shares" | "alliances" | "hubs" | "projects";
 export const FEATURES: { id: FeatureId; rank: number; label: string; text: string; href: string }[] = [
   { id: "firms", rank: 1, label: "Entreprises implantées", text: "Une entreprise dont vous êtes actionnaire peut ouvrir un site dans votre ville (bouton Entreprises).", href: "/ville" },
   { id: "orientation", rank: ORIENTATION_MIN_RANK, label: "Orientation de la ville", text: "Choisissez ce que votre ville veut être : industrielle, verte, d'affaires ou marchande (bouton Objectifs).", href: "/ville" },
   { id: "trade", rank: 2, label: "Commerce entre joueurs", text: "Achetez par contrat le surplus d'énergie ou de nourriture d'un autre joueur (Monde › Commerce).", href: "/monde" },
   { id: "shares", rank: 2, label: "Bourse des villes", text: "Achetez des parts de la ville d'un autre joueur pour toucher une part de ses revenus, ou vendez des parts de la vôtre pour lever de l'argent (Monde › Bourse des villes).", href: "/monde" },
+  { id: "alliances", rank: 2, label: "Alliances", text: "Fondez ou rejoignez une alliance : sa caisse commune donne un bonus à tous ses membres, et les contrats entre alliés se font à de meilleurs prix (Monde › Alliances).", href: "/monde" },
   { id: "hubs", rank: 2, label: "Places financières", text: "Ouvrez un bureau dans une place financière pour réduire vos frais de courtage (Monde).", href: "/monde" },
   { id: "projects", rank: 3, label: "Grands projets et territoire", text: "Agrandissez votre territoire et lancez des projets qui marquent votre ville (bouton Objectifs).", href: "/ville" },
 ];
