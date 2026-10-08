@@ -4,7 +4,6 @@ import {
   BarChart3, ArrowUpCircle, Briefcase, CircleAlert, CloudLightning, FlaskConical, TriangleAlert, Copy, Undo2, Building2, Ellipsis, Handshake, Sparkles, Wrench, Factory, FastForward, Hammer, Home, Landmark, LayoutList, Lock, MousePointerClick, Move, Pencil, RotateCcw, Smile, Store, Target, Trash2, Trees, TrendingUp, Trophy, Users, Wheat, X, Zap,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { useOnline } from "@/lib/online";
 import { useDerived, useGame } from "@/store/game";
 import { BUILDINGS, BUILDING_BY_ID, CATEGORY_LABELS, CITY_RANKS, SERVICES, SERVICE_IDS, DEMOLISH_REFUND, EXPORT_RATIO, MAINTENANCE_RATE, RESOURCE_PRICES, type BuildingType, type Category } from "@/lib/game/config";
 import { Button, ConfirmButton, Progress, LockTag } from "@/components/ui";
@@ -575,33 +574,26 @@ function DockPanel({ title, onClose, children }: { title: string; onClose: () =>
   );
 }
 
-/** Mode test : visible seulement pour un compte de test désigné dans la base, ou quand la partie y est déjà. */
+/** Mode test : la partie d'un compte de test (connexion par identifiant et mot de passe) y est toujours.
+ *  `kept` = une vraie partie est gardée de côté et peut être reprise. */
 function TestMode() {
-  const tester = useOnline((s) => s.tester);
   const sandbox = useGame((s) => !!s.game.sandbox);
-  const { enterSandbox, leaveSandbox, skipDay, forceEvent, notify } = useGame.getState();
-  if (!tester && !sandbox) return null;
+  const kept = useGame((s) => !!s.game.sandbox?.saved);
+  const { leaveSandbox, skipDay, forceEvent, notify } = useGame.getState();
+  if (!sandbox) return null;
   const tool = "rounded-[8px] border border-amber-300 bg-white px-2.5 py-1.5 text-[12px] font-semibold text-amber-900 hover:bg-amber-100";
   return (
     <div className="rounded-[12px] border border-amber-300 bg-amber-50 p-3 text-[12px] text-amber-900">
-      <div className="mb-1 flex items-center gap-1.5 text-[13px] font-semibold"><FlaskConical size={15} />Mode test{sandbox && " · actif"}</div>
-      {sandbox ? (
-        <>
-          <p>Argent et capital sans limite, tous les rangs, recherches et niveaux de Banque débloqués. Votre vraie partie est gardée de côté.</p>
+      <div className="mb-1 flex items-center gap-1.5 text-[13px] font-semibold"><FlaskConical size={15} />Compte de test</div>
+          <p>Argent et capital sans limite, tous les rangs, recherches et niveaux de Banque débloqués.{kept && " Votre vraie partie est gardée de côté."}</p>
           <p className="mt-1">Attention : ce que vous faites avec les autres joueurs (parts achetées, alliance, blocus) est réel pour eux.</p>
           <div className="mt-2.5 flex flex-wrap gap-2">
             <button className={tool} onClick={() => { skipDay(1); notify("Un jour de ville est passé"); }}>+1 jour</button>
             <button className={tool} onClick={() => { skipDay(24); notify("24 jours de ville sont passés"); }}>+24 jours</button>
             <button className={tool} onClick={() => { const name = forceEvent(); notify(name ? `Événement déclenché : ${name}` : "Aucun événement possible dans cette ville", name ? "ok" : "error"); }}>Déclencher un événement</button>
-            <ConfirmButton onConfirm={leaveSandbox} confirmLabel="Confirmer : revenir à ma vraie partie" className={tool}>Quitter le mode test</ConfirmButton>
+            {kept && <ConfirmButton onConfirm={leaveSandbox} confirmLabel="Confirmer : revenir à ma vraie partie" className={tool}>Quitter le mode test</ConfirmButton>}
           </div>
-        </>
-      ) : (
-        <>
-          <p>Votre compte est un compte de test. Le mode test donne argent et capital sans limite et débloque tout. Votre partie actuelle est gardée de côté : vous la retrouvez en quittant le mode test.</p>
-          <ConfirmButton onConfirm={enterSandbox} confirmLabel="Confirmer : passer en mode test" className={`mt-2.5 ${tool}`}>Activer le mode test</ConfirmButton>
-        </>
-      )}
+          <p className="mt-2">Pour revenir à votre partie, déconnectez-vous (menu du compte, en haut) puis reconnectez-vous avec Discord.</p>
     </div>
   );
 }

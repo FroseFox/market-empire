@@ -99,6 +99,27 @@ export function loginWithDiscord() {
   location.href = `${SUPABASE_URL}/auth/v1/authorize?provider=discord&redirect_to=${encodeURIComponent(back)}`;
 }
 
+/** Domaine des comptes de test : l'identifiant « test » correspond au compte test@marketempire.test dans Supabase. */
+const TEST_DOMAIN = "marketempire.test";
+/** Connexion d'un compte de test (identifiant + mot de passe). Ces comptes sont créés à la main dans Supabase :
+ *  aucun mot de passe n'est écrit dans le site. Renvoie un message d'erreur, ou `null` si la connexion a réussi. */
+export async function loginWithPassword(username: string, password: string): Promise<string | null> {
+  const name = username.trim().toLowerCase();
+  if (!name || !password) return "Entrez l'identifiant et le mot de passe.";
+  const email = name.includes("@") ? name : `${name}@${TEST_DOMAIN}`;
+  const r = await authFetch("token?grant_type=password", { method: "POST", body: JSON.stringify({ email, password }) }).catch(() => null);
+  if (!r) return "Serveur injoignable, réessayez.";
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.access_token || !j.user) {
+    if (j.error_code === "invalid_credentials" || j.error === "invalid_grant") return "Identifiant ou mot de passe incorrect.";
+    if (j.error_code === "email_provider_disabled") return "La connexion par mot de passe est désactivée dans Supabase (Authentication › Providers › Email).";
+    return String(j.msg ?? j.error_description ?? "Connexion refusée.");
+  }
+  useAuth.setState({ error: null });
+  store({ access: j.access_token, refresh: j.refresh_token ?? "", exp: Date.now() + (j.expires_in ?? 3600) * 1000, user: accountFrom(j.user) });
+  return null;
+}
+
 export async function logout() {
   const token = session?.access;
   store(null);

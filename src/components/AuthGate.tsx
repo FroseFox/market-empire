@@ -4,9 +4,9 @@
 //   première connexion  → création du compte (nom de la ville)
 //   serveur injoignable → nouvel essai, ou partie hors ligne
 import { useState } from "react";
-import { Building2, Globe2, LineChart, LogOut, RefreshCw, ShieldCheck } from "lucide-react";
+import { Building2, FlaskConical, Globe2, LineChart, LogOut, RefreshCw, ShieldCheck } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { loginWithDiscord, logout, useAuth } from "@/lib/auth";
+import { loginWithDiscord, loginWithPassword, logout, useAuth } from "@/lib/auth";
 import { createAccount, playOffline, retryOnline, useOnline } from "@/lib/online";
 import { useGame } from "@/store/game";
 import { DiscordIcon } from "@/components/DiscordButton";
@@ -76,7 +76,48 @@ function LoginScreen() {
         <li className="flex gap-2"><ShieldCheck size={15} className="mt-0.5 shrink-0 text-success" />Le jeu ne reçoit que votre pseudo et votre avatar Discord. Jamais votre mot de passe.</li>
         <li className="flex gap-2"><ShieldCheck size={15} className="mt-0.5 shrink-0 text-success" />Votre partie est sauvegardée en ligne : vous la retrouvez sur tous vos appareils.</li>
       </ul>
+      <TestLogin />
     </Frame>
+  );
+}
+
+/** Compte de test : une partie à part, avec argent et capital sans limite, pour essayer le jeu sans toucher à la sienne.
+ *  Discret, replié par défaut : les joueurs n'en ont pas besoin. */
+function TestLogin() {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)} className="mt-6 inline-flex items-center gap-1.5 text-[12px] font-medium text-muted hover:text-ink hover:underline">
+        <FlaskConical size={13} />Passer sur un compte de test
+      </button>
+    );
+  }
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (busy) return;
+    setBusy(true); setError(null);
+    const err = await loginWithPassword(name, password);
+    if (err) { setError(err); setBusy(false); }
+  };
+  const field = "w-full rounded-[10px] border border-line px-3 py-2 text-[14px] outline-none focus:border-primary";
+  return (
+    <form onSubmit={submit} className="mt-6 rounded-[12px] border border-amber-300 bg-amber-50 p-4">
+      <div className="flex items-center gap-1.5 text-[13px] font-semibold text-amber-900"><FlaskConical size={15} />Compte de test</div>
+      <p className="mt-1 text-[12px] text-amber-900">Une partie à part, avec argent et capital sans limite et tout débloqué. Elle ne touche pas à votre compte Discord.</p>
+      <label htmlFor="test-name" className="mt-3 block text-[12px] font-medium">Identifiant</label>
+      <input id="test-name" value={name} onChange={(e) => setName(e.target.value)} autoComplete="username" autoCapitalize="none" spellCheck={false} className={`mt-1 ${field}`} />
+      <label htmlFor="test-password" className="mt-3 block text-[12px] font-medium">Mot de passe</label>
+      <input id="test-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" className={`mt-1 ${field}`} />
+      {error && <p role="alert" className="mt-3 rounded-[10px] bg-danger-soft px-3 py-2 text-[13px] text-red-700">{error}</p>}
+      <div className="mt-4 flex items-center gap-3">
+        <Button type="submit" disabled={busy || !name.trim() || !password}>{busy ? "Connexion…" : "Se connecter"}</Button>
+        <button type="button" onClick={() => { setOpen(false); setError(null); }} className="text-[12px] font-medium text-muted hover:underline">Annuler</button>
+      </div>
+    </form>
   );
 }
 
