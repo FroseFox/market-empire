@@ -134,7 +134,7 @@ export class CityEngine {
   constructor(private box: HTMLElement, private canvas: HTMLCanvasElement, private overlay: HTMLElement, private cb: Callbacks) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.toneMapping = THREE.NoToneMapping;
     this.reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
     this.scene.background = new THREE.Color(LAND);

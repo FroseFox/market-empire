@@ -104,3 +104,23 @@ export function layoutFrom(buildings: Record<string, number>, size = MAP_SIZE): 
   }
   return plots;
 }
+
+/** Plan de ville publié → emplacements sûrs à dessiner (bâtiments connus, carreaux valides, sans doublon). */
+export function plotsFromCity(city: unknown): Plot[] {
+  if (!city || typeof city !== "object") return [];
+  const used = new Map<string, Plot>(), out: Plot[] = [];
+  for (const [key, xy] of Object.entries(city as Record<string, unknown>)) {
+    // Les bâtiments de plus d'un carreau sont publiés sous « type*côté » (voir pack.ts)
+    const [id, side] = key.split("*");
+    const s = side === undefined ? 1 : Number(side);
+    if (!BUILDING_BY_ID[id] || !Array.isArray(xy) || (s !== 1 && s !== 2 && s !== 3)) continue;
+    for (let i = 0; i + 1 < xy.length && out.length < 900; i += 2) {
+      const x = Number(xy[i]), y = Number(xy[i + 1]);
+      if (!Number.isInteger(x) || !Number.isInteger(y) || !canPlace(used, x, y, s, MAX_MAP_SIZE)) continue;
+      const p: Plot = s > 1 ? { id, x, y, s } : { id, x, y };
+      for (let dx = 0; dx < s; dx++) for (let dy = 0; dy < s; dy++) used.set(`${x + dx},${y + dy}`, p);
+      out.push(p);
+    }
+  }
+  return out;
+}

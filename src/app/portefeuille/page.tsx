@@ -145,13 +145,13 @@ export default function PortfolioPage() {
                         <div><div className="font-semibold group-hover:text-primary group-hover:underline">{ASSET_BY_SYMBOL[r.sym]?.name ?? r.sym}</div><div className="text-[11px] text-muted flex items-center gap-1.5">{r.sym}<PriceStatus symbol={r.sym} /></div></div>
                       </Link>
                     </td>
-                    <td className="text-right tabular">{qtyFmt(r.h.qty)}</td>
-                    <td className="text-right tabular hidden sm:table-cell">{eur2(r.h.avgCost)}</td>
-                    <td className="text-right tabular">{eur2(r.price)}<div><Delta value={r.day} /></div></td>
-                    <td className="text-right tabular font-semibold"><span className="whitespace-nowrap">{eur(r.value)}</span>
+                    <td className="text-right tabular whitespace-nowrap pl-2">{qtyFmt(r.h.qty)}</td>
+                    <td className="text-right tabular whitespace-nowrap pl-3 hidden sm:table-cell">{eur2(r.h.avgCost)}</td>
+                    <td className="text-right tabular whitespace-nowrap pl-3">{eur2(r.price)}<div><Delta value={r.day} /></div></td>
+                    <td className="text-right tabular font-semibold pl-3"><span className="whitespace-nowrap">{eur(r.value)}</span>
                       {r.liq > 0 && <div className={`hidden whitespace-nowrap text-[11px] font-normal sm:block ${(r.price - r.liq) / r.price < 0.03 ? "font-semibold text-danger" : "text-muted"}`} title="Cours sous lequel la ligne est vendue d'office">vente d&apos;office &lt; {eur2(r.liq)}</div>}
                     </td>
-                    <td className={`text-right tabular font-semibold ${tone(r.pnl)}`}>{signedEur(r.pnl)}<div className="text-[11px] font-normal">{r.stake > 0 ? pctPlain(r.pnl / r.stake) : "—"}</div></td>
+                    <td className={`text-right tabular font-semibold whitespace-nowrap pl-3 ${tone(r.pnl)}`}>{signedEur(r.pnl)}<div className="text-[11px] font-normal">{r.stake > 0 ? pctPlain(r.pnl / r.stake) : "—"}</div></td>
                     <td className="text-right pl-3 hidden sm:table-cell">
                       <Link href="/marches" onClick={() => focusAsset(r.sym)} className="inline-flex items-center whitespace-nowrap rounded-[8px] border border-line px-2.5 py-1.5 text-[12px] font-semibold text-primary hover:bg-primary-soft">Acheter / Vendre</Link>
                     </td>

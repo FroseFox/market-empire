@@ -65,7 +65,8 @@ export function StatCard({ icon: Icon, tint, label, value, children, href }: { i
       <div className={`h-12 w-12 shrink-0 rounded-full grid place-items-center ${tint}`}><Icon size={22} strokeWidth={1.9} /></div>
       <div className="min-w-0">
         <div className="text-[13px] text-muted font-medium">{label}</div>
-        <div className="text-[26px] font-bold leading-tight tabular truncate">{value}</div>
+        {/* Les très grands montants passent en plus petit plutôt que d'être coupés */}
+        <div title={value} className={`${value.length > 13 ? "text-[19px]" : value.length > 11 ? "text-[22px]" : "text-[26px]"} font-bold leading-tight tabular truncate`}>{value}</div>
         <div className="text-[12px] text-muted">{children}</div>
       </div>
     </div>
