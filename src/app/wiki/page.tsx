@@ -408,9 +408,9 @@ export default function WikiPage() {
 
           <Sec id="compte" brief="Comment la partie est enregistrée, et comment la retrouver sur un autre appareil.">
             <Points items={[
-              <><b>Connexion</b> : sur le site, le jeu se joue avec un compte Discord. Le jeu ne reçoit que votre pseudo et votre avatar, jamais votre mot de passe. À la première connexion, vous donnez un nom à votre ville et le compte de jeu est créé.</>,
+              <><b>Connexion</b> : sur le site, le jeu se joue avec un compte Discord (ou Google, quand il est proposé sur l’écran de connexion). Le jeu ne reçoit que votre nom et votre image de profil, jamais votre mot de passe. À la première connexion, vous donnez un nom à votre ville et le compte de jeu est créé.</>,
               <><b>Sauvegarde automatique</b> : la partie est enregistrée en ligne toute seule, au plus une fois toutes les {MIN_GAP / 60_000} minutes, et une dernière fois quand vous quittez la page. Rien à faire.</>,
-              <><b>Plusieurs appareils</b> : connectez-vous avec le même compte Discord, votre partie suit. Si vous avez joué ailleurs entre-temps, c’est la partie enregistrée le plus récemment qui est reprise.</>,
+              <><b>Plusieurs appareils</b> : connectez-vous avec le même compte, votre partie suit. Si vous avez joué ailleurs entre-temps, c’est la partie enregistrée le plus récemment qui est reprise.</>,
               <><b>Installer l’appli</b> : sur téléphone comme sur ordinateur, le jeu peut s’installer comme une appli, avec son icône et en plein écran. Utilisez le bouton « Installer l’appli » (menu de gauche sur ordinateur, bouton « Plus » sur téléphone). Sur iPhone : bouton Partager de Safari, puis « Sur l’écran d’accueil ». L’appli se met à jour toute seule et demande une connexion internet.</>,
               <><b>Plusieurs comptes</b> : le menu du compte (en haut à droite) garde en mémoire les comptes déjà connectés sur l’appareil, jusqu’à {MAX_ACCOUNTS}. « Ajouter un compte » en connecte un autre ; ensuite, un clic suffit pour passer de l’un à l’autre. La partie en cours est enregistrée avant chaque changement.</>,
               <><b>Se déconnecter</b> : dans le menu du compte. Le compte est alors oublié sur cet appareil ; sur un ordinateur partagé, pensez-y avant de partir.</>,
@@ -418,7 +418,7 @@ export default function WikiPage() {
               <><b>Supprimer mon compte</b> : dans le menu du compte. Le compte et la sauvegarde en ligne sont effacés pour de bon.</>,
             ]} />
             <Callout tone="tip" title="Conseil.">Évitez de laisser le jeu ouvert sur deux appareils en même temps : fermez l’un avant de jouer sur l’autre, pour ne pas reprendre une partie plus ancienne.</Callout>
-            <Callout tone="info" title="Ce que les autres voient de vous.">Votre pseudo Discord, le nom de votre ville, votre patrimoine, votre population et votre performance en bourse. Rien d’autre.</Callout>
+            <Callout tone="info" title="Ce que les autres voient de vous.">Le nom de votre compte (pseudo Discord ou nom Google), le nom de votre ville, votre patrimoine, votre population et votre performance en bourse. Rien d’autre.</Callout>
           </Sec>
 
           {/* ════════ Bourse ════════ */}

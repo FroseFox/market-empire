@@ -40,7 +40,7 @@ export default function AlliancePanel({ players }: { players: PublicPlayer[] }) 
     return () => { alive = false; };
   }, [online]);
 
-  if (!online) return <Card><Empty>Les alliances sont disponibles sur le site publié, une fois connecté avec Discord.</Empty></Card>;
+  if (!online) return <Card><Empty>Les alliances sont disponibles sur le site publié, une fois connecté.</Empty></Card>;
   if (list === undefined) return <Card><Empty>Chargement des alliances…</Empty></Card>;
   if (list === null) return <Card><Empty>Alliances indisponibles pour le moment.</Empty></Card>;
 

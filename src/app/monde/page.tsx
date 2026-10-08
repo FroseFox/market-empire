@@ -255,7 +255,7 @@ export default function WorldPage() {
               </table>
             </div>
           )}
-          <p className="text-[11px] text-muted mt-3">Le classement ne montre que le pseudo Discord et ce que chaque joueur publie : nom de ville, patrimoine, population et performance boursière. Mis à jour toutes les 5 minutes.</p>
+          <p className="text-[11px] text-muted mt-3">Le classement ne montre que le nom du compte et ce que chaque joueur publie : nom de ville, patrimoine, population et performance boursière. Mis à jour toutes les 5 minutes.</p>
           {!STATIC_MODE && auth.status !== "in" && <div className="mt-3"><DiscordButton small /></div>}
         </Card>
       )}

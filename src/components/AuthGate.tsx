@@ -1,16 +1,16 @@
 "use client";
-// Entrée du jeu sur le site publié : la connexion Discord est obligatoire.
+// Entrée du jeu sur le site publié : il faut un compte (Discord, ou Google s'il est activé dans Supabase).
 //   déconnecté          → écran de connexion
 //   première connexion  → création du compte (nom de la ville)
 //   serveur injoignable → nouvel essai, ou partie hors ligne
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Building2, FlaskConical, Globe2, LineChart, LogOut, RefreshCw, ShieldCheck, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { forgetAccount, loginWithDiscord, loginWithPassword, logout, switchAccount, useAuth } from "@/lib/auth";
+import { forgetAccount, googleEnabled, loginWithDiscord, loginWithGoogle, loginWithPassword, logout, switchAccount, useAuth } from "@/lib/auth";
 import { Face } from "@/components/AccountMenu";
 import { createAccount, playOffline, retryOnline, useOnline } from "@/lib/online";
 import { useGame } from "@/store/game";
-import { DiscordIcon } from "@/components/DiscordButton";
+import { DiscordIcon, GoogleIcon, ProviderTag } from "@/components/DiscordButton";
 import { Logo } from "@/components/AppShell";
 import { Button } from "@/components/ui";
 import { eur } from "@/lib/format";
@@ -91,19 +91,28 @@ function SavedAccounts() {
 function LoginScreen() {
   const error = useAuth((s) => s.error);
   const known = useAuth((s) => s.saved.length > 0);
+  // Le bouton Google n'apparaît que si Google est activé côté serveur
+  const [google, setGoogle] = useState(false);
+  useEffect(() => { let on = true; googleEnabled().then((ok) => { if (on) setGoogle(ok); }); return () => { on = false; }; }, []);
   return (
     <Frame>
       <SavedAccounts />
       {!known && <h2 className="text-[26px] font-semibold leading-tight">Connexion</h2>}
       <p className="mt-2 text-[14px] leading-relaxed text-muted">
-        Market Empire se joue avec un compte Discord. À la première connexion, votre compte de jeu est créé automatiquement.
+        Market Empire se joue avec un compte {google ? "Discord ou Google" : "Discord"}. À la première connexion, votre compte de jeu est créé automatiquement.
       </p>
-      {error && <p role="alert" className="mt-4 rounded-[10px] bg-danger-soft px-3 py-2 text-[13px] text-red-700">Connexion Discord : {error}</p>}
+      {error && <p role="alert" className="mt-4 rounded-[10px] bg-danger-soft px-3 py-2 text-[13px] text-red-700">Connexion : {error}</p>}
       <button type="button" onClick={loginWithDiscord} className={`${DISCORD_BTN} mt-6`}>
         <DiscordIcon size={20} />Se connecter avec Discord
       </button>
+      {google && (
+        <button type="button" onClick={loginWithGoogle} className="mt-2.5 inline-flex w-full items-center justify-center gap-2.5 rounded-[12px] border border-line bg-card px-4 py-3 text-[15px] font-semibold text-ink transition-colors hover:bg-slate-50">
+          <GoogleIcon size={19} />Se connecter avec Google
+        </button>
+      )}
       <ul className="mt-6 space-y-2 text-[12px] leading-relaxed text-muted">
-        <li className="flex gap-2"><ShieldCheck size={15} className="mt-0.5 shrink-0 text-success" />Le jeu ne reçoit que votre pseudo et votre avatar Discord. Jamais votre mot de passe.</li>
+        <li className="flex gap-2"><ShieldCheck size={15} className="mt-0.5 shrink-0 text-success" />Le jeu ne reçoit que votre nom et votre image de profil. Jamais votre mot de passe.</li>
+        {google && <li className="flex gap-2"><ShieldCheck size={15} className="mt-0.5 shrink-0 text-success" />Avec Google, le nom de votre compte Google est celui que les autres joueurs voient dans le classement.</li>}
         <li className="flex gap-2"><ShieldCheck size={15} className="mt-0.5 shrink-0 text-success" />Votre partie est sauvegardée en ligne : vous la retrouvez sur tous vos appareils.</li>
       </ul>
       <TestLogin />
@@ -137,7 +146,7 @@ function TestLogin() {
   return (
     <form onSubmit={submit} className="mt-6 rounded-[12px] border border-amber-300 bg-amber-50 p-4">
       <div className="flex items-center gap-1.5 text-[13px] font-semibold text-amber-900"><FlaskConical size={15} />Compte de test</div>
-      <p className="mt-1 text-[12px] text-amber-900">Une partie à part, avec argent et capital sans limite et tout débloqué. Elle ne touche pas à votre compte Discord.</p>
+      <p className="mt-1 text-[12px] text-amber-900">Une partie à part, avec argent et capital sans limite et tout débloqué. Elle ne touche pas à votre vrai compte.</p>
       <label htmlFor="test-name" className="mt-3 block text-[12px] font-medium">Identifiant</label>
       <input id="test-name" value={name} onChange={(e) => setName(e.target.value)} autoComplete="username" autoCapitalize="none" spellCheck={false} className={`mt-1 ${field}`} />
       <label htmlFor="test-password" className="mt-3 block text-[12px] font-medium">Mot de passe</label>
@@ -162,7 +171,7 @@ function Who() {
         : <span className="grid h-10 w-10 place-items-center rounded-full bg-[#5865F2] text-[15px] font-semibold text-white">{user.name[0]}</span>}
       <div className="min-w-0 flex-1 leading-tight">
         <div className="truncate text-[14px] font-semibold">{user.name}</div>
-        <div className="flex items-center gap-1 text-[11px] text-muted"><DiscordIcon size={11} />Connecté avec Discord</div>
+        <div className="flex items-center gap-1 text-[11px] text-muted"><ProviderTag via={user.via} long /></div>
       </div>
       <button type="button" onClick={() => logout()} title="Changer de compte" className="inline-flex items-center gap-1 rounded-[8px] px-2 py-1 text-[12px] text-muted hover:bg-slate-100">
         <LogOut size={13} />Changer
