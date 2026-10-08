@@ -110,10 +110,10 @@ export default function WorldPage() {
           <Card className="xl:col-span-9 !p-3">
             <WorldMap owners={owners} cities={players} selected={selId} onSelect={setSelected} focus={mine?.country} />
             <div className="flex flex-wrap gap-x-5 gap-y-2 mt-3 px-1 text-[12px] text-muted">
-              <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded-[3px]" style={{ background: "#D5E4FD", border: "1.5px solid #2563EB" }} />Votre pays (partagé)</span>
+              <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded-[3px] bg-primary" />Votre part du pays</span>
               <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded-full bg-primary" />Votre ville</span>
               <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded-full bg-slate-700" />Autres villes</span>
-              <Legend color="#C7D7E8" label="Pays habités" />
+              <span className="inline-flex items-center gap-1.5"><span className="flex h-3 w-5 overflow-hidden rounded-[3px]"><span className="flex-1 bg-[#E8C9A4]" /><span className="flex-1 bg-[#B9DDBE]" /></span>Parts des autres villes</span>
               <Legend color="#FBFCFE" label="Pays sans ville" border />
               <Legend color="#E7ECF2" label="Non jouables" />
               <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rotate-45 rounded-[2px] bg-amber-500" />Places financières</span>
