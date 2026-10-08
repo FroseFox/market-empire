@@ -163,6 +163,8 @@ export const GOALS: Goal[] = [
 // ─── Monde ────────────────────────────────────────────────────
 /** Prix d'installation dans un pays, selon son poids économique (catégories 1 à 4, voir lib/world/countries). */
 export const COUNTRY_PRICES = [50_000, 200_000, 600_000, 1_500_000] as const;
+/** Un pays est une région : il accueille plusieurs villes, qui profitent toutes de sa spécialité. */
+export const CITIES_PER_COUNTRY = 20;
 
 export interface BuildingType {
   id: string;

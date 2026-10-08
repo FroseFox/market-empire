@@ -41,7 +41,7 @@ create table public.news (
 -- ─── Joueurs (compte Discord via Supabase Auth) ───
 create table public.players (             -- profil public : classement et carte
   id uuid primary key references auth.users(id) on delete cascade,
-  name text not null, avatar text, country text unique,
+  name text not null, avatar text, country text,                     -- plusieurs villes par pays (20 au plus)
   city_name text not null default 'Ma ville', net_worth bigint not null default 0,
   population integer not null default 0, perf real not null default 0, day integer not null default 1,
   updated_at timestamptz not null default now(),
@@ -68,7 +68,9 @@ create table public.saves (               -- sauvegarde privée, une ligne par j
 --   save_game(p_data, p_saved_at, p_city, p_net_worth, p_population, p_perf, p_day) → sauvegarde + classement,
 --                                     refusée si la précédente date de moins de 20 s
 --   publish_city(p_city jsonb)       → publie le plan de sa ville (migrations/20261003_city_visits_and_moves.sql)
---   move_country(p_country text)     → déménage dans un pays jouable libre (false s'il est pris)
+--   join_world_v2(p_countries text[]) → comme join_world, mais place aussi le joueur quand aucun pays n'est vide
+--                                     (plusieurs villes par pays, migrations/20261008_cities_per_country.sql)
+--   move_country(p_country text)     → déménage dans un pays jouable qui a encore une place (false s'il est complet)
 --   delete_me()                      → supprime le compte et ses données
 
 -- ─── Tâches planifiées (pg_cron + pg_net) ───

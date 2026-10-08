@@ -1,7 +1,8 @@
 // Territoires du monde : les vrais pays (Natural Earth, via world-atlas).
-// Chaque joueur reçoit un pays jouable ; des places financières neutres sont gérées par le jeu.
+// Chaque joueur installe sa ville dans un pays jouable. Un pays accueille plusieurs villes (CITIES_PER_COUNTRY),
+// qui profitent toutes de sa spécialité ; des places financières neutres sont gérées par le jeu.
 
-import { COUNTRY_PRICES, FINANCE_FEE_FACTOR, SPECIALTY_BONUS, type Specialty } from "../game/config";
+import { CITIES_PER_COUNTRY, COUNTRY_PRICES, FINANCE_FEE_FACTOR, SPECIALTY_BONUS, type Specialty } from "../game/config";
 
 /** Pays jouables (code ISO numérique → nom français). */
 export const PLAYABLE: Record<string, string> = {
@@ -45,15 +46,27 @@ export const HUBS: Hub[] = [
   { name: "Singapour", country: "702", coords: [103.82, 1.35], specialty: "Commerce maritime", population: 5_900_000, scope: "commodity", covers: "Matières premières" },
 ];
 
-/** Pays libre pour un nouveau joueur, stable pour un même joueur. */
+/** Nombre de villes par pays. `taken` = le pays de chaque joueur (un élément par joueur). */
+export function countryCounts(taken: string[]): Record<string, number> {
+  const n: Record<string, number> = {};
+  for (const id of taken) if (id) n[id] = (n[id] ?? 0) + 1;
+  return n;
+}
+/** Le pays n'accueille plus de nouvelle ville. */
+export const countryFull = (id: string, taken: string[]) => (countryCounts(taken)[id] ?? 0) >= CITIES_PER_COUNTRY;
+
+/** Pays d'un nouveau joueur, stable pour un même joueur : parmi les moins peuplés, pour remplir le monde de façon égale.
+ *  Tant qu'il reste des pays vides, chacun reçoit donc le sien. */
 export function pickCountry(uid: string, taken: string[]): string | null {
   let h = 0;
   for (let i = 0; i < uid.length; i++) h = (h * 31 + uid.charCodeAt(i)) >>> 0;
-  const free = PLAYABLE_IDS.filter((id) => !taken.includes(id));
-  return free.length ? free[h % free.length] : null;
+  const n = countryCounts(taken);
+  const least = Math.min(...PLAYABLE_IDS.map((id) => n[id] ?? 0));
+  const open = PLAYABLE_IDS.filter((id) => (n[id] ?? 0) === least);
+  return open.length ? open[h % open.length] : null;
 }
 
-/** Tous les pays jouables, dans un ordre propre à chaque joueur (le serveur prend le premier libre). */
+/** Tous les pays jouables, dans un ordre propre à chaque joueur (le serveur prend le moins peuplé, puis le premier de cet ordre). */
 export function countryPreference(uid: string): string[] {
   let h = 0;
   for (let i = 0; i < uid.length; i++) h = (h * 31 + uid.charCodeAt(i)) >>> 0;
