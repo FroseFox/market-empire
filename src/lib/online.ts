@@ -367,6 +367,9 @@ function finish(uid: string, name: string) {
   unsubGame?.();
   unsubGame = useGame.subscribe((s, p) => {
     if (s.game === p.game || !active) return;
+    // Compte de test : sa partie reste en mode test quoi qu'il arrive. « Recommencer la partie » repartait d'une partie
+    // ordinaire, sans argent illimité, jusqu'au prochain rechargement de la page.
+    if (useOnline.getState().tester && !s.game.sandbox) { useGame.setState({ game: E.enterSandbox(s.game, null) }); return; }
     dirty = true;
     if (useGame.getState().cloud === "saved") setCloud("syncing");
     schedule();
