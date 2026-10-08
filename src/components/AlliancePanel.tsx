@@ -2,18 +2,19 @@
 // Alliances : quelques villes qui s'associent. La caisse commune ne se retire pas, elle fait monter le niveau
 // de l'alliance, qui donne un bonus à tous ses membres ; les contrats de commerce entre alliés sont plus avantageux.
 import { useEffect, useState } from "react";
-import { Crown, Lock, Shield, Users } from "lucide-react";
+import { Crown, Lock, Shield, Swords, Users } from "lucide-react";
 import { useDerived, useGame } from "@/store/game";
 import { useAuth } from "@/lib/auth";
-import { contributeAlliance, createAlliance, joinAlliance, leaveAlliance, syncAlliance, type AllianceRow } from "@/lib/online";
+import { contributeAlliance, createAlliance, declareBlockade, joinAlliance, leaveAlliance, syncAlliance, type AllianceRow } from "@/lib/online";
 import { rest, STATIC_MODE } from "@/lib/market/client";
-import { ALLIANCE, CITY_RANKS, CONTRACT_RATIO, FEATURES } from "@/lib/game/config";
+import { ALLIANCE, BLOCKADE, CITY_RANKS, CONTRACT_RATIO, FEATURES } from "@/lib/game/config";
 import { allianceLevel, featureOpen } from "@/lib/game/engine";
 import { refreshWorld, type PublicPlayer } from "@/lib/world/players";
 import { Button, Card, ConfirmButton, Empty, Progress } from "@/components/ui";
 import { compactEur, eur, num, pctPlain } from "@/lib/format";
 
-const QUERY = "alliances?select=id,name,tag,leader,treasury&order=treasury.desc&limit=200";
+const QUERY = "alliances?select=id,name,tag,leader,treasury,blockade_target,blockade_until,shield_until&order=treasury.desc&limit=200";
+const until = (ms: number) => new Date(ms).toLocaleString("fr-FR", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 const GIFTS = [10_000, 100_000, 1_000_000] as const;
 const bonusOf = (treasury: number) => allianceLevel(treasury) * ALLIANCE.bonusPerLevel;
 const MAX_LEVEL = ALLIANCE.levels.length - 1;
@@ -27,6 +28,8 @@ export default function AlliancePanel({ players }: { players: PublicPlayer[] }) 
   const [list, setList] = useState<AllianceRow[] | null | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   const [name, setName] = useState("");
+  // Heure d'ouverture du panneau : sert à savoir quelles protections contre un blocus courent encore
+  const [now] = useState(() => Date.now());
   const [tag, setTag] = useState("");
 
   const load = (fresh: boolean) => Promise.all([rest<AllianceRow[]>(QUERY, fresh ? 0 : 30_000), syncAlliance()]).then(([rows, ok]) => (ok ? rows : null));
@@ -106,6 +109,13 @@ export default function AlliancePanel({ players }: { players: PublicPlayer[] }) 
                 </li>
               ))}
             </ul>
+            {(mine.blockadedBy || mine.blockading || mine.shieldUntil) && (
+              <ul className="mt-3 space-y-1.5 text-[12px]">
+                {mine.blockadedBy && <li className="rounded-[10px] bg-danger-soft px-3 py-2 text-red-700"><b>Sous blocus</b> de [{mine.blockadedBy.tag}] jusqu&apos;à {until(mine.blockadedBy.until)} : vos surplus s&apos;exportent {Math.round(BLOCKADE.targetLoss * 100)} points moins cher.</li>}
+                {mine.blockading && <li className="rounded-[10px] bg-primary-soft px-3 py-2 text-primary"><b>Blocus en cours</b> contre [{mine.blockading.tag}] jusqu&apos;à {until(mine.blockading.until)} : vos surplus s&apos;exportent {Math.round(BLOCKADE.attackerGain * 100)} points plus cher.</li>}
+                {mine.shieldUntil && !mine.blockadedBy && <li className="rounded-[10px] bg-slate-50 px-3 py-2 text-muted">Protégée contre un nouveau blocus jusqu&apos;à {until(mine.shieldUntil)}.</li>}
+              </ul>
+            )}
             <ConfirmButton disabled={busy} confirmLabel="Confirmer : quitter l'alliance"
               onConfirm={() => act(leaveAlliance, "Vous avez quitté l'alliance", "Impossible de quitter l'alliance pour le moment.")}
               className="mt-3 text-[12px] font-semibold text-danger hover:underline disabled:opacity-40">Quitter l&apos;alliance</ConfirmButton>
@@ -140,6 +150,7 @@ export default function AlliancePanel({ players }: { players: PublicPlayer[] }) 
             <li>Contrats entre alliés : le vendeur touche {pctPlain(ALLIANCE.contract.sell)} du prix plein et l&apos;acheteur paie {pctPlain(ALLIANCE.contract.buy)}, au lieu de {pctPlain(CONTRACT_RATIO)} des deux côtés.</li>
             <li>Niveaux de la caisse : {ALLIANCE.levels.slice(1).map((n, i) => `${compactEur(n)} → +${pctPlain((i + 1) * ALLIANCE.bonusPerLevel)}`).join(" · ")}.</li>
             <li>Quitter une alliance est libre ; ce que vous avez versé reste dans sa caisse.</li>
+            <li><b>Blocus</b> : le chef peut bloquer le commerce d&apos;une autre alliance pendant {BLOCKADE.days} jours réels, pour {compactEur(BLOCKADE.cost)} pris dans la caisse (le niveau peut baisser). Les villes bloquées exportent {Math.round(BLOCKADE.targetLoss * 100)} points moins cher, puis sont protégées {BLOCKADE.shieldDays} jours.</li>
           </ul>
         </Card>
       </div>
@@ -150,6 +161,13 @@ export default function AlliancePanel({ players }: { players: PublicPlayer[] }) 
             {list.map((a, i) => {
               const members = membersOf(a.id), n = members.length, isMine = mine?.id === a.id;
               const why = !open ? `À partir du rang « ${minRank} »` : n >= ALLIANCE.maxMembers ? "Alliance complète" : null;
+              // Guerre économique : seul le chef déclare un blocus, payé par la caisse commune
+              const shielded = !!a.shield_until && Date.parse(a.shield_until) > now;
+              const cant = !mine || isMine ? null
+                : mine.leader !== auth.user?.id ? "Seul le chef de votre alliance peut déclarer un blocus"
+                : mine.blockading ? "Votre alliance mène déjà un blocus"
+                : mine.treasury < BLOCKADE.cost ? `Il faut ${compactEur(BLOCKADE.cost)} dans la caisse commune`
+                : shielded ? "Cette alliance est protégée pour l'instant" : "";
               return (
                 <li key={a.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 py-2.5">
                   <span className="w-5 shrink-0 text-center text-[12px] font-bold tabular text-muted">{i + 1}</span>
@@ -160,6 +178,13 @@ export default function AlliancePanel({ players }: { players: PublicPlayer[] }) 
                       {n > 0 && <> · patrimoine {compactEur(members.reduce((s, p) => s + p.netWorth, 0))}</>}
                     </div>
                   </div>
+                  {cant !== null && (
+                    <ConfirmButton disabled={busy || cant !== ""} confirmLabel={`Confirmer : ${compactEur(BLOCKADE.cost)} de la caisse`}
+                      onConfirm={() => act(() => declareBlockade(a.id), `Blocus déclaré contre [${a.tag}] ${a.name}`, "Blocus refusé : la situation a changé.")}
+                      className="inline-flex shrink-0 items-center gap-1.5 rounded-[10px] border border-line px-3 py-2 text-[12px] font-semibold text-danger hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40">
+                      <span title={cant || `Leurs surplus s'exportent ${Math.round(BLOCKADE.targetLoss * 100)} points moins cher pendant ${BLOCKADE.days} jours réels`} className="inline-flex items-center gap-1.5"><Swords size={14} />Blocus</span>
+                    </ConfirmButton>
+                  )}
                   {!mine && (
                     <Button variant="secondary" disabled={busy || !!why} title={why ?? undefined} className="shrink-0 !px-3"
                       onClick={() => act(() => joinAlliance(a.id), `Vous avez rejoint [${a.tag}] ${a.name}`, "Impossible de rejoindre : l'alliance vient de se remplir.")}>

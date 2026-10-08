@@ -7,6 +7,7 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import * as E from "@/lib/game/engine";
 import { fetchQuotes } from "@/lib/market/client";
 import type { OrientationId } from "@/lib/game/config";
+import { pack, unpack } from "@/lib/game/pack";
 
 export interface QuoteView { price: number; change: number; source: string }
 
@@ -56,7 +57,14 @@ interface Store {
   renovate: () => boolean;
   buildProject: (id: string) => boolean;
   closeTutorial: () => void;
-  skipDay: () => void;
+  /** Outil de test : avance de `days` jours de ville (développement, ou partie en mode test). */
+  skipDay: (days?: number) => void;
+  /** Mode test (comptes de test) : argent et capital sans limite, tout débloqué. La vraie partie est gardée de côté. */
+  enterSandbox: () => void;
+  /** Quitte le mode test et reprend la vraie partie là où elle était. */
+  leaveSandbox: () => void;
+  /** Mode test : déclenche tout de suite un événement de ville. Renvoie son nom. */
+  forceEvent: () => string | null;
   reset: () => void;
   notify: (text: string, kind?: "ok" | "error") => void;
 }
@@ -254,11 +262,34 @@ export const useGame = create<Store>()(
       closeAbsence: () => set({ absence: null }),
       reopenTutorial: () => set({ game: { ...get().game, tutorialDone: false } }),
       closeTutorial: () => set({ game: { ...get().game, tutorialDone: true } }),
-      // Outil de test : avance d'un jour de ville (sans effet sur le site publié).
-      skipDay: () => {
-        if (process.env.NODE_ENV === "production") return;
+      // Outil de test : avance de quelques jours de ville (développement, ou partie en mode test).
+      skipDay: (days = 1) => {
         const g = get().game;
-        set({ game: { ...E.tickDay(g, get().prices(), Date.now()), lastTick: g.lastTick } });
+        if (process.env.NODE_ENV === "production" && !g.sandbox) return;
+        let next = g;
+        for (let i = 0; i < Math.min(days, 200); i++) next = E.tickDay(next, get().prices(), Date.now());
+        set({ game: { ...next, lastTick: g.lastTick } });
+        get().settle();
+      },
+      enterSandbox: () => {
+        const g = get().game;
+        if (g.sandbox) return;
+        set({ game: E.enterSandbox(g, pack(g)) });
+        get().notify("Mode test activé : votre vraie partie est gardée de côté");
+      },
+      leaveSandbox: () => {
+        const saved = get().game.sandbox?.saved;
+        if (!saved) return;
+        set({ game: E.normalize(unpack(saved)) });
+        get().sync();
+        get().notify("Mode test quitté : votre vraie partie est de retour");
+      },
+      forceEvent: () => {
+        const g = get().game;
+        if (!g.sandbox) return null;
+        const r = E.rollEvent(g, E.computeCity(g), Math.floor(Math.random() * 1e9), Date.now(), true);
+        if (r.def) set({ game: r.state });
+        return r.def?.name ?? null;
       },
       reset: () => set({ game: E.newGame(Date.now()) }),
       notify: (text, kind = "ok") => {

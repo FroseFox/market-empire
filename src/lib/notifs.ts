@@ -66,7 +66,7 @@ export function startNotifs() {
 
   // État de départ : on ne signale que ce qui CHANGE ensuite (pas tout ce qui est déjà vrai à l'ouverture)
   let g = useGame.getState().game, city = E.computeCity(g);
-  let rank = city.rank, wearHigh = city.wear >= 0.5, asleep = (g.branches?.length ?? 0) - city.branches;
+  let rank = city.rank, wearHigh = city.wear >= 0.5, asleep = (g.branches?.length ?? 0) - city.branches, eventUntil = g.event?.until ?? 0;
   const known = new Set(E.goalStatuses(g, city).filter((s) => s.done).map((s) => s.goal.id));
 
   useGame.subscribe((s, prev) => {
@@ -75,6 +75,7 @@ export function startNotifs() {
       if (s.game.createdAt !== g.createdAt) {
         g = s.game; city = E.computeCity(g); rank = city.rank; wearHigh = city.wear >= 0.5; asleep = (g.branches?.length ?? 0) - city.branches;
         known.clear(); for (const st of E.goalStatuses(g, city)) if (st.done) known.add(st.goal.id);
+        eventUntil = g.event?.until ?? 0;
         return;
       }
       g = s.game; city = E.computeCity(g);
@@ -86,6 +87,9 @@ export function startNotifs() {
       if (city.rank > rank) push({ id: `rank-${g.createdAt}-${city.rank}`, tone: "good", title: `Nouveau rang : ${CITY_RANKS[city.rank].name}`, text: `Votre ville compte ${fmt(g.population)} habitants.`, href: "/ville" });
       for (const f of FEATURES) if (f.rank > rank && f.rank <= city.rank) push({ id: `feature-${g.createdAt}-${f.id}`, tone: "info", title: `Nouveau : ${f.label}`, text: f.text, href: f.href });
       rank = city.rank;
+      // Événement de la semaine : signalé quand il commence
+      if (g.event && g.event.until !== eventUntil && city.event) push({ id: `event-${g.createdAt}-${g.event.until}`, tone: city.event.kind === "bonus" ? "good" : "bad", title: city.event.name, text: `${city.event.text} ${city.event.effect}, pendant ${city.event.daysLeft} jours de ville.`, href: "/ville" });
+      eventUntil = g.event?.until ?? eventUntil;
       if (city.wear >= 0.5 && !wearHigh) push({ id: `wear-${g.createdAt}-${g.day}`, tone: "bad", title: "Votre ville vieillit", text: `Vétusté de ${Math.round(city.wear * 100)} % : l'entretien augmente jusqu'à la prochaine rénovation.`, href: "/ville" });
       wearHigh = city.wear >= 0.5;
       const nowAsleep = (g.branches?.length ?? 0) - city.branches;

@@ -14,6 +14,7 @@ export const pctPlain = (v: number) => `${Math.round(v * 100)} %`;
 
 export function compactEur(v: number) {
   const a = Math.abs(v);
+  if (a >= 1e9) return `${(v / 1e9).toFixed(2).replace(".", ",")} Md€`;
   if (a >= 1e6) return `${(v / 1e6).toFixed(2).replace(".", ",")} M€`;
   if (a >= 1e4) return `${Math.round(v / 1e3)} k€`;
   return eur(v);

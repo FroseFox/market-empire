@@ -89,7 +89,7 @@ function profileFromGame(country: string) {
   };
 }
 
-type Row = { id: string; name: string; avatar: string | null; country: string | null; city_name: string; net_worth: number; population: number; perf: number; day: number; updated_at: string; flagged?: boolean; income?: number; share_float?: number; share_sold?: number; alliance?: string | null; alliance_gift?: number };
+type Row = { id: string; name: string; avatar: string | null; country: string | null; city_name: string; net_worth: number; population: number; perf: number; day: number; updated_at: string; flagged?: boolean; income?: number; share_float?: number; share_sold?: number; alliance?: string | null; alliance_gift?: number; tester?: boolean };
 
 let lastLoad = 0;
 /** Site publié : classement lu dans Supabase (mis en cache 5 min, seulement quand la page Monde est ouverte). */
@@ -99,7 +99,8 @@ async function loadOnline(fresh = false) {
   // Secours : la vue « ranking » (sans les joueurs signalés), puis la table sans la colonne de signalement.
   const cols = "id,name,avatar,country,city_name,net_worth,population,perf,day,updated_at";
   const tail = "&order=net_worth.desc&limit=300", ttl = fresh ? 0 : undefined;
-  const rows = (await rest<Row[]>(`players?select=${cols},flagged,income,share_float,share_sold,alliance,alliance_gift${tail}`, ttl))
+  const rows = (await rest<Row[]>(`players?select=${cols},flagged,income,share_float,share_sold,alliance,alliance_gift,tester${tail}`, ttl))
+    ?? (await rest<Row[]>(`players?select=${cols},flagged,income,share_float,share_sold,alliance,alliance_gift${tail}`, ttl))
     ?? (await rest<Row[]>(`players?select=${cols},flagged,income,share_float,share_sold${tail}`, ttl))
     ?? (await rest<Row[]>(`players?select=${cols},flagged${tail}`, ttl))
     ?? (await rest<Row[]>(`ranking?select=${cols}${tail}`, ttl))
@@ -112,7 +113,7 @@ async function loadOnline(fresh = false) {
     players: rows.filter((r) => r.country && PLAYABLE[r.country]).map((r) => ({
       id: r.id, cityName: r.city_name, netWorth: Number(r.net_worth) || 0, population: r.population, perf: Number(r.perf) || 0,
       day: r.day, country: r.country!, updatedAt: Date.parse(r.updated_at) || 0, name: r.name, avatar: r.avatar,
-      color: r.id === me ? "#2563EB" : "#64748B", isMe: r.id === me, ranked: !r.flagged,
+      color: r.id === me ? "#2563EB" : "#64748B", isMe: r.id === me, ranked: !r.flagged && !r.tester, // les comptes de test restent sur la carte mais sortent du classement
       income: Number(r.income) || 0, shareFloat: Number(r.share_float) || 0, shareSold: Number(r.share_sold) || 0,
       alliance: r.alliance ?? null, allianceGift: Number(r.alliance_gift) || 0,
     })),

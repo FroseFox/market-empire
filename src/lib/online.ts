@@ -30,7 +30,8 @@ const DEBOUNCE = 30_000;
  *  - error      : le serveur n'a pas répondu. */
 export type OnlinePhase = "idle" | "connecting" | "new" | "ready" | "error";
 /** Pays (territoire) du joueur connecté, et étape d'ouverture du compte. */
-export const useOnline = create<{ country: string | null; phase: OnlinePhase }>(() => ({ country: null, phase: "idle" }));
+/** `tester` = compte de test désigné dans la base : il peut activer le mode test (Ville › Options). */
+export const useOnline = create<{ country: string | null; phase: OnlinePhase; tester: boolean }>(() => ({ country: null, phase: "idle", tester: false }));
 
 function figures() {
   const s = useGame.getState();
@@ -261,6 +262,13 @@ export async function buyCityShares(city: string, name: string, qty: number, max
   await syncShares();
   return cost > 0 ? cost : null;
 }
+/** Guerre économique : rachat hostile des parts restantes d'une ville dont on détient déjà une bonne part. Mêmes retours que l'achat. */
+export async function hostileBid(city: string, name: string, maxCost: number): Promise<number | null> {
+  const cost = Number(await rpc<number | null>("hostile_bid", { p_city: city, p_max_cost: Math.floor(maxCost) })) || 0;
+  if (cost > 0) useGame.setState({ game: E.payShares(useGame.getState().game, cost, `Bourse des villes : rachat hostile de ${name}`, Date.now()) });
+  await syncShares();
+  return cost > 0 ? cost : null;
+}
 /** Rachète des parts de sa propre ville à un actionnaire, au prix du jour. Mêmes retours que l'achat. */
 export async function buybackCityShares(holder: string, name: string, qty: number, maxCost: number): Promise<number | null> {
   const cost = Number(await rpc<number | null>("buyback_city_shares", { p_holder: holder, p_qty: Math.floor(qty), p_max_cost: Math.floor(maxCost) })) || 0;
@@ -278,7 +286,7 @@ export async function setShareFloat(n: number): Promise<boolean> {
 // ─── Alliances ───
 // Le serveur tient la liste des membres et la caisse commune ; le jeu applique le bonus et débite les versements.
 
-export interface AllianceRow { id: string; name: string; tag: string; leader: string | null; treasury: number }
+export interface AllianceRow { id: string; name: string; tag: string; leader: string | null; treasury: number; blockade_target?: string | null; blockade_until?: string | null; shield_until?: string | null }
 /** Relit son alliance sur le serveur et l'applique à la partie. `false` si les alliances ne sont pas disponibles. */
 export async function syncAlliance(): Promise<boolean> {
   const uid = active;
@@ -288,12 +296,24 @@ export async function syncAlliance(): Promise<boolean> {
   let alliance: E.AllianceState | null = null;
   const id = mine[0]?.alliance;
   if (id) {
-    const [rows, members] = await Promise.all([
+    const [rows, members, wars] = await Promise.all([
       restAsUser<AllianceRow[]>(`alliances?select=id,name,tag,leader,treasury&id=eq.${id}&limit=1`),
       restAsUser<{ id: string }[]>(`players?select=id&alliance=eq.${id}&limit=50`),
+      // Guerre économique : blocus menés ou subis par mon alliance (absent tant que le serveur ne les connaît pas)
+      restAsUser<AllianceRow[]>(`alliances?select=id,tag,blockade_target,blockade_until,shield_until&or=(id.eq.${id},blockade_target.eq.${id})&limit=20`),
     ]);
     if (!rows?.[0] || !members || active !== uid) return false;
     alliance = { id, name: String(rows[0].name).slice(0, 24), tag: String(rows[0].tag).slice(0, 4), treasury: Number(rows[0].treasury) || 0, leader: rows[0].leader, members: members.map((m) => m.id), gift: Number(mine[0].alliance_gift) || 0 };
+    const now = Date.now(), ms = (v?: string | null) => (v ? Date.parse(v) || 0 : 0), tagOf = new Map<string, string>();
+    const all = await restAsUser<{ id: string; tag: string }[]>("alliances?select=id,tag&limit=200");
+    for (const a of all ?? []) tagOf.set(a.id, a.tag);
+    for (const w of wars ?? []) {
+      if (ms(w.blockade_until) > now) {
+        if (w.id === id && w.blockade_target) alliance.blockading = { tag: tagOf.get(w.blockade_target) ?? "?", until: ms(w.blockade_until) };
+        else if (w.blockade_target === id && (!alliance.blockadedBy || ms(w.blockade_until) > alliance.blockadedBy.until)) alliance.blockadedBy = { tag: w.tag, until: ms(w.blockade_until) };
+      }
+      if (w.id === id && ms(w.shield_until) > now) alliance.shieldUntil = ms(w.shield_until);
+    }
   }
   const g = useGame.getState().game, next = E.setAlliance(g, alliance);
   if (next !== g) useGame.setState({ game: next });
@@ -315,6 +335,12 @@ export async function joinAlliance(id: string): Promise<boolean> {
 }
 export async function leaveAlliance(): Promise<boolean> {
   const ok = await rpc<boolean>("leave_alliance", {});
+  await syncAlliance();
+  return !!ok;
+}
+/** Guerre économique : déclare un blocus contre une autre alliance (payé par la caisse commune). `false` = refusé. */
+export async function declareBlockade(target: string): Promise<boolean> {
+  const ok = await rpc<boolean>("declare_blockade", { p_target: target });
   await syncAlliance();
   return !!ok;
 }
@@ -345,6 +371,7 @@ function finish(uid: string, name: string) {
   void publishIncome();
   void syncShares();
   void syncAlliance();
+  void restAsUser<{ tester: boolean }[]>(`players?select=tester&id=eq.${uid}&limit=1`).then((r) => { if (active === uid) useOnline.setState({ tester: !!r?.[0]?.tester }); }).catch(() => {});
 }
 
 async function connect(uid: string, name: string) {
@@ -442,7 +469,7 @@ function disconnect() {
   lastCity = "";
   lastOffer = "";
   lastIncome = "";
-  useOnline.setState({ country: null, phase: "idle" });
+  useOnline.setState({ country: null, phase: "idle", tester: false });
   setCloud("local");
 }
 

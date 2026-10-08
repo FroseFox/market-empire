@@ -143,6 +143,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const capital = useGame((s) => s.game.capital ?? 0);
   const name = useGame((s) => s.game.playerName);
   const mode = useGame((s) => s.dataMode);
+  const sandbox = useGame((s) => !!s.game.sandbox);
   const quotesAt = useGame((s) => s.quotesAt);
   const toast = useGame((s) => s.toast);
 
@@ -177,6 +178,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <div className="lg:hidden"><Logo /></div>
           {hydrated && <NextDay />}
           <div className="ml-auto flex min-w-0 items-center gap-1.5 sm:gap-3">
+            {hydrated && sandbox && <Link href="/ville" title="Mode test actif : argent et capital sans limite. Il se quitte dans Ville › Options." className="inline-flex shrink-0 items-center rounded-full bg-amber-400 px-2.5 py-1 text-[11px] font-bold text-amber-950">Mode test</Link>}
             <span className={`hidden sm:inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium ${mode === "simulé" ? "bg-warning-soft text-amber-700" : "bg-success-soft text-emerald-700"}`}
               title={mode === "simulé" ? "Cours simulés : aucune source de cours configurée" : `Cours réels, rafraîchis une fois par heure. Dernière mise à jour : ${new Date(quotesAt).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}`}>
               <span className={`h-1.5 w-1.5 rounded-full ${mode === "simulé" ? "bg-warning" : "bg-success"}`} />
@@ -194,9 +196,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <Link href="/ville" className="flex shrink-0 items-center gap-2 rounded-[12px] bg-success-soft px-2.5 sm:px-3 py-1.5">
               <div className="leading-tight text-right">
                 {/* Téléphone : montant abrégé à partir du million, pour que la barre ne déborde jamais */}
-                <div className="whitespace-nowrap text-[14px] font-bold text-emerald-700 tabular">{!hydrated ? "—" : <><span className="sm:hidden">{cash >= 1_000_000 ? compactEur(cash) : eur(cash)}</span><span className="hidden sm:inline">{eur(cash)}</span></>}</div>
+                <div className="whitespace-nowrap text-[14px] font-bold text-emerald-700 tabular">{!hydrated ? "—" : sandbox ? "∞ €" : <><span className="sm:hidden">{cash >= 1_000_000 ? compactEur(cash) : eur(cash)}</span><span className="hidden sm:inline">{eur(cash)}</span></>}</div>
                 {/* Deuxième monnaie : le capital, produit par les placements en bourse */}
-                <div className="whitespace-nowrap text-[10px] text-emerald-700/70">Liquidités{hydrated && <> · <b className="font-semibold text-violet-700" title="Capital : produit par vos placements, demandé par les gros bâtiments">{capitalFmt(capital)}</b></>}</div>
+                <div className="whitespace-nowrap text-[10px] text-emerald-700/70">Liquidités{hydrated && <> · <b className="font-semibold text-violet-700" title="Capital : produit par vos placements, demandé par les gros bâtiments">{sandbox ? "∞ ◆" : capitalFmt(capital)}</b></>}</div>
               </div>
               <span className="h-6 w-6 rounded-full bg-success text-white grid place-items-center"><Plus size={14} /></span>
             </Link>
