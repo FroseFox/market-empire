@@ -99,7 +99,7 @@ const Countries = memo(function Countries({ owners, selected, onEnter, onSelect 
         const fill = o?.isMe ? "url(#me-fill)" : o ? tint(s.id) : PLAYABLE[s.id] ? C.playable : C.land;
         return (
           <path key={`${s.id}-${i}`} d={s.d} fill={fill} data-id={s.id}
-            stroke={o?.isMe ? C.meEdge : C.edge} strokeWidth={o?.isMe ? 1.2 : 0.6} vectorEffect="non-scaling-stroke"
+            stroke={o?.isMe ? C.me : C.edge} strokeWidth={o?.isMe ? 1.6 : 0.6} vectorEffect="non-scaling-stroke"
             className="country cursor-pointer" onPointerEnter={() => onEnter(s.id)} onClick={() => onSelect(s.id)} />
         );
       })}
@@ -270,8 +270,9 @@ export default function WorldMap({ owners, cities, selected, onSelect, focus }: 
             <stop offset="100%" stopColor="#AFCDEB" />
           </radialGradient>
           <linearGradient id="me-fill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#3B82F6" />
-            <stop offset="100%" stopColor="#1D4ED8" />
+            {/* Mon pays : un bleu léger et un contour, pas un aplat. Je le partage avec d'autres villes, il n'est pas à moi. */}
+            <stop offset="0%" stopColor="#E0ECFF" />
+            <stop offset="100%" stopColor="#C9DCFB" />
           </linearGradient>
           <clipPath id="sphere-clip"><path d={SPHERE} /></clipPath>
         </defs>
