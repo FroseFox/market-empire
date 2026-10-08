@@ -7,7 +7,7 @@ import {
   NEED_PER_RANK, POLLUTION_FACTOR, POLLUTION_MAX, PRESTIGE_PER_GOAL, PRESTIGE_PER_RANK, PROJECTS, PROJECT_BY_ID,
   FEATURES, ORIENTATION_BY_ID, ORIENTATION_CHANGE_COST, ORIENTATION_MIN_RANK, type FeatureId, type OrientationId,
   RENOVATE_RATE, TERRITORY, WEAR_MAINTENANCE, WEAR_PER_DAY, WEAR_SATISFACTION,
-  BANK, CAPITAL, LEVERAGE, CITY_RANKS, FORECAST_DAYS, GOALS, UPGRADES, SERVICES, SERVICE_BONUS, SERVICE_IDS,
+  BANK, CAPITAL, LEVERAGE, SHARES, CITY_RANKS, FORECAST_DAYS, GOALS, UPGRADES, SERVICES, SERVICE_BONUS, SERVICE_IDS,
   STARTING_BUILDINGS, STARTING_CASH, STARTING_POPULATION, START_GRANT, TAX_PER_RESIDENT, TRADE_FEE_MIN, TRADE_FEE_RATE,
   type BuildingType, type Category, type Goal, type ServiceId, type Specialty,
 } from "./config";
@@ -109,6 +109,8 @@ export interface GameState {
   bank?: number;
   /** Capital produit par les placements, dépensé pour les gros bâtiments. */
   capital?: number;
+  /** Bourse des villes : copie de ce que le serveur connaît (parts détenues, actionnaires, paiements déjà encaissés). */
+  shares?: ShareState;
   /** Ancien système (positions à levier séparées) : converti en lignes du portefeuille au chargement. */
   positions?: LevPosition[];
   transactions: Transaction[];
@@ -121,6 +123,12 @@ export interface Contract { id: string; resource: "energy" | "food"; qty: number
 
 /** Ancienne position à effet de levier (format des sauvegardes d'avant la Banque) : `stake` engagé, le reste prêté. */
 export interface LevPosition { id: string; symbol: string; lev: number; stake: number; qty: number; entry: number; interest: number; at: number }
+
+/** Parts détenues dans la ville d'un autre joueur : `netWorth` et `income` sont les derniers chiffres publiés par cette ville. */
+export interface CityStake { city: string; name: string; qty: number; cost: number; netWorth: number; income: number }
+export interface Shareholder { holder: string; name: string; qty: number }
+/** `credit` = total reçu des autres joueurs (ventes de parts, rachats) et déjà versé dans les liquidités. */
+export interface ShareState { credit: number; float: number; sold: number; held: CityStake[]; holders: Shareholder[] }
 
 export type Prices = Record<string, number>;
 
@@ -181,9 +189,12 @@ export interface CityStats {
   branches: number;
   /** Quantités réellement échangées par contrat aujourd'hui. */
   contracts: { energySold: number; energyBought: number; foodSold: number; foodBought: number };
-  /** `grant` = dotation de démarrage des petites communes (voir START_GRANT). */
-  income: { taxes: number; buildings: number; exports: number; grant: number; total: number };
-  expenses: { maintenance: number; imports: number; total: number };
+  /** `grant` = dotation de démarrage des petites communes (voir START_GRANT) ; `dividends` = reçus des villes dont on détient des parts. */
+  income: { taxes: number; buildings: number; exports: number; grant: number; dividends: number; total: number };
+  /** `dividends` = versés aux actionnaires de la ville. */
+  expenses: { maintenance: number; imports: number; dividends: number; total: number };
+  /** Flux net de la ville hors dividendes (reçus et versés) : c'est lui qui est publié et partagé avec les actionnaires. */
+  operating: number;
   exportsValue: number;
   importsValue: number;
   tradeBalance: number;
@@ -198,7 +209,7 @@ export interface CityStats {
 
 /** Ce dont le calcul de la ville a besoin ; seuls les bâtiments et la population sont obligatoires. */
 export type CityInput = Pick<GameState, "buildings" | "population">
-  & Partial<Pick<GameState, "branches" | "holdings" | "country" | "wear" | "projects" | "contracts" | "territory" | "orientation">>;
+  & Partial<Pick<GameState, "branches" | "holdings" | "country" | "wear" | "projects" | "contracts" | "territory" | "orientation" | "shares">>;
 
 /** Côté de la carte du joueur (elle s'agrandit avec le territoire). */
 export const mapSize = (state: Partial<Pick<GameState, "territory">>) => TERRITORY[clamp(state.territory ?? 0, 0, TERRITORY.length - 1)].size;
@@ -315,8 +326,12 @@ export function computeCity(state: CityInput): CityStats {
 
   const maintenance = cityValue * MAINTENANCE_RATE * (1 + wear * WEAR_MAINTENANCE);
   const grant = START_GRANT.perDay * Math.max(0, 1 - pop / START_GRANT.untilPop);
-  const incomeTotal = taxes + buildingsIncome + exportsValue + grant;
-  const expensesTotal = maintenance + importsValue;
+  // Bourse des villes : on touche sa part du flux des villes dont on est actionnaire, on verse la leur à ses propres actionnaires
+  const operating = taxes + buildingsIncome + exportsValue + grant - maintenance - importsValue;
+  const dividendsIn = (state.shares?.held ?? []).reduce((a, s) => a + s.qty * shareDividend(s.income), 0);
+  const dividendsOut = (state.shares?.sold ?? 0) * shareDividend(operating);
+  const incomeTotal = taxes + buildingsIncome + exportsValue + grant + dividendsIn;
+  const expensesTotal = maintenance + importsValue + dividendsOut;
 
   // Croissance de population (doc §8) : logements libres × emplois × satisfaction
   let growth = 0;
@@ -337,8 +352,9 @@ export function computeCity(state: CityInput): CityStats {
     pollution: { emitted, absorbed, penalty: pollutionPenalty },
     wear, specialty, bonus, branches: branches.length,
     contracts: { energySold: te.sold, energyBought: te.bought, foodSold: tf.sold, foodBought: tf.bought },
-    income: { taxes, buildings: buildingsIncome, exports: exportsValue, grant, total: incomeTotal },
-    expenses: { maintenance, imports: importsValue, total: expensesTotal },
+    income: { taxes, buildings: buildingsIncome, exports: exportsValue, grant, dividends: dividendsIn, total: incomeTotal },
+    expenses: { maintenance, imports: importsValue, dividends: dividendsOut, total: expensesTotal },
+    operating,
     exportsValue, importsValue,
     tradeBalance: exportsValue - importsValue,
     net: incomeTotal - expensesTotal,
@@ -497,7 +513,8 @@ export function portfolioCost(holdings: Record<string, Holding>): number {
 
 export function snapshot(state: GameState, prices: Prices, at: number): Snapshot {
   const c = computeCity(state);
-  const portfolio = portfolioValue(state.holdings, prices);
+  // Les parts de villes comptent dans les investissements
+  const portfolio = portfolioValue(state.holdings, prices) + sharesValue(state);
   return {
     at, day: state.day,
     cash: state.cash, portfolio, city: c.assetValue,
@@ -752,13 +769,14 @@ export function chooseOrientation(state: GameState, id: OrientationId, at: numbe
 }
 
 /** Une fonction du jeu est-elle ouverte ? Par le rang, ou parce que le joueur s'en sert déjà. */
-export function featureOpen(state: Pick<GameState, "population"> & Partial<Pick<GameState, "branches" | "orientation" | "contracts" | "hubs" | "projects" | "territory">>, id: FeatureId): boolean {
+export function featureOpen(state: Pick<GameState, "population"> & Partial<Pick<GameState, "branches" | "orientation" | "contracts" | "hubs" | "projects" | "territory" | "shares">>, id: FeatureId): boolean {
   const f = FEATURES.find((x) => x.id === id);
   if (!f || cityRank(state.population) >= f.rank) return true;
   switch (id) {
     case "firms": return !!state.branches?.length;
     case "orientation": return !!state.orientation;
     case "trade": return !!state.contracts?.length;
+    case "shares": return !!state.shares?.held.length || !!state.shares?.sold;
     case "hubs": return !!state.hubs?.length;
     case "projects": return !!state.projects?.length || !!state.territory;
   }
@@ -831,6 +849,35 @@ export function absenceReport(before: GameState, after: GameState): AbsenceRepor
 export function prestige(state: Pick<GameState, "population"> & Partial<Pick<GameState, "goals" | "projects">>): number {
   return cityRank(state.population) * PRESTIGE_PER_RANK + (state.goals?.length ?? 0) * PRESTIGE_PER_GOAL
     + PROJECTS.reduce((a, p) => a + (state.projects?.includes(p.id) ? p.prestige : 0), 0);
+}
+
+// ─── Bourse des villes ────────────────────────────────────────
+
+/** Prix d'une part d'une ville, d'après son patrimoine publié. */
+export const sharePrice = (netWorth: number) => Math.max(netWorth, SHARES.minValue) / SHARES.total;
+/** Dividende quotidien d'une part : sa fraction du flux net de la ville (rien quand la ville perd de l'argent). */
+export const shareDividend = (income: number) => Math.max(0, income) / SHARES.total;
+/** Ce que valent les parts détenues dans d'autres villes (compté dans le patrimoine). */
+export const sharesValue = (state: Partial<Pick<GameState, "shares">>) =>
+  (state.shares?.held ?? []).reduce((a, s) => a + s.qty * sharePrice(s.netWorth), 0);
+
+/** Reprend l'état du serveur. Ce que d'autres joueurs ont payé depuis la dernière fois (achat de parts de la ville,
+ *  rachat de parts détenues) est versé dans les liquidités, une seule fois.
+ *  Premier passage d'une partie : on repart du total déjà connu du serveur, sans rien verser. */
+export function setShares(state: GameState, server: ShareState, at: number): GameState {
+  const gain = state.shares ? Math.max(0, round2(server.credit - state.shares.credit)) : 0;
+  if (!gain && JSON.stringify(state.shares ?? null) === JSON.stringify(server)) return state;
+  const next: GameState = { ...state, shares: server };
+  if (gain > 0) {
+    next.cash = round2(state.cash + gain);
+    next.transactions = addTx(state, { kind: "reward", label: "Bourse des villes : paiement reçu d'un autre joueur", amount: gain, at });
+  }
+  return next;
+}
+
+/** Débite ce que le serveur a facturé pour un achat de parts ou un rachat (le serveur a déjà enregistré l'opération). */
+export function payShares(state: GameState, cost: number, label: string, at: number): GameState {
+  return { ...state, cash: round2(state.cash - cost), transactions: addTx(state, { kind: "buy", label, amount: -cost, at }) };
 }
 
 /** Remplace la liste des contrats par celle du serveur. */

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { BookOpen } from "lucide-react";
 import { useGame } from "@/store/game";
 import {
-  ACTIVE_RATIO, BANK, BRANCH_COST, CITIES_PER_COUNTRY, CAPITAL, LEVERAGE, BRANCH_EFFECTS, BRANCH_MIN_VALUE, BUILDINGS, BUILDING_BY_ID, CATEGORY_LABELS, CITY_RANKS, CONTRACT_RATIO, COUNTRY_PRICES,
+  ACTIVE_RATIO, BANK, BRANCH_COST, CITIES_PER_COUNTRY, SHARES, CAPITAL, LEVERAGE, BRANCH_EFFECTS, BRANCH_MIN_VALUE, BUILDINGS, BUILDING_BY_ID, CATEGORY_LABELS, CITY_RANKS, CONTRACT_RATIO, COUNTRY_PRICES,
   DAY_LENGTH_MINUTES, DEMOLISH_REFUND, ENERGY_PER_RESIDENT, EXPORT_RATIO, FOOD_PER_RESIDENT, GOALS, HUB_DESK_COST, HUB_FEE_FACTOR, MAINTENANCE_RATE,
   FEATURES, ORIENTATIONS, ORIENTATION_CHANGE_COST, ORIENTATION_MIN_RANK,
   MAX_CATCHUP_DAYS, MAX_CONTRACTS, NEED_PER_RANK, POLLUTION_MAX, PROJECTS, RENOVATE_RATE, RESOURCE_PRICES, SERVICES, SERVICE_IDS, SPECIALTY_BONUS,
@@ -20,7 +20,7 @@ import { compactEur, eur, num } from "@/lib/format";
 
 const SECTIONS = [
   ["demarrer", "Démarrer"], ["jouer", "Comment jouer"], ["pages", "Les pages du jeu"], ["chiffres", "Lire les chiffres"], ["soucis", "Que faire si…"], ["temps", "Le temps"], ["bourse", "Bourse"], ["ville", "Ville"], ["batiments", "Bâtiments"], ["equipements", "Équipements et tensions"],
-  ["progression", "Rangs, objectifs, projets"], ["entreprises", "Entreprises implantées"], ["monde", "Monde et pays"], ["commerce", "Commerce"], ["recherche", "Recherche"], ["notifications", "Notifications"],
+  ["progression", "Rangs, objectifs, projets"], ["entreprises", "Entreprises implantées"], ["monde", "Monde et pays"], ["commerce", "Commerce"], ["bourse-villes", "Bourse des villes"], ["recherche", "Recherche"], ["notifications", "Notifications"],
 ] as const;
 const CATS: Category[] = ["housing", "commerce", "services", "industry", "agriculture", "energy", "public"];
 const pct = (v: number, d = 0) => `${(v * 100).toLocaleString("fr-FR", { maximumFractionDigits: d })} %`;
@@ -237,6 +237,17 @@ export default function WikiPage() {
               <li>Dans Monde › Commerce, vous achetez par contrat le surplus d&apos;énergie ou de nourriture d&apos;un autre joueur.</li>
               <li>Prix du contrat : <b>{pct(CONTRACT_RATIO)}</b> du prix plein. L&apos;acheteur paie moins qu&apos;à l&apos;import (100 %), le vendeur gagne plus qu&apos;à l&apos;export ({pct(EXPORT_RATIO)}).</li>
               <li>Jusqu&apos;à {MAX_CONTRACTS} contrats d&apos;achat. Chacun peut résilier à tout moment.</li>
+            </ul>
+          </Section>
+
+          <Section id="bourse-villes" title="Bourse des villes">
+            <ul className="list-disc space-y-1.5 pl-5">
+              <li>Dans Monde › Bourse, vous pouvez <b>investir dans la ville d&apos;un autre joueur</b>. C&apos;est séparé de la vraie bourse : rien n&apos;y est inventé, tout vient des chiffres que les villes publient.</li>
+              <li>Une ville compte {SHARES.total.toLocaleString("fr-FR")} parts. Le <b>prix d&apos;une part</b> est le patrimoine de la ville divisé par {SHARES.total.toLocaleString("fr-FR")} : il monte quand la ville s&apos;enrichit.</li>
+              <li>Chaque part verse un <b>dividende</b> quotidien : sa fraction du flux net de la ville (rien quand la ville perd de l&apos;argent).</li>
+              <li><b>Vendre des parts de votre ville</b> lève de l&apos;argent tout de suite : l&apos;acheteur vous paie directement. En échange vous versez les dividendes, jusqu&apos;à racheter vos parts au prix du jour. Vous pouvez vendre jusqu&apos;à {Math.round(SHARES.maxFloat / SHARES.total * 100)} % de la ville.</li>
+              <li>L&apos;argent ne sort jamais de nulle part : il passe toujours d&apos;un joueur à l&apos;autre. Seul le propriétaire peut racheter ses parts.</li>
+              <li>Ouvert à partir de {SHARES.minPop.toLocaleString("fr-FR")} habitants, pour acheter comme pour vendre. Jusqu&apos;à {SHARES.maxLines} villes différentes.</li>
             </ul>
           </Section>
 

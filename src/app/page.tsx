@@ -33,14 +33,14 @@ const ALERT_STYLE: Record<AlertLevel, { icon: typeof Info; cls: string }> = {
 };
 
 export default function EconomyPage() {
-  const { game, prices, city, portfolio, portfolioCost, netWorth } = useDerived();
+  const { game, prices, city, portfolio, portfolioCost, cityShares, netWorth } = useDerived();
   const [period, setPeriod] = useState<Period>("7 jours");
   const [series, setSeries] = useState<Series>("Patrimoine");
 
   const hist = game.history;
   const n = period === "7 jours" ? 8 : period === "30 jours" ? 31 : hist.length;
   const slice = hist.slice(-n);
-  const now = { netWorth, cash: game.cash, portfolio, city: city.assetValue, population: game.population };
+  const now = { netWorth, cash: game.cash, portfolio: portfolio + cityShares, city: city.assetValue, population: game.population };
   const todo = nextActions(game, city, prices);
   const wealthData = [...slice.map((s) => ({ x: `J${s.day}`, y: s[SERIES[series].key] })), { x: "Maint.", y: now[SERIES[series].key] }];
   const report = periodReport(game, netWorth, n);
@@ -56,6 +56,7 @@ export default function EconomyPage() {
   const wealthParts = [
     { label: "Liquidités", v: Math.max(0, game.cash), c: "bg-slate-400" },
     { label: "Investissements", v: portfolio, c: "bg-primary" },
+    ...(cityShares > 0 ? [{ label: "Parts de villes", v: cityShares, c: "bg-violet-500" }] : []),
     { label: "Ville (constructions)", v: city.assetValue, c: "bg-success" },
   ];
   const wealthTotal = wealthParts.reduce((a, p) => a + p.v, 0) || 1;

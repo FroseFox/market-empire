@@ -61,6 +61,10 @@ create table public.saves (               -- sauvegarde privée, une ligne par j
 -- Vue public.ranking : players sans les joueurs signalés et sans le plan de ville (c'est elle que lit le classement).
 -- Déclencheur players_guard : signale les sauvegardes impossibles (jours en avance, population ou patrimoine impossibles).
 
+-- Bourse des villes (migrations/20261008c_city_shares.sql) : players.income / share_float / share_sold / share_credit,
+-- table city_shares (aucun accès direct), fonctions publish_income / set_share_float / buy_city_shares /
+-- buyback_city_shares / sync_shares / drop_my_shares.
+
 -- ─── Droits ───
 -- Lecture publique : assets, asset_prices, market_series, news, players.
 -- saves : lecture de SA ligne uniquement (authenticated). Aucune écriture directe :

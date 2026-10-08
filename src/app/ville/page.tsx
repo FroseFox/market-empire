@@ -272,7 +272,8 @@ function Pill({ icon: Icon, label, value, sub, bad, warn, good, title }: { icon:
 function Budget({ city }: { city: CityStats }) {
   const rows: [string, number][] = [
     ["Impôts", city.income.taxes], ["Entreprises", city.income.buildings], ["Exportations", city.income.exports], ["Dotation de l'État", city.income.grant],
-    ["Entretien", -city.expenses.maintenance], ["Importations", -city.expenses.imports],
+    ["Dividendes reçus", city.income.dividends],
+    ["Entretien", -city.expenses.maintenance], ["Importations", -city.expenses.imports], ["Dividendes versés", -city.expenses.dividends],
   ];
   return (
     <div>

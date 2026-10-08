@@ -40,7 +40,7 @@ function figures() {
   const cost = E.portfolioCost(s.game.holdings);
   return {
     p_city: s.game.cityName,
-    p_net_worth: Math.max(0, Math.round(s.game.cash + pv + city.assetValue)),
+    p_net_worth: Math.max(0, Math.round(s.game.cash + pv + E.sharesValue(s.game) + city.assetValue)),
     p_population: Math.max(0, Math.round(s.game.population)),
     p_perf: cost > 0 ? Math.round((pv / cost - 1) * 10_000) / 10_000 : 0,
     p_day: Math.max(1, s.game.day),
@@ -150,7 +150,7 @@ async function flush(keepalive = false) {
       // On retient la date réellement enregistrée (relue sur le serveur quand la page reste ouverte)
       const stored = keepalive ? sentAt : await serverAt().catch(() => undefined);
       if (active === uid) setSynced(uid, typeof stored === "number" ? stored : sentAt);
-      if (!keepalive) { void publishCity(data.pl); void publishOffer(); }
+      if (!keepalive) { void publishCity(data.pl); void publishOffer(); void publishIncome(); void syncShares(); }
     }
   } catch {
     dirty = true;
@@ -214,6 +214,67 @@ export async function cancelContract(id: string): Promise<boolean> {
   return !!ok;
 }
 
+// ─── Bourse des villes ───
+// Même principe que le commerce : le serveur tient le registre des parts, le jeu applique l'argent des deux côtés.
+
+/** Dernier flux net publié (hors dividendes) : il sert au calcul des dividendes chez les actionnaires. */
+let lastIncome = "";
+async function publishIncome() {
+  const key = String(Math.round(E.computeCity(useGame.getState().game).operating));
+  if (key === lastIncome) return;
+  const before = lastIncome;
+  lastIncome = key;
+  try { if (!(await rpc<boolean>("publish_income", { p_income: Number(key) })) && lastIncome === key) lastIncome = before; }
+  catch { if (lastIncome === key) lastIncome = before; /* bourse des villes indisponible : la partie n'en dépend pas */ }
+}
+
+type SharesReply = { credit: number; float: number; sold: number;
+  held: { city: string; name: string; qty: number; cost: number; net_worth: number; income: number }[];
+  holders: { holder: string; name: string; qty: number }[] };
+/** Relit ses parts sur le serveur et les applique à la partie (paiements reçus compris). `false` si la bourse des villes n'est pas disponible. */
+export async function syncShares(): Promise<boolean> {
+  const uid = active;
+  if (!uid) return false;
+  const r = await rpc<SharesReply | null>("sync_shares", {}).catch(() => null);
+  if (!r || active !== uid) return false;
+  const server: E.ShareState = {
+    credit: Number(r.credit) || 0, float: Number(r.float) || 0, sold: Number(r.sold) || 0,
+    held: (r.held ?? []).map((h) => ({ city: h.city, name: String(h.name ?? "Ville").slice(0, 40), qty: Number(h.qty) || 0, cost: Number(h.cost) || 0, netWorth: Number(h.net_worth) || 0, income: Number(h.income) || 0 })),
+    holders: (r.holders ?? []).map((h) => ({ holder: h.holder, name: String(h.name ?? "Ville").slice(0, 40), qty: Number(h.qty) || 0 })),
+  };
+  // Partie recommencée : elle ne garde pas les parts achetées par l'ancienne
+  if (!useGame.getState().game.shares && server.held.length) {
+    if (!(await rpc<boolean>("drop_my_shares", {}).catch(() => false)) || active !== uid) return false;
+    server.held = [];
+  }
+  const g = useGame.getState().game, next = E.setShares(g, server, Date.now());
+  if (next !== g) useGame.setState({ game: next });
+  return true;
+}
+
+/** Achète des parts d'une ville, `maxCost` au plus. Renvoie le prix payé, ou `null` si le serveur a refusé
+ *  (plus assez de parts en vente, prix monté entre-temps). Lève une erreur si le serveur ne répond pas. */
+export async function buyCityShares(city: string, name: string, qty: number, maxCost: number): Promise<number | null> {
+  if (!useGame.getState().game.shares && !(await syncShares())) throw new Error("bourse des villes indisponible");
+  const cost = Number(await rpc<number | null>("buy_city_shares", { p_city: city, p_qty: Math.floor(qty), p_max_cost: Math.floor(maxCost) })) || 0;
+  if (cost > 0) useGame.setState({ game: E.payShares(useGame.getState().game, cost, `Bourse des villes : ${Math.floor(qty)} parts de ${name}`, Date.now()) });
+  await syncShares();
+  return cost > 0 ? cost : null;
+}
+/** Rachète des parts de sa propre ville à un actionnaire, au prix du jour. Mêmes retours que l'achat. */
+export async function buybackCityShares(holder: string, name: string, qty: number, maxCost: number): Promise<number | null> {
+  const cost = Number(await rpc<number | null>("buyback_city_shares", { p_holder: holder, p_qty: Math.floor(qty), p_max_cost: Math.floor(maxCost) })) || 0;
+  if (cost > 0) useGame.setState({ game: E.payShares(useGame.getState().game, cost, `Bourse des villes : rachat de ${Math.floor(qty)} parts à ${name}`, Date.now()) });
+  await syncShares();
+  return cost > 0 ? cost : null;
+}
+/** Met des parts de sa ville en vente (0 à 490). `false` = refusé (moins que ce qui est déjà vendu, ville trop petite). */
+export async function setShareFloat(n: number): Promise<boolean> {
+  const ok = await rpc<boolean>("set_share_float", { p_float: Math.floor(n) });
+  await syncShares();
+  return !!ok;
+}
+
 /** Le compte est ouvert : on mémorise l'appareil et on sauvegarde à chaque changement. */
 function finish(uid: string, name: string) {
   try { localStorage.setItem(LINK_KEY, uid); } catch { /* stockage indisponible */ }
@@ -230,6 +291,8 @@ function finish(uid: string, name: string) {
   void publishCity(pack(useGame.getState().game).pl);
   void publishOffer();
   void syncContracts();
+  void publishIncome();
+  void syncShares();
 }
 
 async function connect(uid: string, name: string) {
@@ -326,6 +389,7 @@ function disconnect() {
   lastCheck = 0;
   lastCity = "";
   lastOffer = "";
+  lastIncome = "";
   useOnline.setState({ country: null, phase: "idle" });
   setCloud("local");
 }

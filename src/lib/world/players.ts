@@ -28,6 +28,10 @@ export interface PublicPlayer {
   isMe: boolean;
   /** Faux : sauvegarde signalée comme impossible. Le joueur garde son pays sur la carte, mais sort du classement. */
   ranked?: boolean;
+  /** Bourse des villes : flux net publié, parts mises en vente et parts déjà vendues (absents tant que le serveur ne les connaît pas). */
+  income?: number;
+  shareFloat?: number;
+  shareSold?: number;
   /** Plan de la ville, quand il est déjà connu (page claude.ai) ; sinon il est lu à la visite. */
   city?: unknown;
 }
@@ -73,7 +77,7 @@ function profileFromGame(country: string) {
   const cost = E.portfolioCost(s.game.holdings);
   return {
     cityName: s.game.cityName,
-    netWorth: Math.round(s.game.cash + pv + city.assetValue),
+    netWorth: Math.round(s.game.cash + pv + E.sharesValue(s.game) + city.assetValue),
     population: Math.round(s.game.population),
     perf: cost > 0 ? Math.round((pv / cost - 1) * 10_000) / 10_000 : 0,
     day: s.game.day,
@@ -82,7 +86,7 @@ function profileFromGame(country: string) {
   };
 }
 
-type Row = { id: string; name: string; avatar: string | null; country: string | null; city_name: string; net_worth: number; population: number; perf: number; day: number; updated_at: string; flagged?: boolean };
+type Row = { id: string; name: string; avatar: string | null; country: string | null; city_name: string; net_worth: number; population: number; perf: number; day: number; updated_at: string; flagged?: boolean; income?: number; share_float?: number; share_sold?: number };
 
 let lastLoad = 0;
 /** Site publié : classement lu dans Supabase (mis en cache 5 min, seulement quand la page Monde est ouverte). */
@@ -92,7 +96,8 @@ async function loadOnline(fresh = false) {
   // Secours : la vue « ranking » (sans les joueurs signalés), puis la table sans la colonne de signalement.
   const cols = "id,name,avatar,country,city_name,net_worth,population,perf,day,updated_at";
   const tail = "&order=net_worth.desc&limit=300", ttl = fresh ? 0 : undefined;
-  const rows = (await rest<Row[]>(`players?select=${cols},flagged${tail}`, ttl))
+  const rows = (await rest<Row[]>(`players?select=${cols},flagged,income,share_float,share_sold${tail}`, ttl))
+    ?? (await rest<Row[]>(`players?select=${cols},flagged${tail}`, ttl))
     ?? (await rest<Row[]>(`ranking?select=${cols}${tail}`, ttl))
     ?? (await rest<Row[]>(`players?select=${cols}${tail}`, ttl));
   // Échec : on réessaiera à la prochaine ouverture de la page, sans attendre 5 minutes
@@ -104,6 +109,7 @@ async function loadOnline(fresh = false) {
       id: r.id, cityName: r.city_name, netWorth: Number(r.net_worth) || 0, population: r.population, perf: Number(r.perf) || 0,
       day: r.day, country: r.country!, updatedAt: Date.parse(r.updated_at) || 0, name: r.name, avatar: r.avatar,
       color: r.id === me ? "#2563EB" : "#64748B", isMe: r.id === me, ranked: !r.flagged,
+      income: Number(r.income) || 0, shareFloat: Number(r.share_float) || 0, shareSold: Number(r.share_sold) || 0,
     })),
   });
 }
