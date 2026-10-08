@@ -465,6 +465,19 @@ export function playOffline() {
   useOnline.setState({ phase: "ready" });
 }
 
+/** Enregistre tout de suite ce qui ne l'est pas encore (avant de changer de compte, par exemple).
+ *  Le serveur n'accepte qu'une écriture toutes les 20 secondes : s'il refuse, on attend son feu vert et on réessaie.
+ *  Renvoie `false` si la partie n'a pas pu être enregistrée. */
+export async function saveNow(): Promise<boolean> {
+  if (!active || useOnline.getState().phase !== "ready") return true;
+  for (let i = 0; i < 3 && dirty; i++) {
+    if (i > 0) await new Promise((r) => setTimeout(r, Math.min(21_000, Math.max(1_000, lastWrite + 21_000 - Date.now()))));
+    if (timer) { clearTimeout(timer); timer = null; }
+    await flush();
+  }
+  return !dirty;
+}
+
 function disconnect() {
   active = null;
   unsubGame?.(); unsubGame = null;
@@ -484,7 +497,10 @@ export function startOnline() {
   if (started || STATIC_MODE) return;
   started = true;
   const apply = (s: ReturnType<typeof useAuth.getState>) => {
-    if (s.status === "in" && s.user && s.user.id !== active) connect(s.user.id, s.user.name);
+    if (s.status === "in" && s.user && s.user.id !== active) {
+      if (active) disconnect(); // changement de compte : on repart d'un état propre avant de charger l'autre partie
+      connect(s.user.id, s.user.name);
+    }
     if (s.status === "out" && active) disconnect();
   };
   apply(useAuth.getState());
