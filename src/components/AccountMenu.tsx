@@ -1,9 +1,11 @@
 "use client";
 // Compte du joueur (site publié) : bouton Discord, ou avatar + menu.
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, LogOut, Trash2, UserPlus } from "lucide-react";
+import { ChevronDown, LogOut, Pencil, Trash2, UserPlus } from "lucide-react";
 import { MAX_ACCOUNTS, addAccount, deleteAccount, logout, switchAccount, useAuth, type Account } from "@/lib/auth";
-import { saveNow } from "@/lib/online";
+import { saveNow, setPseudo, useOnline } from "@/lib/online";
+import { PSEUDO_MAX, pseudoProblem } from "@/lib/pseudo";
+import { refreshWorld } from "@/lib/world/players";
 import { useGame } from "@/store/game";
 import { loginWithDiscord } from "@/lib/auth";
 import { DiscordIcon, ProviderTag } from "@/components/DiscordButton";
@@ -22,6 +24,21 @@ export default function AccountMenu() {
   const [open, setOpen] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Pseudo public : celui du serveur ; le nom du compte en attendant qu'il soit lu
+  const pseudo = useOnline((s) => s.name);
+  const shown = pseudo ?? user?.name ?? "";
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [nameError, setNameError] = useState<string | null>(null);
+  const rename = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (renaming === null || busy) return;
+    setBusy(true);
+    const err = await setPseudo(renaming);
+    setBusy(false);
+    if (err) { setNameError(err); return; }
+    setRenaming(null); setNameError(null); refreshWorld();
+    notify("Pseudo enregistré.");
+  };
   const others = saved.filter((a) => a.id !== user?.id);
   // Changer de compte : la partie en cours est d'abord enregistrée en ligne, pour ne rien perdre
   const leaveFor = async (go: () => Promise<string | null> | void) => {
@@ -37,7 +54,7 @@ export default function AccountMenu() {
   useEffect(() => {
     if (!open) return;
     const close = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) { setOpen(false); setConfirm(false); } };
-    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") { setOpen(false); setConfirm(false); } };
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") { setOpen(false); setConfirm(false); setRenaming(null); } };
     document.addEventListener("mousedown", close);
     document.addEventListener("keydown", esc);
     return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", esc); };
@@ -61,9 +78,9 @@ export default function AccountMenu() {
         {user.avatar
           // eslint-disable-next-line @next/next/no-img-element
           ? <img src={user.avatar} alt="" width={32} height={32} className="h-8 w-8 rounded-full" />
-          : <span className="h-8 w-8 rounded-full bg-[#5865F2] text-white grid place-items-center text-[13px] font-semibold">{user.name[0]}</span>}
+          : <span className="h-8 w-8 rounded-full bg-[#5865F2] text-white grid place-items-center text-[13px] font-semibold">{shown[0]}</span>}
         <span className="hidden sm:block leading-tight text-left">
-          <span className="block text-[13px] font-semibold max-w-[140px] truncate">{user.name}</span>
+          <span className="block text-[13px] font-semibold max-w-[140px] truncate">{shown}</span>
           <span className="flex items-center gap-1 text-[11px] text-muted"><ProviderTag via={user.via} /></span>
         </span>
         <ChevronDown size={14} className="text-muted hidden sm:block" />
@@ -74,6 +91,24 @@ export default function AccountMenu() {
             Votre partie est sauvegardée en ligne : retrouvez-la sur n&apos;importe quel appareil.
           </div>
           <div className="border-t border-line pt-1.5 mt-0.5">
+            {renaming === null ? (
+              <button role="menuitem" disabled={busy} onClick={() => { setRenaming(shown); setNameError(null); }}
+                className="w-full flex items-center gap-2.5 rounded-[8px] px-3 py-2 text-[13px] hover:bg-slate-50 disabled:opacity-50">
+                <Pencil size={15} className="text-muted" /><span className="min-w-0 flex-1 text-left">Pseudo : <span className="font-semibold">{shown}</span></span><span className="text-[12px] text-primary">Changer</span>
+              </button>
+            ) : (
+              <form onSubmit={rename} className="px-3 py-2">
+                <label htmlFor="pseudo" className="mb-1 block text-[11px] font-medium text-muted">Pseudo vu par les autres joueurs</label>
+                <div className="flex gap-1.5">
+                  <input id="pseudo" value={renaming} maxLength={PSEUDO_MAX} autoFocus onChange={(e) => { setRenaming(e.target.value); setNameError(null); }}
+                    className="min-w-0 flex-1 rounded-[8px] border border-line bg-card px-2.5 py-1.5 text-[13px] outline-none focus:border-primary" />
+                  <button type="submit" disabled={busy || !!pseudoProblem(renaming)} className="rounded-[8px] bg-primary px-3 text-[12px] font-semibold text-white disabled:opacity-40">OK</button>
+                </div>
+                {(nameError ?? (renaming.trim() ? pseudoProblem(renaming) : null)) && <p role="alert" className="mt-1.5 text-[11px] text-danger">{nameError ?? pseudoProblem(renaming)}</p>}
+              </form>
+            )}
+          </div>
+          <div className="border-t border-line pt-1.5 mt-1.5">
             <div className="px-3 pb-1 pt-1 text-[10px] font-bold uppercase tracking-[0.08em] text-muted">{busy ? "Enregistrement de la partie…" : "Changer de compte"}</div>
             {others.map((a) => (
               <button key={a.id} role="menuitem" disabled={busy} onClick={() => leaveFor(async () => { const err = await switchAccount(a.id); if (!err) notify(`Compte : ${a.name}`); return err; })}
