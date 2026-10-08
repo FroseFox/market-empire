@@ -10,3 +10,8 @@ alter table public.players add column if not exists tester boolean not null defa
 --     new.flagged := false; new.flag_reason := null;
 --     return new;
 --   end if;
+
+-- Connexion d'un compte de test : identifiant + mot de passe sur l'écran de connexion du site.
+-- L'identifiant « test » correspond à l'utilisateur test@marketempire.test, créé à la main dans Supabase
+-- (Authentication › Users) avec son profil public.players marqué tester = true.
+-- Le mot de passe n'est écrit nulle part dans ce dépôt : il se change dans Authentication › Users.

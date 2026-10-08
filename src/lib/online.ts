@@ -371,7 +371,13 @@ function finish(uid: string, name: string) {
   void publishIncome();
   void syncShares();
   void syncAlliance();
-  void restAsUser<{ tester: boolean }[]>(`players?select=tester&id=eq.${uid}&limit=1`).then((r) => { if (active === uid) useOnline.setState({ tester: !!r?.[0]?.tester }); }).catch(() => {});
+  // Compte de test : sa partie est toujours en mode test (argent et capital sans limite, tout débloqué)
+  void restAsUser<{ tester: boolean }[]>(`players?select=tester&id=eq.${uid}&limit=1`).then((r) => {
+    if (active !== uid) return;
+    const tester = !!r?.[0]?.tester, g = useGame.getState().game;
+    useOnline.setState({ tester });
+    if (tester && !g.sandbox) useGame.setState({ game: E.enterSandbox(g, null) });
+  }).catch(() => {});
 }
 
 async function connect(uid: string, name: string) {
