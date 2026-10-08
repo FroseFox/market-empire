@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   Bitcoin, Building2, ChartPie, ClipboardCheck, Telescope, Check, Crosshair, DollarSign, Receipt, Rss, Earth, Euro, Gem, FlaskConical, Filter, History, Landmark, LayoutGrid, Lock, Network, Newspaper, PieChart, Workflow,
+  Coins, CreditCard, Factory, HandCoins, Layers, Package, Percent, Route, ShieldCheck, Ship, Ticket, UserPlus, Wrench,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useGame } from "@/store/game";
@@ -15,10 +16,12 @@ const ICONS: Record<string, LucideIcon> = {
   relations_1: Network, supply_chain: Workflow, news_1: Newspaper, news_filters: Filter,
   realized_pnl: Receipt, portfolio_breakdown: ChartPie, chain_exposure: Crosshair, chain_news: Rss, 
   city_upgrade: Building2, city_forecast: Telescope, city_audit: ClipboardCheck,
+  firm_slot: Factory, city_tourism: Ticket, city_welcome: UserPlus, city_works: Wrench, city_materials: Layers, city_shield: ShieldCheck,
+  bank_rates: Percent, bank_fees: HandCoins, bank_capital: Coins, bank_cap: CreditCard, trade_customs: Ship, trade_imports: Package, trade_defense: Route,
 };
 
 // Géométrie de l'arbre (en px, dans un cadre qui défile à l'horizontale sur mobile)
-const COL_W = 185, ROW_H = 150, PAD_X = 90, PAD_Y = 56, NODE = 60, LABEL_H = 50;
+const COL_W = 150, ROW_H = 150, PAD_X = 84, PAD_Y = 56, NODE = 60, LABEL_H = 50;
 const WIDTH = PAD_X * 2 + COL_W * Math.max(...RESEARCH.map((n) => n.col));
 const HEIGHT = PAD_Y + ROW_H * Math.max(...RESEARCH.map((n) => n.row)) + 110;
 const pos = (n: ResearchNode) => ({ x: PAD_X + n.col * COL_W, y: PAD_Y + n.row * ROW_H });
@@ -56,8 +59,9 @@ export default function ResearchPage() {
   return (
     <>
       <PageHeader icon={FlaskConical} title="Recherche" subtitle={`Arbre de compétences · ${owned} / ${RESEARCH.length} débloquées`} />
-      <div className="grid gap-4 grid-cols-1 xl:grid-cols-12">
+      <div className="flex flex-col gap-4">
         {phone ? (
+          <div className="order-1">
           <Card className="!p-0 overflow-hidden">
             {branches.map((b) => (
               <div key={b} className="border-b border-line last:border-b-0">
@@ -90,8 +94,9 @@ export default function ResearchPage() {
               </div>
             ))}
           </Card>
+          </div>
         ) : (
-        <Card className="xl:col-span-9 !p-0 overflow-hidden">
+        <Card className="order-2 !p-0 overflow-hidden">
           <div ref={frame} className="overflow-x-auto">
             <div className="mx-auto" style={{ width: WIDTH * scale, height: HEIGHT * scale }}>
             <div className="relative origin-top-left" style={{ width: WIDTH, height: HEIGHT, transform: `scale(${scale})` }}>
@@ -128,7 +133,7 @@ export default function ResearchPage() {
                 return (
                   <button key={n.id} onClick={() => setSelected(n.id)}
                     className="absolute flex flex-col items-center gap-1.5 group focus:outline-none"
-                    style={{ left: x - 80, top: y - NODE / 2, width: 160 }}
+                    style={{ left: x - 71, top: y - NODE / 2, width: 142 }}
                     aria-label={`${n.name} : ${st === "done" ? "débloquée" : st === "open" ? `disponible, ${eur(n.cost)}` : "verrouillée"}`}>
                     <span className="relative grid place-items-center rounded-full transition-transform group-hover:scale-105 group-focus-visible:ring-4 group-focus-visible:ring-primary/30"
                       style={{
@@ -169,9 +174,11 @@ export default function ResearchPage() {
         )}
 
         {/* Détail de la compétence choisie */}
-        <div ref={detail} className="xl:col-span-3 scroll-mt-20">
-          <Card className="xl:sticky xl:top-20">
-            <div className="flex items-center gap-3 mb-3">
+        <div ref={detail} className={phone ? "order-2 scroll-mt-20" : "order-1 sticky top-[72px] z-10"}>
+          <Card className={phone ? "" : "shadow-md"}>
+           <div className="sm:flex sm:items-center sm:gap-6">
+            <div className="min-w-0 sm:flex-1">
+            <div className="flex items-center gap-3 mb-3 sm:mb-1.5">
               {(() => { const Icon = ICONS[sel.id] ?? FlaskConical; return (
                 <span className="h-11 w-11 rounded-full grid place-items-center shrink-0" style={{ background: `${BRANCH_COLOR[sel.branch]}1A`, color: BRANCH_COLOR[sel.branch] }}><Icon size={20} /></span>
               ); })()}
@@ -180,10 +187,11 @@ export default function ResearchPage() {
                 <div className="text-[17px] font-semibold leading-tight">{sel.name}</div>
               </div>
             </div>
-            <p className="text-[13px] text-muted mb-4">{sel.description}</p>
+            <p className="text-[13px] text-muted mb-4 sm:mb-0">{sel.description}</p>
+            </div>
 
             {sel.requires.length > 0 && (
-              <div className="mb-4">
+              <div className="mb-4 sm:mb-0 sm:shrink-0">
                 <div className="text-[12px] font-medium mb-1.5">Prérequis</div>
                 <ul className="space-y-1">
                   {sel.requires.map((r) => (
@@ -198,6 +206,7 @@ export default function ResearchPage() {
               </div>
             )}
 
+            <div className="sm:w-[230px] sm:shrink-0">
             {selStatus === "done" ? (
               <div className="rounded-[10px] bg-success-soft text-emerald-700 text-[13px] font-semibold px-3 py-2.5 flex items-center gap-2"><Check size={16} />Compétence débloquée</div>
             ) : (
@@ -212,7 +221,9 @@ export default function ResearchPage() {
                 <p className="text-[11px] text-muted mt-2">Liquidités : {eur(game.cash)}</p>
               </>
             )}
-            <p className="text-[11px] text-muted mt-4 pt-3 border-t border-line">La recherche ne donne jamais de bonus sur vos gains : elle ouvre des marchés et de meilleurs outils d&apos;analyse.</p>
+            </div>
+           </div>
+            <p className="text-[11px] text-muted mt-3 pt-2.5 border-t border-line">La recherche ouvre des marchés et des outils, et améliore la ville, la Banque et le commerce. Elle ne touche jamais aux cours de bourse.</p>
           </Card>
         </div>
       </div>

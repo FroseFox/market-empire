@@ -36,7 +36,7 @@ function BankCard({ staked, perDay }: { staked: number; perDay: number }) {
   const level = bankLevel(game), cap = investCap(game), next = nextBank(game);
   const rank = CITY_RANKS.findLastIndex((r) => game.population >= r.pop);
   const locked = !!next && rank < next.minRank;
-  const interest = dailyInterest(game.holdings);
+  const interest = dailyInterest(game.holdings, game);
   const cell = "rounded-[10px] bg-slate-50 p-2.5";
   return (
     <Card title="Banque de la ville" icon={Landmark} className="mb-4"

@@ -14,7 +14,7 @@ import {
 import { isBuildable, layoutFrom, placeTile, type Plot } from "./layout";
 import { HUBS, HUB_BY_NAME, PLAYABLE, countryBonus, countryPrice, countrySpecialty, type Hub } from "../world/countries";
 import { ASSET_BY_SYMBOL, familyOf, regionOf, type Asset } from "../market/universe";
-import { RESEARCH_BY_ID, RETIRED_RESEARCH, STARTING_RESEARCH } from "./research";
+import { RESEARCH_BY_ID, RETIRED_RESEARCH, STARTING_RESEARCH, researchFx } from "./research";
 import { EVENTS, EVENT_BY_ID, effectText, eventStrength, pickEvent, scaledEffect, type CityEvent, type CityEventDef } from "./events";
 
 /** Ligne du portefeuille. `qty` = titres détenus (mise × levier), `debt` = part prêtée par la Banque de la ville.
@@ -237,7 +237,7 @@ export interface CityStats {
 
 /** Ce dont le calcul de la ville a besoin ; seuls les bâtiments et la population sont obligatoires. */
 export type CityInput = Pick<GameState, "buildings" | "population">
-  & Partial<Pick<GameState, "branches" | "holdings" | "country" | "wear" | "projects" | "contracts" | "territory" | "orientation" | "shares" | "alliance" | "event" | "day">>;
+  & Partial<Pick<GameState, "branches" | "holdings" | "country" | "wear" | "projects" | "contracts" | "territory" | "orientation" | "shares" | "alliance" | "event" | "day" | "research">>;
 
 /** Côté de la carte du joueur (elle s'agrandit avec le territoire). */
 export const mapSize = (state: Partial<Pick<GameState, "territory">>) => TERRITORY[clamp(state.territory ?? 0, 0, TERRITORY.length - 1)].size;
@@ -299,9 +299,12 @@ export function computeCity(state: CityInput): CityStats {
   for (let i = 1; i <= Math.min(state.territory ?? 0, TERRITORY.length - 1); i++) assetValue += TERRITORY[i].cost;
 
   for (const key of FX_KEYS) fx[key] = Math.min(fx[key], CITY_EFFECT_CAPS[key]);
+  // Recherches : elles s'ajoutent à l'effet des bâtiments, au-delà de leurs plafonds
+  fx.growthBoost += researchFx(state, "city_welcome"); fx.exportBonus += researchFx(state, "trade_customs");
+  fx.wearCut += researchFx(state, "city_materials"); fx.capitalBoost += researchFx(state, "bank_capital");
   // Blocus : les villes bloquées vendent leurs surplus moins cher, celles qui bloquent un peu plus cher
   const exportRatio = Math.max(0.3, EXPORT_RATIO + fx.exportBonus
-    - (state.alliance?.blockadedBy ? BLOCKADE.targetLoss : 0) + (state.alliance?.blockading ? BLOCKADE.attackerGain : 0));
+    - (state.alliance?.blockadedBy ? BLOCKADE.targetLoss * (1 - researchFx(state, "trade_defense")) : 0) + (state.alliance?.blockading ? BLOCKADE.attackerGain : 0));
   const pop = Math.min(state.population, housing);
   energyUse += pop * ENERGY_PER_RESIDENT;
   const foodUse = pop * FOOD_PER_RESIDENT;
@@ -349,7 +352,7 @@ export function computeCity(state: CityInput): CityStats {
   const staffing = jobs > 0 ? employed / jobs : 0;
   // Tourisme : une ville agréable et propre attire, les transports amènent les visiteurs
   const attractiveness = clamp(TOURISM.base + TOURISM.perSatisfaction * satisfaction - TOURISM.perPollution * pollutionPenalty, TOURISM.min, TOURISM.max);
-  const tourismFactor = attractiveness * (1 + fx.visitors) * (evFx?.tourism ?? 1);
+  const tourismFactor = attractiveness * (1 + fx.visitors) * (1 + researchFx(state, "city_tourism")) * (evFx?.tourism ?? 1);
   const tourismIncome = tRevenue * tourismFactor * staffing;
   const buildingsIncome = bRevenue * staffing * (evFx?.revenue ?? 1) + tourismIncome;
 
@@ -364,7 +367,7 @@ export function computeCity(state: CityInput): CityStats {
     const soldAlly = Math.min(sold, contracted(resource, "sell", true)), boughtAlly = Math.min(bought, contracted(resource, "buy", true));
     return {
       exports: (soldAlly * ALLIANCE.contract.sell + (sold - soldAlly) * CONTRACT_RATIO + (surplus - sold) * exportRatio) * price,
-      imports: (boughtAlly * ALLIANCE.contract.buy + (bought - boughtAlly) * CONTRACT_RATIO + (deficit - bought)) * price,
+      imports: (boughtAlly * ALLIANCE.contract.buy + (bought - boughtAlly) * CONTRACT_RATIO + (deficit - bought) * (1 - researchFx(state, "trade_imports"))) * price,
       sold, bought,
     };
   };
@@ -517,8 +520,8 @@ export function cityLeverage(state: Partial<Pick<GameState, "bank">>, symbol?: s
   return kind ? Math.min(lev, LEVERAGE.maxByKind[kind] ?? lev) : lev;
 }
 /** Mise totale que la Banque laisse placer en bourse, et ce qu'il en reste. */
-export const investCap = (state: Partial<Pick<GameState, "bank">>) => BANK[bankLevel(state)].cap;
-export const investRoom = (state: Pick<GameState, "holdings"> & Partial<Pick<GameState, "bank">>) =>
+export const investCap = (state: Partial<Pick<GameState, "bank" | "research">>) => BANK[bankLevel(state)].cap * (1 + researchFx(state, "bank_cap"));
+export const investRoom = (state: Pick<GameState, "holdings"> & Partial<Pick<GameState, "bank" | "research">>) =>
   Math.max(0, investCap(state) - portfolioCost(state.holdings));
 /** Niveau suivant de la Banque, s'il en reste un. */
 export const nextBank = (state: Partial<Pick<GameState, "bank">>) => BANK[bankLevel(state) + 1] as (typeof BANK)[number] | undefined;
@@ -543,7 +546,8 @@ export function upgradeBank(state: GameState, at: number): ActionResult {
 /** Cours sous lequel une ligne est vendue d'office (0 = jamais : rien n'a été emprunté). */
 export const liquidationPrice = (h: Holding) => ((h.debt ?? 0) > 0 && h.qty > 0 ? ((h.debt ?? 0) + holdingStake(h) * LEVERAGE.liquidation) / h.qty : 0);
 /** Intérêts dus chaque jour de ville sur tout ce que la Banque a prêté. */
-export const dailyInterest = (holdings: Record<string, Holding>) => round2(Object.values(holdings).reduce((a, h) => a + (h.debt ?? 0), 0) * LEVERAGE.dayRate);
+export const interestRate = (state: { research?: string[] } = {}) => LEVERAGE.dayRate * (1 - researchFx(state, "bank_rates"));
+export const dailyInterest = (holdings: Record<string, Holding>, state: { research?: string[] } = {}) => round2(Object.values(holdings).reduce((a, h) => a + (h.debt ?? 0), 0) * interestRate(state));
 /** Capital que les placements produisent par jour de ville, à ces cours. */
 export const capitalPerDay = (holdings: Record<string, Holding>, prices: Prices) => round2(portfolioValue(holdings, prices) * CAPITAL.dayRate);
 /** Capital demandé par un bâtiment en plus de son prix (0 pour les petits). */
@@ -585,7 +589,7 @@ export function snapshot(state: GameState, prices: Prices, at: number): Snapshot
 export function tickDay(state: GameState, prices: Prices, at: number): GameState {
   const c = computeCity(state);
   // Bourse ↔ ville : les placements produisent du capital, et les sommes prêtées par la Banque coûtent des intérêts
-  const interest = dailyInterest(state.holdings);
+  const interest = dailyInterest(state.holdings, state);
   const next: GameState = {
     ...state,
     day: state.day + 1,
@@ -628,7 +632,7 @@ const eventSeed = (state: Pick<GameState, "createdAt">, week: number) => Math.fl
 export function rollEvent(state: GameState, city: CityStats, seed: number, at: number, force = false): { state: GameState; cash: number; def: CityEventDef | null } {
   const def = pickEvent(city, seed, force);
   if (!def) return { state, cash: 0, def: null };
-  const strength = eventStrength(def, city);
+  const strength = eventStrength(def, city) * (def.kind === "disaster" ? 1 - researchFx(state, "city_shield") : 1);
   const cash = def.effect.cashDays ? round2(def.effect.cashDays * Math.max(0, city.operating)) : 0;
   return {
     def, cash,
@@ -727,7 +731,7 @@ const HUB_COVERS: Record<Hub["scope"], (a: Asset) => boolean> = {
   etf: (a) => a.kind === "etf",
   commodity: (a) => a.kind === "commodity",
 };
-type FeeInput = Partial<Pick<GameState, "country" | "hubs" | "projects" | "orientation">>;
+type FeeInput = Partial<Pick<GameState, "country" | "hubs" | "projects" | "orientation" | "research">>;
 /** Le joueur a-t-il un bureau dans cette place ? (gratuit quand sa ville est dans le pays de la place) */
 export const hasDesk = (state: FeeInput, hub: Hub) => hub.country === state.country || !!state.hubs?.includes(hub.name);
 /** Place financière qui couvre un actif, s'il y en a une. */
@@ -743,7 +747,7 @@ export function feeFactor(state: FeeInput, symbol: string): number {
   if (hub && hasDesk(state, hub)) f *= HUB_FEE_FACTOR;
   for (const id of state.projects ?? []) { const p = PROJECT_BY_ID[id]; if (p?.perk.kind === "fees") f *= p.perk.factor; }
   if (state.orientation) f *= ORIENTATION_BY_ID[state.orientation]?.fees ?? 1;
-  return f;
+  return f * (1 - researchFx(state, "bank_fees"));
 }
 
 /** Ouvre un bureau dans une place financière. */
@@ -774,7 +778,7 @@ export function branchAt(state: Pick<GameState, "plots"> & Partial<Pick<GameStat
   return i < 0 ? undefined : state.branches?.[i];
 }
 
-export const branchLimit = (state: Pick<GameState, "population">) => cityRank(state.population) + 1;
+export const branchLimit = (state: Pick<GameState, "population"> & { research?: string[] }) => cityRank(state.population) + 1 + researchFx(state, "firm_slot");
 export const branchCost = (state: Partial<Pick<GameState, "branches">>) => BRANCH_COST * ((state.branches?.length ?? 0) + 1);
 
 /** Propose à une entreprise dont le joueur est actionnaire d'ouvrir un site dans la ville. */
@@ -815,7 +819,7 @@ export function closeBranch(state: GameState, symbol: string): ActionResult {
 
 // ─── Tensions et fin de partie ────────────────────────────────
 
-export const renovateCost = (state: CityInput) => Math.round((state.wear ?? 0) * computeCity(state).cityValue * RENOVATE_RATE);
+export const renovateCost = (state: CityInput) => Math.round((state.wear ?? 0) * computeCity(state).cityValue * RENOVATE_RATE * (1 - researchFx(state, "city_works")));
 
 /** Rénove toute la ville : la vétusté retombe à zéro. */
 export function renovate(state: GameState, at: number): ActionResult {
