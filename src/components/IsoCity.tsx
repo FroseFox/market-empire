@@ -95,6 +95,25 @@ export function setLight(v: Light) {
 }
 export const subLight = (cb: () => void) => { lightSubs.add(cb); return () => { lightSubs.delete(cb); }; };
 
+/** Qualité de la vue 3D : « light » = sans ombres ni animations, image moins fine (appareils qui peinent).
+ *  `null` tant que le joueur n'a rien choisi : la vue passe alors d'elle-même en léger si elle rame. */
+export type Gfx = "full" | "light";
+const GFX_KEY = "market-empire-gfx";
+let gfxPref: Gfx | null | undefined;
+const gfxSubs = new Set<() => void>();
+export function readGfx(): Gfx | null {
+  if (gfxPref === undefined) {
+    try { const v = localStorage.getItem(GFX_KEY); gfxPref = v === "light" || v === "full" ? v : null; } catch { gfxPref = null; }
+  }
+  return gfxPref;
+}
+export function setGfx(v: Gfx) {
+  gfxPref = v;
+  try { localStorage.setItem(GFX_KEY, v); } catch { /* préférence non mémorisée */ }
+  gfxSubs.forEach((l) => l());
+}
+export const subGfx = (cb: () => void) => { gfxSubs.add(cb); return () => { gfxSubs.delete(cb); }; };
+
 /** Image d'un bâtiment prête à être recopiée (et ses fenêtres allumées, pour la nuit). */
 interface Sprite { cv: HTMLCanvasElement; lit: HTMLCanvasElement | null; dx: number; dy: number; w: number; h: number }
 /** Au-delà de cette taille (zoom × densité d'écran), peu de bâtiments sont visibles : on dessine en direct. */
