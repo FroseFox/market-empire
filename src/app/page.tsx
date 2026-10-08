@@ -111,16 +111,16 @@ export default function EconomyPage() {
 
         {/* Revenus / dépenses */}
         <Card title="Revenus / Dépenses" className="xl:col-span-4">
-          <div className="grid grid-cols-2 gap-x-3 sm:gap-x-4 gap-y-1.5 text-[12px] sm:text-[13px] mb-3">
+          <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[12px] 2xl:gap-x-4 2xl:text-[13px] mb-3">
             <div className="text-muted col-span-1 font-medium">Revenus / jour</div>
             <div className="text-muted col-span-1 font-medium">Dépenses / jour</div>
             <Row label="Impôts" v={city.income.taxes} />
             <Row label="Entretien" v={-city.expenses.maintenance} />
             <Row label="Entreprises" v={city.income.buildings} />
-            <Row label="Importations" v={-city.expenses.imports} />
-            <Row label="Exportations" v={city.income.exports} />
+            <Row label="Imports" v={-city.expenses.imports} />
+            <Row label="Exports" v={city.income.exports} />
             <div className="flex justify-between text-muted"><span>Bourse</span><span>variable</span></div>
-            {city.income.grant >= 1 && <Row label="Dotation de l'État" v={city.income.grant} />}
+            {city.income.grant >= 1 && <Row label="Dotation" v={city.income.grant} />}
           </div>
           <div className="flex items-center justify-between rounded-[12px] bg-slate-50 px-4 py-3 mb-3">
             <span className="text-[13px] font-medium text-muted">Flux net</span>

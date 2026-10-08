@@ -10,6 +10,8 @@ import * as E from "@/lib/game/engine";
 import { CITY_RANKS, FEATURES } from "@/lib/game/config";
 import { ASSET_BY_SYMBOL } from "@/lib/market/universe";
 import { play } from "@/lib/sound";
+import { useAuth } from "@/lib/auth";
+import { initPush } from "@/lib/push";
 
 export interface Notif { id: string; at: number; title: string; text: string; href: string; tone: "good" | "bad" | "info"; read: boolean }
 /** Variation sur un jour à partir de laquelle un actif détenu est signalé. */
@@ -61,6 +63,9 @@ export function startNotifs() {
   if (started || typeof window === "undefined") return;
   started = true;
   useNotifs.setState({ list: load(), system: typeof Notification !== "undefined" && Notification.permission === "granted" });
+  // Notifications quand le jeu est fermé : l'abonnement de l'appareil suit le compte connecté
+  void initPush();
+  useAuth.subscribe((s, p) => { if (s.user?.id !== p.user?.id) void initPush(); });
   const { push } = useNotifs.getState();
   const fmt = (n: number) => Math.round(n).toLocaleString("fr-FR");
 

@@ -153,7 +153,7 @@ async function flush(keepalive = false) {
       // On retient la date réellement enregistrée (relue sur le serveur quand la page reste ouverte)
       const stored = keepalive ? sentAt : await serverAt().catch(() => undefined);
       if (active === uid) setSynced(uid, typeof stored === "number" ? stored : sentAt);
-      if (!keepalive) { void publishCity(data.pl); void publishOffer(); void publishIncome(); void syncShares(); void syncAlliance(); }
+      if (!keepalive) { void publishCity(data.pl); void publishOffer(); void publishIncome(); void syncShares(); void syncAlliance(); void import("@/lib/push").then((m) => m.syncReminder()).catch(() => {}); }
     }
   } catch {
     dirty = true;

@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { Bell, BellRing } from "lucide-react";
 import { useNotifs } from "@/lib/notifs";
+import { disablePush, enablePush, usePush } from "@/lib/push";
+import { useAuth } from "@/lib/auth";
 
 const DOT = { good: "bg-success", bad: "bg-danger", info: "bg-primary" } as const;
 const ago = (at: number, now: number) => {
@@ -13,6 +15,9 @@ const ago = (at: number, now: number) => {
 
 export default function NotifBell() {
   const { list, system, readAll, clear, enableSystem } = useNotifs();
+  const push = usePush();
+  const signedIn = useAuth((s) => s.status === "in");
+  const [pushError, setPushError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [now, setNow] = useState(0);
   const box = useRef<HTMLDivElement>(null);
@@ -57,7 +62,29 @@ export default function NotifBell() {
               ))}
             </ul>
           )}
-          {canSystem && (
+          {/* Jeu fermé : notifications envoyées par le serveur (joueur connecté, navigateur compatible) */}
+          {signedIn && push.state !== "unsupported" ? (
+            <div className="border-t border-line px-4 py-3 text-[12px] text-muted">
+              {push.state === "on" ? (
+                <div className="flex items-start gap-2">
+                  <span className="min-w-0 flex-1"><b className="font-semibold text-ink">Notifications activées sur cet appareil</b>, même quand le jeu est fermé : ville pleine, contrat signé, parts achetées, blocus.</span>
+                  <button disabled={push.busy} onClick={() => void disablePush()} className="shrink-0 font-semibold text-muted hover:text-ink hover:underline">Désactiver</button>
+                </div>
+              ) : push.state === "ios" ? (
+                <>Sur iPhone ou iPad : installez d&apos;abord le jeu sur l&apos;écran d&apos;accueil (bouton Partager, puis « Sur l&apos;écran d&apos;accueil »), ouvrez-le de là et revenez ici pour activer les notifications.</>
+              ) : push.state === "denied" ? (
+                <>Notifications bloquées pour ce site : autorisez-les dans les réglages du navigateur pour être prévenu quand le jeu est fermé.</>
+              ) : (
+                <>
+                  <button disabled={push.busy} onClick={async () => { const err = await enablePush(); setPushError(err); }}
+                    className="w-full rounded-[10px] bg-primary px-3 py-2 text-[13px] font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
+                    {push.busy ? "Activation…" : "Me prévenir même quand le jeu est fermé"}
+                  </button>
+                  <p className="mt-1.5 text-[11px]">{pushError ? <span className="text-danger">{pushError}</span> : "Ville pleine, contrat signé, parts achetées, blocus. Jamais de conseil d'achat ou de vente."}</p>
+                </>
+              )}
+            </div>
+          ) : canSystem && (
             <div className="border-t border-line px-4 py-2.5 text-[11px] text-muted">
               {system ? "Notifications du navigateur activées : vous êtes aussi prévenu quand l'onglet est en arrière-plan."
                 : <button onClick={() => void enableSystem()} className="font-semibold text-primary hover:underline">Me prévenir aussi quand l&apos;onglet est en arrière-plan</button>}
