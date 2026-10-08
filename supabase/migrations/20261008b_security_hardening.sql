@@ -1,5 +1,6 @@
 -- Market Empire — durcissement des droits (signalé par les conseils de sécurité Supabase).
 -- Aucune donnée n'est modifiée ; le site lit exactement les mêmes choses qu'avant.
+-- Appliqué sur le projet Market Empire le 8 octobre 2026.
 
 -- 1) Les vues « ranking » et « market » étaient modifiables par n'importe qui : une vue simple est modifiable
 --    par défaut, et elle agit avec les droits de son propriétaire. Avec la clé publique du site, on pouvait donc
@@ -19,6 +20,5 @@ revoke truncate, trigger, references on public.assets, public.asset_prices, publ
 alter function public.players_guard() set search_path = '';
 
 -- 4) Contrats : l'identité du joueur est lue une seule fois par requête, pas une fois par ligne.
-drop policy if exists contracts_own on public.contracts;
-create policy contracts_own on public.contracts for select to authenticated
+alter policy contracts_own on public.contracts
   using ((select auth.uid()) = seller or (select auth.uid()) = buyer);

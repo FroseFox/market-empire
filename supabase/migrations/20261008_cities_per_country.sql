@@ -3,6 +3,7 @@
 -- et tous les joueurs d'un pays profitent de sa spécialité.
 -- Rien n'est supprimé : les joueurs gardent leur pays, l'ancienne fonction join_world reste en place.
 -- Tant que ce fichier n'est pas appliqué, le jeu fonctionne comme avant (un joueur par pays).
+-- Appliqué sur le projet Market Empire le 8 octobre 2026.
 
 -- 1) Un pays peut accueillir plusieurs joueurs : on retire l'unicité sur players.country (quel que soit son nom).
 do $$
@@ -24,11 +25,11 @@ create index if not exists players_country_idx on public.players (country);
 
 -- Pays jouables et nombre de villes par pays (mêmes valeurs que lib/world/countries.ts et CITIES_PER_COUNTRY).
 create or replace function public.playable_countries()
-returns text[] language sql immutable as $$
+returns text[] language sql immutable set search_path = '' as $$
   select array['124','840','484','076','032','152','170','604','862','826','250','724','620','276','380','528','056','756','040','616','752','578','246','208','300','792','642','804','203','348','372','643','398','156','392','410','356','360','764','704','458','608','586','682','784','376','818','504','012','566','710','404','231','288','036','554']
 $$;
 create or replace function public.cities_per_country()
-returns integer language sql immutable as $$ select 20 $$;
+returns integer language sql immutable set search_path = '' as $$ select 20 $$;
 
 -- 2) Arrivée d'un joueur : l'ancienne fonction crée le profil et donne un pays vide s'il en reste ;
 --    sinon le joueur rejoint le pays le moins peuplé (à égalité : le premier de son ordre de préférence).
