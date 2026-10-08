@@ -20,7 +20,7 @@ import { startSoundEvents } from "@/lib/soundEvents";
 import SoundButton from "@/components/SoundButton";
 import AuthGate, { Splash } from "@/components/AuthGate";
 import { DAY_MS } from "@/lib/game/engine";
-import { compactEur, eur } from "@/lib/format";
+import { capitalFmt, compactEur, eur } from "@/lib/format";
 
 const NAV: { href: string; label: string; icon: typeof BarChart3; soon?: boolean }[] = [
   { href: "/", label: "Économie", icon: BarChart3 },
@@ -140,6 +140,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const authStatus = useAuth((s) => s.status);
   const cloud = useGame((s) => s.cloud);
   const cash = useGame((s) => s.game.cash);
+  const capital = useGame((s) => s.game.capital ?? 0);
   const name = useGame((s) => s.game.playerName);
   const mode = useGame((s) => s.dataMode);
   const quotesAt = useGame((s) => s.quotesAt);
@@ -194,7 +195,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               <div className="leading-tight text-right">
                 {/* Téléphone : montant abrégé à partir du million, pour que la barre ne déborde jamais */}
                 <div className="whitespace-nowrap text-[14px] font-bold text-emerald-700 tabular">{!hydrated ? "—" : <><span className="sm:hidden">{cash >= 1_000_000 ? compactEur(cash) : eur(cash)}</span><span className="hidden sm:inline">{eur(cash)}</span></>}</div>
-                <div className="text-[10px] text-emerald-700/70">Liquidités</div>
+                {/* Deuxième monnaie : le capital, produit par les placements en bourse */}
+                <div className="whitespace-nowrap text-[10px] text-emerald-700/70">Liquidités{hydrated && <> · <b className="font-semibold text-violet-700" title="Capital : produit par vos placements, demandé par les gros bâtiments">{capitalFmt(capital)}</b></>}</div>
               </div>
               <span className="h-6 w-6 rounded-full bg-success text-white grid place-items-center"><Plus size={14} /></span>
             </Link>

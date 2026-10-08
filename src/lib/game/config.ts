@@ -44,18 +44,41 @@ export const TRADE_FEE_MIN = 1;
 // La ville tourne 24 fois plus vite que la bourse (1 jour de ville = 1 heure réelle, les cours suivent le temps réel) :
 // sans levier, un placement ne pèse rien face aux revenus de la ville. Le levier ne touche pas aux cours :
 // il multiplie l'exposition du joueur, donc ses gains comme ses pertes.
+// Il n'y a qu'une seule façon d'investir : chaque achat est multiplié par le levier de la ville (voir BANK).
 export const LEVERAGE = {
-  /** Leviers proposés, et rang de ville à partir duquel chacun s'ouvre (Bourg, Petite ville, Ville). */
-  levels: [2, 5, 10] as const,
-  minRank: [1, 2, 3] as const,
   /** Levier maximal par type d'actif, comme chez un vrai courtier : plus l'actif est volatil, moins on prête. */
-  maxByKind: { stock: 5, etf: 10, commodity: 10, crypto: 2 } as Record<string, number>,
+  maxByKind: { stock: 5, etf: 5, commodity: 5, crypto: 2 } as Record<string, number>,
   /** Intérêts sur la somme empruntée, par jour de ville. */
   dayRate: 0.0002,
-  /** La position est fermée d'office quand il ne reste plus que cette part de la mise. */
+  /** La ligne est vendue d'office quand il ne reste plus que cette part de la mise. */
   liquidation: 0.1,
-  minStake: 500,
-  maxPositions: 8,
+};
+
+// ─── Banque de la ville (lien ville → bourse) ─────────────────
+/** Chaque niveau fixe le levier de tous les achats et le plafond de mise totale en bourse.
+ *  Le niveau suivant s'achète avec les liquidités de la ville, à partir d'un rang donné (indice dans CITY_RANKS). */
+export const BANK: { lev: number; cap: number; cost: number; minRank: number }[] = [
+  { lev: 1.5, cap: 50_000, cost: 0, minRank: 0 },
+  { lev: 2, cap: 150_000, cost: 25_000, minRank: 1 },
+  { lev: 2.5, cap: 500_000, cost: 100_000, minRank: 2 },
+  { lev: 3, cap: 2_000_000, cost: 400_000, minRank: 3 },
+  { lev: 4, cap: 10_000_000, cost: 1_500_000, minRank: 4 },
+  { lev: 5, cap: Infinity, cost: 6_000_000, minRank: 5 },
+];
+
+// ─── Capital (lien bourse → ville) ────────────────────────────
+// Deuxième monnaie : seuls les placements en produisent. Les gros bâtiments en demandent en plus de leur prix,
+// donc une ville ne grandit plus sans la bourse. Ce n'est jamais un conseil : n'importe quel actif en produit,
+// au prorata de ce que vaut la ligne.
+export const CAPITAL = {
+  /** Capital produit par jour de ville, en part de la valeur des placements. */
+  dayRate: 0.02,
+  /** Capital demandé par un bâtiment, en part de son prix… */
+  share: 0.1,
+  /** …à partir de ce prix (les petits bâtiments du début n'en demandent pas). */
+  fromCost: 100_000,
+  /** Parties d'avant le capital : elles reçoivent ce nombre de jours de production d'avance. */
+  legacyDays: 10,
 };
 
 /** Consommation par habitant et par jour. */
@@ -333,10 +356,9 @@ export const ORIENTATION_CHANGE_COST = 150_000;
 
 // ─── Fonctions qui s'ouvrent avec le rang ─────────────────────
 /** Pour ne pas tout montrer d'un coup : chaque système apparaît au rang où il devient utile. */
-export type FeatureId = "firms" | "leverage" | "orientation" | "trade" | "hubs" | "projects";
+export type FeatureId = "firms" | "orientation" | "trade" | "hubs" | "projects";
 export const FEATURES: { id: FeatureId; rank: number; label: string; text: string; href: string }[] = [
   { id: "firms", rank: 1, label: "Entreprises implantées", text: "Une entreprise dont vous êtes actionnaire peut ouvrir un site dans votre ville (bouton Entreprises).", href: "/ville" },
-  { id: "leverage", rank: LEVERAGE.minRank[0], label: "Effet de levier", text: "Misez une somme et empruntez le reste : vos gains en bourse sont multipliés, vos pertes aussi (Marchés, sur la fiche d'un actif).", href: "/marches" },
   { id: "orientation", rank: ORIENTATION_MIN_RANK, label: "Orientation de la ville", text: "Choisissez ce que votre ville veut être : industrielle, verte, d'affaires ou marchande (bouton Objectifs).", href: "/ville" },
   { id: "trade", rank: 2, label: "Commerce entre joueurs", text: "Achetez par contrat le surplus d'énergie ou de nourriture d'un autre joueur (Monde › Commerce).", href: "/monde" },
   { id: "hubs", rank: 2, label: "Places financières", text: "Ouvrez un bureau dans une place financière pour réduire vos frais de courtage (Monde).", href: "/monde" },

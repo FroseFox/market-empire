@@ -1,4 +1,5 @@
-// Robot de test d'équilibrage (pur) : joue la ville seule, sans la bourse, avec une stratégie simple et raisonnable.
+// Robot de test d'équilibrage (pur) : joue la ville avec une stratégie simple et raisonnable. En bourse il ne spécule pas :
+// il place une part fixe de sa fortune à cours constant, juste de quoi produire le capital que les gros bâtiments demandent.
 // Sert à mesurer le rythme de progression (voir sim.test.ts), pas à jouer à la place du joueur.
 import { BUILDINGS, EXPORT_RATIO, MAINTENANCE_RATE, RESOURCE_PRICES, SERVICE_IDS, type BuildingType } from "./config";
 import * as E from "./engine";
@@ -36,25 +37,43 @@ function choose(g: E.GameState): BuildingType | undefined {
 
 export interface SimDay { day: number; population: number; net: number; cash: number; rank: number; buildings: number; satisfaction: number }
 
-/** Joue `days` jours de ville. `claim` = encaisser les subventions d'objectifs. */
-export function simulate(days: number, claim = true): { days: SimDay[]; final: E.GameState } {
+/** Part de sa fortune (liquidités + mises) que le robot garde placée en bourse. */
+const INVESTED = 0.25;
+const SYMBOL = "AAPL", PRICES = { [SYMBOL]: 100 };
+/** Agrandit la Banque dès qu'elle bride les placements, puis complète la mise jusqu'à la part visée. */
+function place(g: E.GameState, d: number): E.GameState {
+  const staked = E.portfolioCost(g.holdings), target = (g.cash + staked) * INVESTED;
+  const next = E.nextBank(g);
+  if (next && target > E.investCap(g) && next.cost <= g.cash * 0.3) { const r = E.upgradeBank(g, d); if (r.ok) g = r.state; }
+  const more = Math.min(target, E.investCap(g)) - staked;
+  if (more < 1_000) return g;
+  const r = E.buy(g, SYMBOL, E.sharesFor(more * E.cityLeverage(g, SYMBOL), PRICES[SYMBOL]), PRICES[SYMBOL], d);
+  return r.ok ? r.state : g;
+}
+
+/** Joue `days` jours de ville. `claim` = encaisser les subventions d'objectifs, `invest` = placer en bourse.
+ *  `waits` = nombre de jours où un bâtiment a attendu faute de capital. */
+export function simulate(days: number, claim = true, invest = true): { days: SimDay[]; final: E.GameState; waits: number } {
   let g = E.newGame(0);
+  let waits = 0;
   const out: SimDay[] = [];
   for (let d = 0; d < days; d++) {
     if (claim) for (const s of E.goalStatuses(g)) if (s.done && !s.claimed) { const r = E.claimGoal(g, s.goal.id, d); if (r.ok) g = r.state; }
     // Rénovation dès que la vétusté commence à coûter, si elle ne vide pas la caisse
     if ((g.wear ?? 0) >= 0.3 && E.renovateCost(g) <= g.cash * 0.6) { const r = E.renovate(g, d); if (r.ok) g = r.state; }
+    if (invest) g = place(g, d);
     for (let i = 0; i < 40; i++) {
       const b = choose(g);
       if (!b) break;
       if (b.cost > g.cash) break; // il économise
+      if (E.capitalCost(b) > (g.capital ?? 0)) { waits++; break; } // il attend que ses placements produisent le capital
       const r = E.build(g, b.id, d);
       if (!r.ok) break; // plus de place
       g = r.state;
     }
-    g = E.tickDay(g, {}, d);
+    g = E.tickDay(g, PRICES, d);
     const c = E.computeCity(g);
     out.push({ day: g.day, population: g.population, net: c.net, cash: g.cash, rank: c.rank, buildings: g.plots.length, satisfaction: c.satisfaction });
   }
-  return { days: out, final: g };
+  return { days: out, final: g, waits };
 }

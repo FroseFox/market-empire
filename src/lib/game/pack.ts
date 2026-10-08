@@ -52,7 +52,7 @@ export function pack(g: GameState): PackedSave {
   return {
     ...rest,
     cash: cents(g.cash),
-    holdings: Object.fromEntries(Object.entries(g.holdings).map(([k, v]) => [k, { qty: v.qty, avgCost: round4(v.avgCost) }])),
+    holdings: Object.fromEntries(Object.entries(g.holdings).map(([k, v]) => [k, { qty: v.qty, avgCost: round4(v.avgCost), ...(v.debt ? { debt: cents(v.debt) } : {}) }])),
     fmt: 2,
     t0,
     h: hist.map((s, k) => [Math.round((s.at - t0) / 60_000), s.day, Math.round(s.cash), Math.round(s.portfolio), Math.round(s.city), Math.round(s.population), Math.round(s.income), Math.round(s.expenses), ...sums[k]] as HistRow),

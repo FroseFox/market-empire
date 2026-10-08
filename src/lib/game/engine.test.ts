@@ -40,13 +40,15 @@ describe("bourse", () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     g = r.state;
-    expect(g.cash).toBe(STARTING_CASH - 2000 - 2); // 0,1 % de frais
+    // Banque de départ : levier ×1,5. Pour 2 000 € de titres, le joueur met 1 333,33 € et la Banque prête le reste.
+    expect(g.cash).toBeCloseTo(STARTING_CASH - 1333.33 - 2, 2); // 0,1 % de frais sur les 2 000 €
     expect(g.holdings.AAPL.qty).toBe(10);
+    expect(g.holdings.AAPL.debt).toBeCloseTo(666.67, 2);
     const s = sell(g, "AAPL", 10, 220, T0);
     expect(s.ok).toBe(true);
     if (s.ok) {
       expect(s.state.holdings.AAPL).toBeUndefined();
-      expect(s.state.cash).toBeCloseTo(STARTING_CASH - 2002 + 2200 - 2.2, 2);
+      expect(s.state.cash).toBeCloseTo(STARTING_CASH - 2 + 200 - 2.2, 2); // la mise revient, plus les 200 € de hausse
     }
   });
   it("refuse un achat au-delà des liquidités", () => {
@@ -172,7 +174,7 @@ describe("bilan de période", () => {
     const r = E.periodReport(g, worth(g, prices), Infinity);
     expect(r.days).toBe(3);
     expect(r.start).toBe(100_000);
-    expect(r.fees).toBeCloseTo(31, 2);
+    expect(r.fees).toBeCloseTo(31 + 3 * 1.33, 2);   // courtage, plus 3 jours d'intérêts sur les 6 666,67 € prêtés
     // Vente de 50 titres à 220 € achetés 200 € : +1 000 € moins 11 € de frais.
     expect(g.transactions[0].gain).toBeCloseTo(989, 2);
     expect(g.realized).toBeCloseTo(989, 2);
@@ -458,13 +460,14 @@ describe("ordres en euros", () => {
     expect(E.sharesFor(100, 0)).toBe(0);
   });
   it("le montant maximal passe toujours, frais compris", () => {
-    const g = newGame(T0);
-    const max = E.maxBuyAmount(g.cash);
-    const r = buy(g, "AAPL", E.sharesFor(max, 205), 205, T0);
+    const g = { ...newGame(T0), bank: 5 };              // Banque au maximum : pas de plafond de mise
+    const lev = E.cityLeverage(g, "AAPL");
+    const max = E.maxBuyAmount(g.cash, 1, lev);
+    const r = buy(g, "AAPL", E.sharesFor(max * lev, 205), 205, T0);
     if (!r.ok) throw new Error(r.error);
     expect(r.state.cash).toBeGreaterThanOrEqual(0);
     expect(r.state.cash).toBeLessThan(205 * 0.0001 + 1.01); // presque tout est investi
-    expect(buy(g, "AAPL", E.sharesFor(g.cash, 205), 205, T0).ok).toBe(false); // sans la place des frais : refusé
+    expect(buy(g, "AAPL", E.sharesFor(g.cash * lev, 205), 205, T0).ok).toBe(false); // sans la place des frais : refusé
     expect(E.maxBuyAmount(0.5)).toBe(0);
   });
   it("on peut vendre une fraction puis tout le reste, sans reliquat", () => {

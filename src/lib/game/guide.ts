@@ -11,7 +11,7 @@ const built = (g: GameState, test: (id: string) => boolean) =>
 
 export const GUIDE: GuideStep[] = [
   { id: "invest", title: "Investissez en bourse", href: "/marches", cta: "Ouvrir les Marchés",
-    text: "Choisissez une entreprise, tapez un montant en euros et achetez. Les cours suivent la vraie bourse : à vous de juger, je ne donne jamais de conseil d'achat.",
+    text: "Choisissez une entreprise, tapez votre mise en euros et achetez : la Banque de votre ville la multiplie, et vos placements produisent le capital que les gros bâtiments demandent. Les cours suivent la vraie bourse : à vous de juger, je ne donne jamais de conseil d'achat.",
     done: (g) => Object.keys(g.holdings).length > 0 || g.transactions.some((t) => t.kind === "buy") },
   { id: "housing", title: "Logez de nouveaux habitants", href: "/ville", cta: "Aller à la Ville",
     text: "Dans la Ville, ouvrez « Construire » et posez un Petit quartier. Chaque habitant paie des impôts tous les jours.",

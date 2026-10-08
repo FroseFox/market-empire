@@ -1,17 +1,17 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
-import { History, PieChart, TrendingUp, Wallet, Zap } from "lucide-react";
-import { useDerived } from "@/store/game";
-import { hasResearch } from "@/lib/game/engine";
+import { History, Landmark, Lock, PieChart, TrendingUp, Wallet } from "lucide-react";
+import { useDerived, useGame } from "@/store/game";
+import { bankLevel, capitalPerDay, cityLeverage, dailyInterest, hasResearch, holdingStake, holdingValue, investCap, liquidationPrice, nextBank } from "@/lib/game/engine";
+import { BANK, CAPITAL, CITY_RANKS } from "@/lib/game/config";
 import { ASSET_BY_SYMBOL, KIND_LABEL, familyOf, regionOf } from "@/lib/market/universe";
-import { Card, Delta, Empty, PageHeader, Segmented, StatCard, LockTag } from "@/components/ui";
+import { Button, Card, Delta, Empty, PageHeader, Progress, Segmented, StatCard, LockTag } from "@/components/ui";
 import CompanyLogo from "@/components/CompanyLogo";
 import { Donut } from "@/components/charts";
-import { eur, eur2, pctPlain, signedEur, tone, qtyFmt } from "@/lib/format";
+import { capitalFmt, compactEur, eur, eur2, pctPlain, signedEur, tone, qtyFmt } from "@/lib/format";
 import PriceStatus from "@/components/PriceStatus";
 import { focusAsset } from "@/lib/market/focus";
-import { LeveragePositions } from "@/components/Leverage";
 
 const PALETTE = ["#2563EB", "#10B981", "#F59E0B", "#6366F1", "#0EA5E9", "#EC4899", "#64748B"];
 
@@ -28,12 +28,70 @@ const LockLink = ({ label }: { label: string }) => (
   <Link href="/recherche" title="À débloquer dans Recherche"><LockTag>{label}</LockTag></Link>
 );
 
+/** Banque de la ville : c'est elle qui relie la ville et la bourse. Son niveau fixe le levier de tous les achats
+ *  et le plafond de mise ; en retour, les placements produisent le capital que les gros bâtiments demandent. */
+function BankCard({ staked, perDay }: { staked: number; perDay: number }) {
+  const game = useGame((s) => s.game);
+  const upgradeBank = useGame((s) => s.upgradeBank);
+  const level = bankLevel(game), cap = investCap(game), next = nextBank(game);
+  const rank = CITY_RANKS.findLastIndex((r) => game.population >= r.pop);
+  const locked = !!next && rank < next.minRank;
+  const interest = dailyInterest(game.holdings);
+  const cell = "rounded-[10px] bg-slate-50 p-2.5";
+  return (
+    <Card title="Banque de la ville" icon={Landmark} className="mb-4"
+      extra={<span className="text-[12px] text-muted">Niveau <b className="tabular text-ink">{level + 1}</b> sur {BANK.length}</span>}>
+      <div className="grid grid-cols-2 gap-2 text-[12px] lg:grid-cols-4">
+        <div className={cell}>
+          <div className="text-muted">Levier de vos achats</div>
+          <div className="text-[18px] font-bold tabular text-primary">×{cityLeverage(game).toLocaleString("fr-FR")}</div>
+          <div className="text-[11px] text-muted">Gains et pertes multipliés</div>
+        </div>
+        <div className={cell}>
+          <div className="text-muted">Mise en bourse</div>
+          <div className="text-[18px] font-bold tabular">{compactEur(staked)}</div>
+          {Number.isFinite(cap)
+            ? <><Progress value={staked / cap} tone={staked >= cap * 0.98 ? "bg-warning" : "bg-primary"} /><div className="mt-1 text-[11px] text-muted">Plafond : {compactEur(cap)}</div></>
+            : <div className="text-[11px] text-muted">Sans plafond</div>}
+        </div>
+        <div className={cell}>
+          <div className="text-muted">Capital</div>
+          <div className="text-[18px] font-bold tabular text-violet-700">{capitalFmt(game.capital ?? 0)}</div>
+          <div className="text-[11px] text-muted">+{capitalFmt(perDay)} par jour de ville</div>
+        </div>
+        <div className={cell}>
+          <div className="text-muted">Intérêts</div>
+          <div className="text-[18px] font-bold tabular">{eur(interest)}</div>
+          <div className="text-[11px] text-muted">par jour de ville, sur ce que la Banque prête</div>
+        </div>
+      </div>
+      <p className="mt-3 text-[12px] text-muted">
+        Vos placements produisent du <b className="font-semibold text-violet-700">capital ◆</b> : {pctPlain(CAPITAL.dayRate)} de leur valeur par jour de ville.
+        Les bâtiments à partir de {compactEur(CAPITAL.fromCost)} en demandent {pctPlain(CAPITAL.share)} de leur prix, en plus des liquidités : sans bourse, la ville ne grandit plus.
+      </p>
+      {next && (
+        <div className="mt-3 flex flex-wrap items-center gap-3 rounded-[10px] border border-line p-3">
+          <div className="min-w-[180px] flex-1 text-[12px]">
+            <div className="text-[13px] font-semibold">Niveau {level + 2} : levier ×{next.lev.toLocaleString("fr-FR")}, plafond {Number.isFinite(next.cap) ? compactEur(next.cap) : "illimité"}</div>
+            <div className="text-muted">{locked ? `À partir du rang « ${CITY_RANKS[next.minRank].name} » (${CITY_RANKS[next.minRank].pop.toLocaleString("fr-FR")} habitants)` : "Payé avec les liquidités de la ville."}</div>
+          </div>
+          {locked ? <LockTag className="shrink-0 tabular">{compactEur(next.cost)}</LockTag>
+            : <Button onClick={upgradeBank} disabled={next.cost > game.cash} title={next.cost > game.cash ? "Liquidités insuffisantes" : undefined} className="shrink-0 !px-3">
+                {next.cost > game.cash && <Lock size={13} className="mr-1 inline" />}Agrandir · {compactEur(next.cost)}
+              </Button>}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 export default function PortfolioPage() {
-  const { game, quotes, portfolio, portfolioCost, leverage } = useDerived();
+  const { game, quotes, prices, portfolio, portfolioCost } = useDerived();
   const rows = Object.entries(game.holdings).map(([sym, h]) => {
     const price = quotes[sym]?.price ?? h.avgCost;
-    const value = h.qty * price;
-    return { sym, h, price, value, pnl: value - h.qty * h.avgCost, day: quotes[sym]?.change ?? 0 };
+    // Valeur pour le joueur : ses titres moins ce que la Banque a prêté. `exposure` = ce qui bouge avec le cours.
+    const value = holdingValue(h, price), stake = holdingStake(h);
+    return { sym, h, price, value, stake, exposure: h.qty * price, liq: liquidationPrice(h), pnl: value - stake, day: quotes[sym]?.change ?? 0 };
   }).sort((a, b) => b.value - a.value);
   const pnl = portfolio - portfolioCost;
   const [split, setSplit] = useState<Split>("Lignes");
@@ -49,7 +107,7 @@ export default function PortfolioPage() {
     ...top.map((r, i) => ({ name: r.sym, label: ASSET_BY_SYMBOL[r.sym]?.name ?? r.sym, value: r.value, color: PALETTE[i % PALETTE.length] })),
     ...(rest > 0 ? [{ name: "Autres", label: "Autres", value: rest, color: "#CBD5E1" }] : []),
   ];
-  const dayPnl = rows.reduce((a, r) => a + r.value - r.value / (1 + r.day), 0);
+  const dayPnl = rows.reduce((a, r) => a + r.exposure - r.exposure / (1 + r.day), 0);
 
   return (
     <>
@@ -63,6 +121,8 @@ export default function PortfolioPage() {
           {portfolio > 0 ? <Delta value={dayPnl / (portfolio - dayPnl || 1)} suffix="sur 24 h" /> : "—"}
         </StatCard>
       </div>
+
+      <BankCard staked={portfolioCost} perDay={capitalPerDay(game.holdings, prices)} />
 
       <div className="grid gap-4 grid-cols-1 xl:grid-cols-12">
         <Card title="Positions" icon={Wallet} className="xl:col-span-8 overflow-x-auto">
@@ -88,8 +148,10 @@ export default function PortfolioPage() {
                     <td className="text-right tabular">{qtyFmt(r.h.qty)}</td>
                     <td className="text-right tabular hidden sm:table-cell">{eur2(r.h.avgCost)}</td>
                     <td className="text-right tabular">{eur2(r.price)}<div><Delta value={r.day} /></div></td>
-                    <td className="text-right tabular font-semibold">{eur(r.value)}</td>
-                    <td className={`text-right tabular font-semibold ${tone(r.pnl)}`}>{signedEur(r.pnl)}<div className="text-[11px] font-normal">{pctPlain(r.pnl / (r.h.qty * r.h.avgCost))}</div></td>
+                    <td className="text-right tabular font-semibold"><span className="whitespace-nowrap">{eur(r.value)}</span>
+                      {r.liq > 0 && <div className={`hidden whitespace-nowrap text-[11px] font-normal sm:block ${(r.price - r.liq) / r.price < 0.03 ? "font-semibold text-danger" : "text-muted"}`} title="Cours sous lequel la ligne est vendue d'office">vente d&apos;office &lt; {eur2(r.liq)}</div>}
+                    </td>
+                    <td className={`text-right tabular font-semibold ${tone(r.pnl)}`}>{signedEur(r.pnl)}<div className="text-[11px] font-normal">{r.stake > 0 ? pctPlain(r.pnl / r.stake) : "—"}</div></td>
                     <td className="text-right pl-3 hidden sm:table-cell">
                       <Link href="/marches" onClick={() => focusAsset(r.sym)} className="inline-flex items-center whitespace-nowrap rounded-[8px] border border-line px-2.5 py-1.5 text-[12px] font-semibold text-primary hover:bg-primary-soft">Acheter / Vendre</Link>
                     </td>
@@ -118,13 +180,6 @@ export default function PortfolioPage() {
             </>
           )}
         </Card>
-
-        {!!game.positions?.length && (
-          <Card title="Positions à effet de levier" icon={Zap} className="xl:col-span-12"
-            extra={<span className="text-[12px] text-muted">Valeur si vous clôturez tout : <b className="tabular text-ink">{eur(leverage)}</b></span>}>
-            <LeveragePositions link />
-          </Card>
-        )}
 
         <Card title="Historique des opérations" icon={History} className="xl:col-span-12"
           extra={showGains
