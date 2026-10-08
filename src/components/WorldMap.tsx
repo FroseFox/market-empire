@@ -20,10 +20,20 @@ const COUNTRIES = (feature(topo, topo.objects.countries) as FeatureCollection<Ge
 
 const projection = geoEqualEarth().fitExtent([[10, 10], [MAP_W - 10, MAP_H - 10]], { type: "FeatureCollection", features: COUNTRIES });
 const path = geoPath(projection);
-const SHAPES = COUNTRIES.map((c) => ({
-  id: String(c.id), name: PLAYABLE[String(c.id)] ?? c.properties.name, d: path(c) ?? "",
-  centroid: path.centroid(c), bounds: path.bounds(c),
-}));
+/** Partie principale d'un pays : son plus grand morceau de terre. Sans cela, le centre d'un pays qui a des territoires
+ *  lointains tombe à côté (la France, avec la Guyane, se retrouvait au large de l'Espagne). */
+function mainland(c: Country): Geometry {
+  if (c.geometry.type !== "MultiPolygon") return c.geometry;
+  const parts = c.geometry.coordinates.map((coordinates) => ({ type: "Polygon" as const, coordinates }));
+  return parts.reduce((a, b) => (path.area(b) > path.area(a) ? b : a));
+}
+const SHAPES = COUNTRIES.map((c) => {
+  const main = mainland(c);
+  return {
+    id: String(c.id), name: PLAYABLE[String(c.id)] ?? c.properties.name, d: path(c) ?? "",
+    centroid: path.centroid(main), bounds: path.bounds(c), core: path.bounds(main),
+  };
+});
 const SPHERE = path({ type: "Sphere" }) ?? "";
 const GRATICULE = path(geoGraticule10()) ?? "";
 const LAND = path(merge(topo, topo.objects.countries.geometries.filter((g) => String(g.id) !== "010") as Parameters<typeof merge>[1])) ?? "";
@@ -31,6 +41,17 @@ const HUB_POINTS = HUBS.map((h) => ({ ...h, xy: projection(h.coords) ?? [0, 0] }
 
 export const countryName = (id: string) => PLAYABLE[id] ?? SHAPES.find((s) => s.id === id)?.name ?? "—";
 export const countryCentroid = (id: string) => SHAPES.find((s) => s.id === id)?.centroid ?? [MAP_W / 2, MAP_H / 2];
+
+/** Une ville sur la carte : chaque joueur a son repère dans son pays. */
+export interface MapCity { id: string; country: string; cityName: string; isMe: boolean; name?: string }
+/** Place des repères d'un pays : le premier au centre, les suivants en spirale autour, sans sortir du cœur du pays. */
+function cityPoint(country: string, i: number, n: number): [number, number] {
+  const s = SHAPES.find((x) => x.id === country);
+  if (!s) return [MAP_W / 2, MAP_H / 2];
+  if (n <= 1) return s.centroid as [number, number];
+  const r = Math.min(s.core[1][0] - s.core[0][0], s.core[1][1] - s.core[0][1]) * 0.3 * Math.sqrt((i + 0.5) / n), a = i * 2.39996;
+  return [s.centroid[0] + Math.cos(a) * r, s.centroid[1] + Math.sin(a) * r * 0.8];
+}
 
 /** Ce que la carte montre d'un pays habité : la ville mise en avant (la mienne, sinon la plus riche) et le nombre de villes. */
 export interface MapOwner { country: string; cityName: string; isMe: boolean; population: number; name?: string; count?: number }
@@ -90,12 +111,19 @@ const Countries = memo(function Countries({ owners, selected, onEnter, onSelect 
   );
 });
 
-export default function WorldMap({ owners, selected, onSelect, focus }: {
-  owners: MapOwner[]; selected: string | null; onSelect: (id: string) => void;
+export default function WorldMap({ owners, cities, selected, onSelect, focus }: {
+  owners: MapOwner[]; cities: MapCity[]; selected: string | null; onSelect: (id: string) => void;
   /** Pays sur lequel le bouton « Mon pays » recentre la carte. */
   focus?: string | null;
 }) {
   const byCountry = useMemo(() => new Map(owners.map((o) => [o.country, o])), [owners]);
+  const pins = useMemo(() => {
+    const groups = new Map<string, MapCity[]>();
+    for (const c of cities) groups.set(c.country, [...(groups.get(c.country) ?? []), c]);
+    // Ordre stable (par identifiant) : une ville garde sa place sur la carte, que je sois connecté ou non
+    return [...groups.values()].flatMap((list) => [...list].sort((a, b) => a.id.localeCompare(b.id)).map((c, i) => ({ ...c, at: cityPoint(c.country, i, list.length) })))
+      .sort((a, b) => Number(a.isMe) - Number(b.isMe) || a.at[1] - b.at[1]);
+  }, [cities]);
   const [view, setViewState] = useState<View>({ k: 1, x: 0, y: 0 });
   const viewRef = useRef(view);
   const svg = useRef<SVGSVGElement>(null);
@@ -137,7 +165,7 @@ export default function WorldMap({ owners, selected, onSelect, focus }: {
   const focusCountry = useCallback((id: string) => {
     const s = SHAPES.find((x) => x.id === id);
     if (!s) return;
-    const [[x0, y0], [x1, y1]] = s.bounds;
+    const [[x0, y0], [x1, y1]] = s.core;
     const vis = visibleOf(svg.current);
     const k = Math.max(1.5, Math.min(7, 0.55 * Math.min(vis.w / (x1 - x0 || 1), vis.h / (y1 - y0 || 1))));
     const [cx, cy] = [(x0 + x1) / 2, (y0 + y1) / 2];
@@ -226,7 +254,7 @@ export default function WorldMap({ owners, selected, onSelect, focus }: {
   const hovered = hoverId ? byCountry.get(hoverId) : undefined;
   const { k } = view;
   // Noms des pays jouables quand on est assez près
-  const labels = k >= 2.2 ? SHAPES.filter((s) => PLAYABLE[s.id] && !byCountry.has(s.id) && (s.bounds[1][0] - s.bounds[0][0]) * k > 70) : [];
+  const labels = k >= 2.2 ? SHAPES.filter((s) => PLAYABLE[s.id] && !byCountry.has(s.id) && (s.core[1][0] - s.core[0][0]) * k > 70) : [];
 
   return (
     <div className="relative rounded-[14px] overflow-hidden select-none outline-none focus-visible:ring-2 focus-visible:ring-primary"
@@ -277,18 +305,19 @@ export default function WorldMap({ owners, selected, onSelect, focus }: {
               </g>
             );
           })}
-          {owners.map((o) => {
-            const [cx, cy] = countryCentroid(o.country);
-            const x = cx * k + view.x, y = cy * k + view.y;
+          {/* Un repère par ville. La mienne est dessinée en dernier, par-dessus les autres. */}
+          {pins.map((o) => {
+            const x = o.at[0] * k + view.x, y = o.at[1] * k + view.y, s = o.isMe ? 1 : 0.82;
             return (
-              <g key={o.country} transform={`translate(${x},${y})`}>
+              <g key={o.id} transform={`translate(${x},${y})`} className="cursor-pointer" onClick={() => select(o.country)}>
+                <title>{`${o.cityName} · ${o.isMe ? "votre ville" : o.name || "Joueur"}`}</title>
                 {o.isMe && <circle r={9} fill="none" stroke="#2563EB" strokeWidth={2} className="animate-ping motion-reduce:hidden" style={{ transformOrigin: "center", transformBox: "fill-box", animationDuration: "2.2s" }} />}
-                <path d="M0 0 C-7 -9 -8 -13 -8 -16 A8 8 0 1 1 8 -16 C8 -13 7 -9 0 0Z" fill={o.isMe ? "#2563EB" : "#334155"} stroke="#FFFFFF" strokeWidth={1.8} />
-                {(o.count ?? 1) > 1
-                  ? <text y={-12.5} textAnchor="middle" fontSize={9} fontWeight={800} fill="#FFFFFF">{o.count}</text>
-                  : <circle cy={-16} r={3.2} fill="#FFFFFF" />}
+                <g transform={`scale(${s})`}>
+                  <path d="M0 0 C-7 -9 -8 -13 -8 -16 A8 8 0 1 1 8 -16 C8 -13 7 -9 0 0Z" fill={o.isMe ? "#2563EB" : "#334155"} stroke="#FFFFFF" strokeWidth={1.8} />
+                  <circle cy={-16} r={3.2} fill="#FFFFFF" />
+                </g>
                 {(o.isMe || k >= 1.8) && (
-                  <text y={14} textAnchor="middle" fontSize={11} fontWeight={700} fill={o.isMe ? "#1D4ED8" : "#0F172A"} stroke="#FFFFFF" strokeWidth={3.5} paintOrder="stroke">{o.cityName}</text>
+                  <text y={14} textAnchor="middle" fontSize={o.isMe ? 11 : 10} fontWeight={700} fill={o.isMe ? "#1D4ED8" : "#0F172A"} stroke="#FFFFFF" strokeWidth={3.5} paintOrder="stroke">{o.cityName}</text>
                 )}
               </g>
             );

@@ -177,6 +177,14 @@ function adoptCountry() {
   if (country && g.country !== country) useGame.setState({ game: { ...g, country } });
 }
 
+/** Le classement vient d'être relu : si le serveur m'y place dans un autre pays (déménagement fait ailleurs, ou
+ *  corrigé à la main dans la base), la partie le suit tout de suite, sans attendre la prochaine ouverture du jeu. */
+export function followServerCountry(uid: string, country: string | null) {
+  if (!country || uid !== active || useOnline.getState().phase !== "ready" || useOnline.getState().country === country) return;
+  useOnline.setState({ country });
+  adoptCountry();
+}
+
 /** Dernier surplus annoncé aux autres joueurs. */
 let lastOffer = "";
 async function publishOffer() {

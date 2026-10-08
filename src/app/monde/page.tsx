@@ -37,7 +37,8 @@ export default function WorldPage() {
   // Joueurs publiés + moi (chiffres en direct). Sans compte, on se place quand même sur la carte.
   const players: PublicPlayer[] = useMemo(() => {
     const myId = auth.user?.id;
-    const others = world.status === "ready" ? world.players.filter((p) => p.country && p.id !== myId && !p.isMe) : [];
+    // « Les autres » se décide ici, d'après le compte connecté maintenant : la liste a pu être lue avec un autre compte
+    const others = world.status === "ready" ? world.players.filter((p) => p.country && (myId ? p.id !== myId : !p.isMe)).map((p) => (p.isMe ? { ...p, isMe: false, color: "#64748B" } : p)) : [];
     const listed = world.status === "ready" && myId ? world.players.find((p) => p.id === myId) : undefined;
     const taken = others.map((p) => p.country);
     // Mon pays : celui réservé en ligne, sinon celui choisi dans la partie (s'il a encore de la place), sinon un des moins peuplés
@@ -107,7 +108,7 @@ export default function WorldPage() {
       {tab === "Carte" ? (
         <div className="grid gap-4 grid-cols-1 xl:grid-cols-12 items-start">
           <Card className="xl:col-span-9 !p-3">
-            <WorldMap owners={owners} selected={selId} onSelect={setSelected} focus={mine?.country} />
+            <WorldMap owners={owners} cities={players} selected={selId} onSelect={setSelected} focus={mine?.country} />
             <div className="flex flex-wrap gap-x-5 gap-y-2 mt-3 px-1 text-[12px] text-muted">
               <Legend color="#2563EB" label="Votre territoire" />
               <Legend color="#C7D7E8" label="Pays habités" />

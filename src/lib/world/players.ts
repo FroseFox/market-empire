@@ -5,6 +5,7 @@
 import { useSyncExternalStore } from "react";
 import { rest, STATIC_MODE } from "@/lib/market/client";
 import { useAuth } from "@/lib/auth";
+import { followServerCountry } from "@/lib/online";
 import { getRuntime } from "@/lib/runtime";
 import { useGame } from "@/store/game";
 import * as E from "@/lib/game/engine";
@@ -70,7 +71,7 @@ type State = { status: "loading" | "ready" | "offline"; players: PublicPlayer[];
 let state: State = { status: "loading", players: [], me: null };
 const listeners = new Set<() => void>();
 const emit = (s: State) => { state = s; listeners.forEach((l) => l()); };
-let started = false;
+let started = false, watching = false;
 
 function profileFromGame(country: string) {
   const s = useGame.getState();
@@ -92,7 +93,10 @@ function profileFromGame(country: string) {
 type Row = { id: string; name: string; avatar: string | null; country: string | null; city_name: string; net_worth: number; population: number; perf: number; day: number; updated_at: string; flagged?: boolean; income?: number; share_float?: number; share_sold?: number; alliance?: string | null; alliance_gift?: number; tester?: boolean };
 
 let lastLoad = 0;
-/** Site publié : classement lu dans Supabase (mis en cache 5 min, seulement quand la page Monde est ouverte). */
+/** Délai minimal entre deux lectures du classement, et rythme de relecture tant que la page Monde reste ouverte. */
+const RELOAD_MIN = 30_000, RELOAD_EVERY = 120_000;
+/** Site publié : classement lu dans Supabase, seulement quand la page Monde est ouverte. Toujours relu sur le serveur :
+ *  une liste gardée en mémoire montrait des joueurs dans leur ancien pays plusieurs minutes après un déménagement. */
 async function loadOnline(fresh = false) {
   // La carte montre TOUS les territoires occupés : un joueur signalé (sauvegarde impossible) garde son pays,
   // il sort seulement du classement. On lit donc la table complète avec son signalement, en une seule requête.
@@ -108,6 +112,8 @@ async function loadOnline(fresh = false) {
   // Échec : on réessaiera à la prochaine ouverture de la page, sans attendre 5 minutes
   if (!rows) { lastLoad = 0; emit({ status: "offline", players: [], me: null }); return; }
   const me = useAuth.getState().user?.id ?? null;
+  const mine = me ? rows.find((r) => r.id === me) : undefined;
+  if (me && mine && fresh) followServerCountry(me, mine.country);
   emit({
     status: "ready", me,
     players: rows.filter((r) => r.country && PLAYABLE[r.country]).map((r) => ({
@@ -121,8 +127,20 @@ async function loadOnline(fresh = false) {
 }
 
 async function start() {
-  // Site publié : au plus une lecture toutes les 5 minutes (la liste est aussi mise en cache)
-  if (!STATIC_MODE) { if (Date.now() - lastLoad > 5 * 60_000) { lastLoad = Date.now(); loadOnline(); } return; }
+  // Site publié : relu à chaque ouverture de la page Monde (au plus toutes les 30 secondes), puis régulièrement tant
+  // qu'elle reste ouverte, au retour sur l'onglet, et dès qu'on change de compte
+  if (!STATIC_MODE) {
+    if (Date.now() - lastLoad > RELOAD_MIN) refreshWorld();
+    if (!watching) {
+      watching = true;
+      const again = () => { if (listeners.size && !document.hidden && Date.now() - lastLoad > RELOAD_MIN) refreshWorld(); };
+      setInterval(() => { if (Date.now() - lastLoad >= RELOAD_EVERY) again(); }, 15_000);
+      document.addEventListener("visibilitychange", again);
+      let who = useAuth.getState().user?.id ?? null;
+      useAuth.subscribe((s) => { const id = s.user?.id ?? null; if (id !== who) { who = id; if (listeners.size) refreshWorld(); else lastLoad = 0; } });
+    }
+    return;
+  }
   if (started) return;
   started = true;
   const rt = await getRuntime();
