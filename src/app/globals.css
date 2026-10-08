@@ -99,3 +99,27 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .bot-live.bot-think .bot-eyes { animation: none; }
 .bot-live.bot-think .bot-ask { transform-origin: center; animation: bot-ask 2s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .bot-live * { animation: none !important; } }
+
+/* ── Wiki : apparition au défilement, flux animés, curseurs ── */
+.wiki-reveal.is-armed { opacity: 0; transform: translateY(14px); transition: opacity 480ms ease-out, transform 480ms cubic-bezier(.2, .7, .2, 1); }
+.wiki-reveal.is-armed.is-in { opacity: 1; transform: none; }
+@keyframes wiki-flow { to { stroke-dashoffset: -24; } }
+.wiki-flow { stroke-dasharray: 6 6; animation: wiki-flow 1.1s linear infinite; }
+@keyframes wiki-pulse { 0% { transform: scale(1); opacity: .6; } 70%, 100% { transform: scale(2.4); opacity: 0; } }
+.wiki-pulse { animation: wiki-pulse 1.8s ease-out infinite; }
+@keyframes wiki-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+.wiki-bob { animation: wiki-bob 3.4s ease-in-out infinite; }
+@keyframes wiki-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.wiki-bar { transform-origin: left center; transition: width 320ms cubic-bezier(.2, .7, .2, 1), background-color 200ms; }
+.wiki-lift { transition: transform 200ms ease, box-shadow 200ms ease, border-color 200ms ease; }
+.wiki-lift:hover { transform: translateY(-3px); box-shadow: 0 10px 24px rgb(15 23 42 / 0.10); border-color: #cbd5e1; }
+.wiki-range { -webkit-appearance: none; appearance: none; height: 6px; border-radius: 999px; background: #e2e8f0; outline: none; }
+.wiki-range::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; height: 20px; width: 20px; border-radius: 50%; background: var(--color-primary); border: 3px solid #fff; box-shadow: 0 1px 4px rgb(15 23 42 / .3); cursor: pointer; }
+.wiki-range::-moz-range-thumb { height: 20px; width: 20px; border-radius: 50%; background: var(--color-primary); border: 3px solid #fff; box-shadow: 0 1px 4px rgb(15 23 42 / .3); cursor: pointer; }
+.wiki-range:focus-visible { box-shadow: 0 0 0 3px rgb(37 99 235 / .25); }
+@media (prefers-reduced-motion: reduce) {
+  .wiki-reveal.is-armed { opacity: 1; transform: none; transition: none; }
+  .wiki-flow, .wiki-pulse, .wiki-bob { animation: none; }
+  .wiki-lift, .wiki-bar { transition: none; }
+  .wiki-lift:hover { transform: none; }
+}
