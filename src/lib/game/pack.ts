@@ -46,7 +46,8 @@ export function pack(g: GameState): PackedSave {
   });
   const t0 = hist[0]?.at ?? g.createdAt;
   const pl: Record<string, number[]> = {};
-  for (const p of g.plots) (pl[p.id] ??= []).push(p.x, p.y);
+  // Les bâtiments de plus d'un carreau sont rangés à part, sous « type*côté »
+  for (const p of g.plots) (pl[(p.s ?? 1) > 1 ? `${p.id}*${p.s}` : p.id] ??= []).push(p.x, p.y);
   const { history: _h, transactions: _t, plots: _p, ...rest } = g;
   void _h; void _t; void _p;
   return {
@@ -85,7 +86,9 @@ export function unpack(data: unknown): GameState {
       ...(gain !== undefined ? { gain } : {}),
     };
   });
-  const plots: Plot[] = Object.entries(pl).flatMap(([id, xy]) =>
-    Array.from({ length: Math.floor(xy.length / 2) }, (_, i) => ({ id, x: xy[i * 2], y: xy[i * 2 + 1] })));
+  const plots: Plot[] = Object.entries(pl).flatMap(([key, xy]) => {
+    const [id, side] = key.split("*"), s = Number(side) || 1;
+    return Array.from({ length: Math.floor(xy.length / 2) }, (_, i) => ({ id, x: xy[i * 2], y: xy[i * 2 + 1], ...(s > 1 ? { s } : {}) }));
+  });
   return { ...rest, history, transactions, plots } as GameState;
 }

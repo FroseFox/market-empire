@@ -516,7 +516,20 @@ export default function WikiPage() {
 
           <Sec id="batiments" brief="Tous les bâtiments en images, avec ce qu’ils apportent. Filtrez par catégorie ou cherchez un nom.">
             <BuildingGallery population={population} />
-            <Callout tone="tip" title="Améliorer sur place.">Avec la recherche « Rénovation urbaine », un bâtiment se transforme en sa version supérieure : vous ne payez que la différence de prix.</Callout>
+            <H3>La taille des bâtiments</H3>
+            <p>Un petit bâtiment tient sur un carreau. Les plus gros en occupent davantage : l’étiquette sombre de chaque fiche le dit.</p>
+            <Facts cols={3} items={[
+              { label: "1 carreau", value: `${BUILDINGS.filter((b) => b.buildable !== false && !b.size).length} bâtiments`, sub: "petit quartier, commerce, parc…" },
+              { label: "2 × 2 carreaux", value: `${BUILDINGS.filter((b) => b.size === 2).length} bâtiments`, sub: "grand quartier, usine moyenne, hôpital…" },
+              { label: "3 × 3 carreaux", value: `${BUILDINGS.filter((b) => b.size === 3).length} bâtiments`, sub: "un pâté de maisons entier : stade, aéroport…" },
+            ]} />
+            <Points items={[
+              "Un bâtiment ne peut pas être à cheval sur une route : il lui faut un carré libre entre les routes.",
+              "En construction, le carré vert montre la place qu’il prendra : le carreau visé en est un angle.",
+              "Les gros bâtiments remplissent la carte plus vite : pensez à agrandir le territoire.",
+              "Les bâtiments posés avant cette règle gardent leur carreau unique.",
+            ]} />
+            <Callout tone="tip" title="Améliorer sur place.">Avec la recherche « Rénovation urbaine », un bâtiment se transforme en sa version supérieure : vous ne payez que la différence de prix. Si la nouvelle version est plus grande, il lui faut de la place libre autour.</Callout>
             <H3>Les effets spéciaux (étiquettes violettes)</H3>
             <Points items={[
               <><b>Tourisme</b> (Musée, Hôtel, Stade, Parc d’attractions) : leur revenu est multiplié par l’<b>attrait</b> de la ville, de {fr(TOURISM.min)} à {fr(TOURISM.max)}. Ce sont des commerces : la spécialité « Commerce et tourisme » d’un pays s’y applique.</>,

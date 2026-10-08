@@ -11,7 +11,7 @@ import {
   STARTING_BUILDINGS, STARTING_CASH, STARTING_POPULATION, START_GRANT, TAX_PER_RESIDENT, TRADE_FEE_MIN, TRADE_FEE_RATE,
   type BuildingType, type Category, type Goal, type ServiceId, type Specialty,
 } from "./config";
-import { buildableCount, isBuildable, layoutFrom, mapBounds, placeTile, type Plot } from "./layout";
+import { buildableCount, canPlace, footprint, layoutFrom, mapBounds, newPlot, occupancy, placeTile, plotAt, sideOf, type Plot } from "./layout";
 import { HUBS, HUB_BY_NAME, PLAYABLE, countryBonus, countryPrice, countrySpecialty, type Hub } from "../world/countries";
 import { ASSET_BY_SYMBOL, familyOf, regionOf, type Asset } from "../market/universe";
 import { RESEARCH_BY_ID, RETIRED_RESEARCH, STARTING_RESEARCH, researchFx } from "./research";
@@ -654,6 +654,8 @@ export function enterSandbox(state: GameState, saved: unknown): GameState {
   return {
     ...state, sandbox: { saved }, cash: Math.max(state.cash, SANDBOX.cash), capital: Math.max(state.capital ?? 0, SANDBOX.capital),
     population: Math.max(state.population, SANDBOX.population), bank: BANK.length - 1, research: Object.keys(RESEARCH_BY_ID),
+    // Tout le territoire, offert : il ne compte pas dans le patrimoine
+    territory: TERRITORY.length - 1, landFree: Math.max(state.landFree ?? 0, TERRITORY.length - 1 - Math.max(0, (state.territory ?? 0) - (state.landFree ?? 0))),
   };
 }
 
@@ -902,7 +904,7 @@ export function buildPreview(state: CityInput, buildingId: string, city = comput
 
 /** Terrain occupé : carreaux bâtis et carreaux constructibles de la carte actuelle. */
 export function landUse(state: Pick<GameState, "plots"> & Partial<Pick<GameState, "territory">>): { used: number; total: number } {
-  return { used: state.plots.length, total: buildableCount(mapSize(state)) };
+  return { used: state.plots.reduce((a, p) => a + sideOf(p) ** 2, 0), total: buildableCount(mapSize(state)) };
 }
 
 /** Prochain agrandissement du territoire, s'il en reste un. */
@@ -1098,6 +1100,7 @@ export function sell(state: GameState, symbol: string, qty: number, price: numbe
 }
 
 const NO_CAPITAL = "Capital insuffisant : vos placements en bourse en produisent chaque jour.";
+const noRoom = (s: number) => (s > 1 ? `Il faut un carré libre de ${s} × ${s} carreaux, sans route.` : "Emplacement occupé ou sur une route.");
 
 /** Construit un bâtiment ; `tile` choisi par le joueur, sinon placement automatique. */
 export function build(state: GameState, buildingId: string, at: number, tile?: { x: number; y: number }): ActionResult {
@@ -1107,8 +1110,8 @@ export function build(state: GameState, buildingId: string, at: number, tile?: {
   if (b.cost > state.cash) return { ok: false, error: "Liquidités insuffisantes." };
   const capital = capitalCost(b);
   if (capital > (state.capital ?? 0)) return { ok: false, error: NO_CAPITAL };
-  if (tile && !isTileFree(state, tile.x, tile.y)) return { ok: false, error: "Emplacement occupé ou sur une route." };
-  const plots = tile ? [...state.plots, { id: b.id, x: tile.x, y: tile.y }] : addPlot(state.plots, b.id, mapSize(state));
+  if (tile && !isTileFree(state, tile.x, tile.y, footprint(b.id))) return { ok: false, error: noRoom(footprint(b.id)) };
+  const plots = tile ? [...state.plots, newPlot(b.id, tile.x, tile.y)] : addPlot(state.plots, b.id, mapSize(state));
   if (plots.length === state.plots.length) return { ok: false, error: "Plus de place sur la carte : agrandissez le territoire." };
   return {
     ok: true,
@@ -1126,7 +1129,8 @@ export function build(state: GameState, buildingId: string, at: number, tile?: {
 /** Démolit un bâtiment ; `tile` précise lequel, sinon le dernier construit de ce type. */
 export function demolish(state: GameState, buildingId: string, at: number, tile?: { x: number; y: number }): ActionResult {
   const b = BUILDING_BY_ID[buildingId];
-  if (tile && !state.plots.some((p) => p.id === buildingId && p.x === tile.x && p.y === tile.y)) return { ok: false, error: "Aucun bâtiment de ce type ici." };
+  const target = tile ? plotAt(state.plots, tile.x, tile.y) : undefined;
+  if (tile && target?.id !== buildingId) return { ok: false, error: "Aucun bâtiment de ce type ici." };
   const count = state.buildings[buildingId] ?? 0;
   if (!b || b.buildable === false || count <= 0) return { ok: false, error: "Rien à démolir." };
   const refund = b.cost * DEMOLISH_REFUND;
@@ -1141,7 +1145,7 @@ export function demolish(state: GameState, buildingId: string, at: number, tile?
       cash: state.cash + refund,
       buildings,
       today: spend(state, "demolish", loss),
-      plots: tile ? state.plots.filter((p) => !(p.x === tile.x && p.y === tile.y)) : removePlot(state.plots, b.id),
+      plots: tile ? state.plots.filter((p) => p !== target) : removePlot(state.plots, b.id),
       transactions: addTx(state, { kind: "demolish", label: `Démolition : ${b.name}`, amount: refund, at }),
     },
   };
@@ -1157,7 +1161,7 @@ export function upgradeOffer(state: Pick<GameState, "buildings">, buildingId: st
 
 /** Améliore sur place le bâtiment du carreau `tile` (recherche « Rénovation urbaine »). */
 export function upgrade(state: GameState, tile: { x: number; y: number }, at: number): ActionResult {
-  const plot = state.plots.find((p) => p.x === tile.x && p.y === tile.y);
+  const plot = plotAt(state.plots, tile.x, tile.y);
   if (!plot) return { ok: false, error: "Aucun bâtiment ici." };
   if (!hasResearch(state, "city_upgrade")) return { ok: false, error: "Débloquez d'abord « Rénovation urbaine » dans Recherche." };
   const offer = upgradeOffer(state, plot.id);
@@ -1166,6 +1170,9 @@ export function upgrade(state: GameState, tile: { x: number; y: number }, at: nu
   if (to.unlockPop && state.population < to.unlockPop) return { ok: false, error: `${to.name} : débloqué à ${to.unlockPop} habitants.` };
   if (offer.cost > state.cash) return { ok: false, error: "Liquidités insuffisantes." };
   if (offer.capital > (state.capital ?? 0)) return { ok: false, error: NO_CAPITAL };
+  // Une version plus grande prend plus de terrain : il lui faut un carré libre qui contient l'emplacement actuel
+  const spot = upgradeSpot(state, plot, to.id);
+  if (!spot) return { ok: false, error: `${to.name} occupe ${footprint(to.id)} × ${footprint(to.id)} carreaux : libérez de la place autour, sans route.` };
   const buildings = { ...state.buildings, [from.id]: (state.buildings[from.id] ?? 0) - 1, [to.id]: (state.buildings[to.id] ?? 0) + 1 };
   if (buildings[from.id] <= 0) delete buildings[from.id];
   return {
@@ -1175,7 +1182,7 @@ export function upgrade(state: GameState, tile: { x: number; y: number }, at: nu
       cash: round2(state.cash - offer.cost),
       ...(offer.capital ? { capital: round2((state.capital ?? 0) - offer.capital) } : {}),
       buildings,
-      plots: state.plots.map((p) => (p === plot ? { ...p, id: to.id } : p)),
+      plots: state.plots.map((p) => (p === plot ? spot : p)),
       transactions: addTx(state, { kind: "build", label: `Amélioration : ${from.name} → ${to.name}`, amount: -offer.cost, at }),
     },
   };
@@ -1208,22 +1215,39 @@ export function buildingAudit(buildingId: string, city: CityStats): { revenue: n
 
 // ─── Carte ────────────────────────────────────────────────────
 
-export function isTileFree(state: Pick<GameState, "plots"> & Partial<Pick<GameState, "territory">>, x: number, y: number) {
-  return isBuildable(x, y, mapSize(state)) && !state.plots.some((p) => p.x === x && p.y === y);
+/** Un terrain de `s` × `s` carreaux, d'angle (x, y), est-il libre et constructible ? */
+export function isTileFree(state: Pick<GameState, "plots"> & Partial<Pick<GameState, "territory">>, x: number, y: number, s = 1, ignore?: Plot) {
+  return canPlace(occupancy(state.plots), x, y, s, mapSize(state), ignore);
+}
+
+/** Reste-t-il quelque part un carré libre de `s` × `s` carreaux ? */
+export const hasRoom = (state: Pick<GameState, "plots"> & Partial<Pick<GameState, "territory">>, s = 1) => !!placeTile(state.plots, "", mapSize(state), s);
+
+/** Où tiendrait la version supérieure d'un bâtiment : à sa place si elle n'est pas plus grande, sinon dans un carré
+ *  libre qui recouvre son emplacement. `null` s'il n'y a pas la place. */
+export function upgradeSpot(state: Pick<GameState, "plots"> & Partial<Pick<GameState, "territory">>, plot: Plot, toId: string): Plot | null {
+  const s = Math.max(sideOf(plot), footprint(toId));
+  if (s === sideOf(plot)) return { ...plot, id: toId };
+  const used = occupancy(state.plots), size = mapSize(state);
+  for (let dy = 0; dy < s; dy++) for (let dx = 0; dx < s; dx++) {
+    const x = plot.x - dx, y = plot.y - dy;
+    if (x + s >= plot.x + sideOf(plot) && y + s >= plot.y + sideOf(plot) && canPlace(used, x, y, s, size, plot)) return { id: toId, x, y, s };
+  }
+  return null;
 }
 
 /** Déplace un bâtiment (gratuit). */
 export function moveBuilding(state: GameState, from: { x: number; y: number }, to: { x: number; y: number }): ActionResult {
-  const plot = state.plots.find((p) => p.x === from.x && p.y === from.y);
+  const plot = plotAt(state.plots, from.x, from.y);
   if (!plot) return { ok: false, error: "Aucun bâtiment à déplacer ici." };
-  if (from.x === to.x && from.y === to.y) return { ok: true, state };
-  if (!isTileFree(state, to.x, to.y)) return { ok: false, error: "Emplacement occupé ou sur une route." };
+  if (plot.x === to.x && plot.y === to.y) return { ok: true, state };
+  if (!isTileFree(state, to.x, to.y, sideOf(plot), plot)) return { ok: false, error: noRoom(sideOf(plot)) };
   return { ok: true, state: { ...state, plots: state.plots.map((p) => p === plot ? { ...p, x: to.x, y: to.y } : p) } };
 }
 
 function addPlot(plots: Plot[], id: string, size: number): Plot[] {
   const t = placeTile(plots, id, size);
-  return t ? [...plots, { id, ...t }] : plots;
+  return t ? [...plots, newPlot(id, t.x, t.y)] : plots;
 }
 
 function removePlot(plots: Plot[], id: string): Plot[] {

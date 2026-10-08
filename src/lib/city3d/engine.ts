@@ -5,7 +5,7 @@
 // qu'à 30 images par seconde au repos, et pas du tout quand elle est hors écran.
 import * as THREE from "three";
 import { BUILDING_BY_ID } from "@/lib/game/config";
-import { isBuildable, isRoad, mapBounds, MAP_SIZE, MAX_MAP_SIZE, type Plot } from "@/lib/game/layout";
+import { canPlace, footprint, isBuildable, isRoad, mapBounds, MAP_SIZE, MAX_MAP_SIZE, occupancy, sideOf, type Plot } from "@/lib/game/layout";
 import { CAT_COLOR, MARKER_COLOR, markerTip, nightFactor, type CityMarker, type CityMode, type CitySign, type Light, type MarkerKind } from "@/components/IsoCity";
 import { buildingModel, propModel, treeModel, type V3 } from "./models";
 
@@ -38,6 +38,10 @@ function hash(x: number, y: number) {
   return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
 }
 const keyOf = (p: Plot) => `${p.id}@${p.x},${p.y}`;
+/** Centre du terrain d'un bâtiment, et hauteur de sa maquette : un terrain plus grand donne un bâtiment plus large et un peu plus haut. */
+const ctr = (p: Plot, axis: "x" | "y") => p[axis] + sideOf(p) / 2;
+const tall = (s: number) => 1 + (s - 1) * 0.6;
+const topOf = (p: Plot) => buildingModel(p.id).top * tall(sideOf(p));
 
 /** Accumule des rectangles plats colorés (sol, routes, mer) dans une seule géométrie. */
 class Flat {
@@ -173,7 +177,7 @@ export class CityEngine {
     for (const p of plots) { const k = keyOf(p); if (!this.seen.has(k)) { this.seen.add(k); this.births.set(k, now); this.growUntil = now + 900; } }
 
     // Zone visible : autour des bâtiments (plus large en mode construction), arrêtée sur une route
-    const xs = plots.map((p) => p.x), ys = plots.map((p) => p.y);
+    const xs = plots.flatMap((p) => [p.x, p.x + sideOf(p) - 1]), ys = plots.flatMap((p) => [p.y, p.y + sideOf(p) - 1]);
     const pad = f.interactive ? 3 : 1, span = f.interactive ? 6 : 3;
     let x0 = Math.min(...xs, MAP_SIZE / 2 - span) - pad, x1 = Math.max(...xs, MAP_SIZE / 2 + span) + pad;
     let y0 = Math.min(...ys, MAP_SIZE / 2 - span) - pad, y1 = Math.max(...ys, MAP_SIZE / 2 + span) + pad;
@@ -181,7 +185,7 @@ export class CityEngine {
     x0 = Math.max(lo, x0); y0 = Math.max(lo, y0); x1 = Math.min(hi - 1, x1); y1 = Math.min(hi - 1, y1);
     this.x0 = Math.floor(x0 / 4) * 4; this.y0 = Math.floor(y0 / 4) * 4;
     this.x1 = Math.min(hi - 1, Math.ceil(x1 / 4) * 4); this.y1 = Math.min(hi - 1, Math.ceil(y1 / 4) * 4);
-    this.byTile = new Map(plots.map((p) => [`${p.x},${p.y}`, p]));
+    this.byTile = occupancy(plots);
     this.builtBlocks = new Set(plots.map((p) => `${Math.floor(p.x / 4)},${Math.floor(p.y / 4)}`));
 
     this.rebuild();
@@ -311,11 +315,12 @@ export class CityEngine {
       const lit = model.lit ? new THREE.InstancedMesh(model.lit, this.litMat, list.length) : null;
       if (lit) lit.frustumCulled = false;
       list.forEach((p, i) => {
-        this.place(solid, i, p.x + 0.5, 0, p.y + 0.5);
+        const w = sideOf(p), h = tall(w), cx = ctr(p, "x"), cy = ctr(p, "y");
+        this.place(solid, i, cx, 0, cy, w, h, w);
         if (lit) lit.setMatrixAt(i, this.m4);
         this.inst.set(keyOf(p), { solid, lit, index: i, plot: p });
-        for (const s of model.smoke) for (let k = 0; k < 3; k++) this.puffs.push({ at: [p.x + 0.5 + s[0], s[1], p.y + 0.5 + s[2]], off: k / 3 + hash(p.x, p.y) });
-        for (const r of model.rotors) this.spins.push({ at: [p.x + 0.5 + r.at[0], r.at[1], p.y + 0.5 + r.at[2]], size: r.size, off: hash(p.x * 3, p.y * 5) * 6 });
+        for (const s of model.smoke) for (let k = 0; k < 3; k++) this.puffs.push({ at: [cx + s[0] * w, s[1] * h, cy + s[2] * w], off: k / 3 + hash(p.x, p.y) });
+        for (const r of model.rotors) this.spins.push({ at: [cx + r.at[0] * w, r.at[1] * h, cy + r.at[2] * w], size: r.size * w, off: hash(p.x * 3, p.y * 5) * 6 });
       });
       this.world.add(solid); if (lit) this.world.add(lit);
     }
@@ -381,7 +386,7 @@ export class CityEngine {
     if (this.plots.length) {
       this.layerTiles = new THREE.InstancedMesh(this.plane, this.layerMat, this.plots.length);
       this.plots.forEach((p, i) => {
-        this.place(this.layerTiles!, i, p.x + 0.5, 0.062, p.y + 0.5);
+        this.place(this.layerTiles!, i, ctr(p, "x"), 0.062, ctr(p, "y"), sideOf(p), 1, sideOf(p));
         this.layerTiles!.setColorAt(i, this.col.set(CAT_COLOR[BUILDING_BY_ID[p.id]?.category ?? "housing"]));
       });
       this.layerTiles.frustumCulled = false; this.layerTiles.renderOrder = 2; this.layerTiles.visible = false; this.world.add(this.layerTiles);
@@ -420,14 +425,16 @@ export class CityEngine {
       this.hidden = hideKey;
     }
     this.fade.visible = !!from;
-    if (from) { this.fade.geometry = buildingModel(from.id).solid; this.fade.position.set(from.x + 0.5, 0, from.y + 0.5); }
-    // Carreau sélectionné
+    if (from) { const w = sideOf(from); this.fade.geometry = buildingModel(from.id).solid; this.fade.position.set(ctr(from, "x"), 0, ctr(from, "y")); this.fade.scale.set(w, tall(w), w); }
+    // Bâtiment sélectionné : tout son terrain
     const sel = l.mode?.kind === "move" ? l.mode.from : l.selected;
     this.sel.visible = this.ring.visible = !!sel;
     if (sel) {
       const c = l.mode?.kind === "move" ? 0xf59e0b : l.tone === "danger" ? 0xef4444 : 0x2563eb;
       this.selMat.color.set(c); this.ringMat.color.set(c);
-      this.sel.position.set(sel.x + 0.5, 0.058, sel.y + 0.5); this.ring.position.set(sel.x + 0.5, 0.06, sel.y + 0.5);
+      const p = this.byTile.get(`${sel.x},${sel.y}`) ?? { id: "", x: sel.x, y: sel.y }, w = sideOf(p);
+      this.sel.position.set(ctr(p, "x"), 0.058, ctr(p, "y")); this.ring.position.set(ctr(p, "x"), 0.06, ctr(p, "y"));
+      this.sel.scale.set(w, 1, w); this.ring.scale.set(w, 1, w);
     }
     this.refreshHover();
     this.syncOverlay();
@@ -435,7 +442,8 @@ export class CityEngine {
 
   private scaleInst(key: string, sy: number) {
     const it = this.inst.get(key); if (!it) return;
-    this.place(it.solid, it.index, it.plot.x + 0.5, 0, it.plot.y + 0.5, sy === 0 ? 0 : 1, sy, sy === 0 ? 0 : 1);
+    const w = sideOf(it.plot);
+    this.place(it.solid, it.index, ctr(it.plot, "x"), 0, ctr(it.plot, "y"), sy === 0 ? 0 : w, sy * tall(w), sy === 0 ? 0 : w);
     it.solid.instanceMatrix.needsUpdate = true;
     if (it.lit) { it.lit.setMatrixAt(it.index, this.m4); it.lit.instanceMatrix.needsUpdate = true; }
   }
@@ -445,15 +453,22 @@ export class CityEngine {
     const inside = !!hv && hv.x >= this.x0 && hv.x <= this.x1 && hv.y >= this.y0 && hv.y <= this.y1;
     this.hover.visible = false; this.ghost.visible = false;
     if (!hv || !inside) return;
-    const taken = this.byTile.has(`${hv.x},${hv.y}`), free = isBuildable(hv.x, hv.y, this.mapSize) && !taken;
+    const at = this.byTile.get(`${hv.x},${hv.y}`);
+    // Terrain visé : en construction ou en déplacement, le carré du bâtiment à poser (le carreau survolé en est l'angle) ;
+    // sinon, tout le terrain du bâtiment survolé
+    let x = hv.x, y = hv.y, w = 1;
     if (m) {
-      const ok = free || (m.kind === "move" && m.from.x === hv.x && m.from.y === hv.y);
+      const moving = m.kind === "move" ? this.byTile.get(`${m.from.x},${m.from.y}`) : undefined;
+      w = moving ? sideOf(moving) : footprint(m.id);
+      const free = canPlace(this.byTile, x, y, w, this.mapSize, moving), back = !!moving && moving.x === x && moving.y === y;
+      const ok = free || back;
       this.hoverMat.color.set(ok ? 0x10b981 : 0xef4444); this.hoverMat.opacity = ok ? 0.45 : 0.35; this.hover.visible = true;
-      if (free) { this.ghost.geometry = buildingModel(m.id).solid; this.ghost.position.set(hv.x + 0.5, 0, hv.y + 0.5); this.ghost.visible = true; }
-    } else if (taken) {
+      if (free && !back) { this.ghost.geometry = buildingModel(m.id).solid; this.ghost.position.set(x + w / 2, 0, y + w / 2); this.ghost.scale.set(w, tall(w), w); this.ghost.visible = true; }
+    } else if (at) {
+      x = at.x; y = at.y; w = sideOf(at);
       this.hoverMat.color.set(this.live.tone === "danger" ? 0xef4444 : 0x2563eb); this.hoverMat.opacity = this.live.tone === "danger" ? 0.28 : 0.22; this.hover.visible = true;
     }
-    this.hover.position.set(hv.x + 0.5, 0.056, hv.y + 0.5);
+    this.hover.position.set(x + w / 2, 0.056, y + w / 2); this.hover.scale.set(w, 1, w);
   }
 
   // ─── Indicateurs et enseignes : de simples éléments HTML posés au-dessus des bâtiments ───
@@ -476,7 +491,7 @@ export class CityEngine {
       }
       const mast = document.createElement("div"); mast.style.cssText = "width:1.6px;height:calc(var(--s) * 0.2);background:#64748B";
       el.append(panel, mast); this.overlay.appendChild(el);
-      this.pins.push({ el, x: p.x, y: p.y, top: buildingModel(p.id).top, lift: 0 });
+      this.pins.push({ el, x: ctr(p, "x"), y: ctr(p, "y"), top: topOf(p), lift: 0 });
     }
     if (!l.mode) for (const mk of l.markers) {
       const p = this.byTile.get(`${mk.x},${mk.y}`); if (!p) continue;
@@ -487,7 +502,7 @@ export class CityEngine {
       el.addEventListener("click", (e) => { e.stopPropagation(); this.cb.click(mk.x, mk.y); });
       if (!this.reduce) (el.firstElementChild as HTMLElement).animate([{ transform: "translateY(0)" }, { transform: "translateY(-4px)" }], { duration: 1300 + ((mk.x * 37 + mk.y * 11) % 5) * 90, direction: "alternate", iterations: Infinity, easing: "ease-in-out" });
       this.overlay.appendChild(el);
-      this.pins.push({ el, x: mk.x, y: mk.y, top: buildingModel(p.id).top, lift: l.signs[`${mk.x},${mk.y}`] ? 1 : 0 });
+      this.pins.push({ el, x: ctr(p, "x"), y: ctr(p, "y"), top: topOf(p), lift: l.signs[`${mk.x},${mk.y}`] ? 1 : 0 });
     }
     this.placePins();
   }
@@ -496,7 +511,7 @@ export class CityEngine {
     const sc = 1 / this.u / OLD_PX, size = Math.max(20, Math.min(64, 28 * sc)), r = Math.max(8, Math.min(13, 9 * sc));
     this.overlay.style.setProperty("--s", `${size.toFixed(1)}px`); this.overlay.style.setProperty("--r", `${r.toFixed(1)}px`);
     for (const p of this.pins) {
-      const [sx, sy] = this.project(p.x + 0.5, p.top + 0.06, p.y + 0.5);
+      const [sx, sy] = this.project(p.x, p.top + 0.06, p.y);
       const off = sx < -80 || sx > this.W + 80 || sy < -40 || sy > this.H + 120;
       p.el.style.display = off ? "none" : "";
       if (!off) p.el.style.transform = `translate(${sx.toFixed(1)}px,${(sy - p.lift * (size * 1.25)).toFixed(1)}px) translate(-50%,-100%)`;
@@ -717,8 +732,8 @@ export class CityEngine {
     this.hoverTile = { x: tx, y: ty };
     const p = this.byTile.get(`${tx},${ty}`), b = p ? BUILDING_BY_ID[p.id] : undefined;
     if (p && !this.live.mode) {
-      const [ax, ay] = this.project(tx + 0.5, buildingModel(p.id).top + 0.06, ty + 0.5);
-      const mk = this.markerMap.get(`${tx},${ty}`), sg = this.live.signs[`${tx},${ty}`];
+      const [ax, ay] = this.project(ctr(p, "x"), topOf(p) + 0.06, ctr(p, "y"));
+      const mk = this.markerMap.get(`${p.x},${p.y}`), sg = this.live.signs[`${p.x},${p.y}`];
       this.cb.tip({ left: ax, top: ay - (mk ? 34 : sg ? 30 : 6), title: sg?.title ?? b?.name ?? p.id, text: (mk && markerTip(mk)) ?? sg?.text ?? b?.description ?? "", warn: !!mk });
     } else this.cb.tip(null);
     this.refreshHover(); this.draw();

@@ -245,6 +245,7 @@ function Thumb({ b }: { b: BuildingType }) {
 function chips(b: BuildingType): { text: string; cls: string }[] {
   const out: { text: string; cls: string }[] = [], p100 = (v: number) => Math.round(v * 100);
   const special = "bg-violet-50 text-violet-700";
+  if (b.size) out.push({ text: `${b.size} × ${b.size} carreaux`, cls: "bg-slate-800 text-white" });
   if (b.housing) out.push({ text: `+${num(b.housing)} hab.`, cls: "bg-blue-50 text-blue-700" });
   if (b.jobs) out.push({ text: `${num(b.jobs)} emplois`, cls: "bg-slate-100 text-slate-700" });
   if (b.revenue) out.push({ text: `+${num(b.revenue)} €/j`, cls: "bg-success-soft text-emerald-700" });
