@@ -32,7 +32,8 @@ const HUB_POINTS = HUBS.map((h) => ({ ...h, xy: projection(h.coords) ?? [0, 0] }
 export const countryName = (id: string) => PLAYABLE[id] ?? SHAPES.find((s) => s.id === id)?.name ?? "—";
 export const countryCentroid = (id: string) => SHAPES.find((s) => s.id === id)?.centroid ?? [MAP_W / 2, MAP_H / 2];
 
-export interface MapOwner { country: string; cityName: string; isMe: boolean; population: number; name?: string }
+/** Ce que la carte montre d'un pays habité : la ville mise en avant (la mienne, sinon la plus riche) et le nombre de villes. */
+export interface MapOwner { country: string; cityName: string; isMe: boolean; population: number; name?: string; count?: number }
 
 const C = {
   land: "#E7ECF2", playable: "#FBFCFE", edge: "#B6C4D6", other: "#C9D5E3",
@@ -283,7 +284,9 @@ export default function WorldMap({ owners, selected, onSelect, focus }: {
               <g key={o.country} transform={`translate(${x},${y})`}>
                 {o.isMe && <circle r={9} fill="none" stroke="#2563EB" strokeWidth={2} className="animate-ping motion-reduce:hidden" style={{ transformOrigin: "center", transformBox: "fill-box", animationDuration: "2.2s" }} />}
                 <path d="M0 0 C-7 -9 -8 -13 -8 -16 A8 8 0 1 1 8 -16 C8 -13 7 -9 0 0Z" fill={o.isMe ? "#2563EB" : "#334155"} stroke="#FFFFFF" strokeWidth={1.8} />
-                <circle cy={-16} r={3.2} fill="#FFFFFF" />
+                {(o.count ?? 1) > 1
+                  ? <text y={-12.5} textAnchor="middle" fontSize={9} fontWeight={800} fill="#FFFFFF">{o.count}</text>
+                  : <circle cy={-16} r={3.2} fill="#FFFFFF" />}
                 {(o.isMe || k >= 1.8) && (
                   <text y={14} textAnchor="middle" fontSize={11} fontWeight={700} fill={o.isMe ? "#1D4ED8" : "#0F172A"} stroke="#FFFFFF" strokeWidth={3.5} paintOrder="stroke">{o.cityName}</text>
                 )}
@@ -299,7 +302,7 @@ export default function WorldMap({ owners, selected, onSelect, focus }: {
           <>
             <div className="text-[12px] font-semibold whitespace-nowrap">{countryName(hoverId)}</div>
             <div className="text-[11px] text-slate-300 whitespace-nowrap">
-              {hovered ? `${hovered.isMe ? "Votre ville" : hovered.name || "Joueur"} · ${hovered.cityName}` : PLAYABLE[hoverId] ? "Pays libre" : "Non jouable"}
+              {hovered ? `${(hovered.count ?? 1) > 1 ? `${hovered.count} villes · ` : ""}${hovered.isMe ? "Votre ville" : hovered.name || "Joueur"} · ${hovered.cityName}` : PLAYABLE[hoverId] ? "Aucune ville pour l'instant" : "Non jouable"}
             </div>
           </>
         )}

@@ -238,7 +238,10 @@ async function connect(uid: string, name: string) {
   useOnline.setState({ phase: "connecting" });
   try {
     // Crée le profil du joueur à sa première connexion (nom et avatar lus depuis Discord) et lui attribue un pays
-    const joined = await rpc<{ country: string | null }[]>("join_world", { p_countries: countryPreference(uid) });
+    // Plusieurs villes par pays : `join_world_v2` place aussi les joueurs quand il ne reste aucun pays vide.
+    // Tant que cette fonction n'existe pas sur le serveur, on garde l'ancienne (un pays par joueur).
+    const prefs = { p_countries: countryPreference(uid) };
+    const joined = await rpc<{ country: string | null }[]>("join_world_v2", prefs).catch(() => rpc<{ country: string | null }[]>("join_world", prefs));
     if (active !== uid) return; // déconnecté entre-temps
     useOnline.setState({ country: joined?.[0]?.country ?? null });
 
@@ -296,7 +299,7 @@ export async function createAccount(cityName: string): Promise<string | null> {
   return null;
 }
 
-/** Déménagement : réserve le pays côté serveur. `false` = pays déjà pris. Lève une erreur si le serveur ne répond pas. */
+/** Déménagement : réserve une place dans le pays côté serveur. `false` = pays complet. Lève une erreur si le serveur ne répond pas. */
 export async function reserveCountry(country: string): Promise<boolean> {
   const ok = await rpc<boolean>("move_country", { p_country: country });
   if (ok) useOnline.setState({ country });

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { BookOpen } from "lucide-react";
 import { useGame } from "@/store/game";
 import {
-  ACTIVE_RATIO, BANK, BRANCH_COST, CAPITAL, LEVERAGE, BRANCH_EFFECTS, BRANCH_MIN_VALUE, BUILDINGS, BUILDING_BY_ID, CATEGORY_LABELS, CITY_RANKS, CONTRACT_RATIO, COUNTRY_PRICES,
+  ACTIVE_RATIO, BANK, BRANCH_COST, CITIES_PER_COUNTRY, CAPITAL, LEVERAGE, BRANCH_EFFECTS, BRANCH_MIN_VALUE, BUILDINGS, BUILDING_BY_ID, CATEGORY_LABELS, CITY_RANKS, CONTRACT_RATIO, COUNTRY_PRICES,
   DAY_LENGTH_MINUTES, DEMOLISH_REFUND, ENERGY_PER_RESIDENT, EXPORT_RATIO, FOOD_PER_RESIDENT, GOALS, HUB_DESK_COST, HUB_FEE_FACTOR, MAINTENANCE_RATE,
   FEATURES, ORIENTATIONS, ORIENTATION_CHANGE_COST, ORIENTATION_MIN_RANK,
   MAX_CATCHUP_DAYS, MAX_CONTRACTS, NEED_PER_RANK, POLLUTION_MAX, PROJECTS, RENOVATE_RATE, RESOURCE_PRICES, SERVICES, SERVICE_IDS, SPECIALTY_BONUS,
@@ -223,7 +223,9 @@ export default function WikiPage() {
 
           <Section id="monde" title="Monde et pays">
             <ul className="list-disc space-y-1.5 pl-5">
-              <li>Chaque joueur occupe un pays. Vous pouvez <b>déménager</b> vers un pays libre : la ville garde tout, vous payez le prix du pays.</li>
+              <li>Un pays est une <b>région</b> : il accueille jusqu&apos;à {CITIES_PER_COUNTRY} villes, et toutes profitent de sa spécialité. À l&apos;arrivée, le jeu vous place dans un des pays les moins peuplés.</li>
+              <li>Vous pouvez <b>déménager</b> vers tout pays qui a encore de la place : la ville garde tout, vous payez le prix du pays.</li>
+              <li>Le classement <b>Pays</b> additionne le patrimoine de toutes les villes d&apos;un pays : vos voisins sont votre équipe.</li>
               <li>Quatre catégories de prix : {COUNTRY_PRICES.map((p) => compactEur(p)).join(", ")}. Plus le pays est cher, plus sa spécialité est forte ({SPECIALTY_BONUS.map((b) => pct(b)).join(", ")}).</li>
               <li>Depuis la carte ou le classement, vous pouvez <b>visiter</b> la ville d&apos;un autre joueur.</li>
             </ul>
