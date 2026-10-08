@@ -3,10 +3,10 @@
 // Séparée de la vraie bourse : ici le prix d'une part suit le patrimoine que la ville publie (patrimoine / 1 000),
 // et l'argent passe toujours d'un joueur à l'autre. Le jeu ne dit jamais dans quelle ville investir.
 import { useEffect, useState } from "react";
-import { Building2, HandCoins, Landmark, Lock } from "lucide-react";
+import { Building2, HandCoins, Landmark, Lock, Swords } from "lucide-react";
 import { useDerived, useGame } from "@/store/game";
 import { useAuth } from "@/lib/auth";
-import { buyCityShares, buybackCityShares, setShareFloat, syncShares } from "@/lib/online";
+import { buyCityShares, buybackCityShares, hostileBid, setShareFloat, syncShares } from "@/lib/online";
 import { STATIC_MODE } from "@/lib/market/client";
 import { CITY_RANKS, FEATURES, SHARES } from "@/lib/game/config";
 import { featureOpen, shareDividend, sharePrice } from "@/lib/game/engine";
@@ -140,7 +140,9 @@ export default function ShareMarket({ players }: { players: PublicPlayer[] }) {
                   <li key={h.holder} className="flex items-center gap-2 px-2.5 py-2">
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-[13px] font-semibold">{h.name}</div>
-                      <div className="text-[11px] text-muted tabular">{num(h.qty)} parts · {share(h.qty)} · {eur(h.qty * shareDividend(city.operating))}/j</div>
+                      <div className="text-[11px] text-muted tabular">{num(h.qty)} parts · {share(h.qty)} · {eur(h.qty * shareDividend(city.operating))}/j
+                        {h.qty >= SHARES.control && <span className="font-semibold text-danger"> · contrôle votre ville : tribut de {eur(city.tribute.paid)}/j</span>}
+                      </div>
                     </div>
                     <ConfirmButton disabled={busy || game.cash < cost} confirmLabel={`Confirmer : ${compactEur(cost)} au plus`}
                       onConfirm={() => act(() => buybackCityShares(h.holder, h.name, h.qty, cost), (v) => `Parts rachetées pour ${eur(v)}`, "Rachat refusé : le prix a changé, réessayez.")}
@@ -160,11 +162,25 @@ export default function ShareMarket({ players }: { players: PublicPlayer[] }) {
             <ul className="divide-y divide-line">
               {mine.held.map((h) => {
                 const value = h.qty * sharePrice(h.netWorth), pnl = value - h.cost;
+                // Rachat hostile : avec assez de parts, on force la vente du reste (jusqu'à 49 %), payé plus cher au propriétaire
+                const target = players.find((p) => p.id === h.city);
+                const rest = SHARES.maxFloat - (target?.shareSold ?? SHARES.maxFloat), ally = !!game.alliance && target?.alliance === game.alliance.id;
+                const bid = Math.ceil(sharePrice(h.netWorth) * rest * SHARES.raidPremium * SLACK);
+                const canRaid = h.qty >= SHARES.raidFrom && rest > 0 && !ally;
                 return (
                   <li key={h.city} className="flex items-center gap-3 py-2.5">
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-[13px] font-semibold">{h.name}</div>
-                      <div className="text-[11px] text-muted tabular">{num(h.qty)} parts · {share(h.qty)} · dividende {signedEur(h.qty * shareDividend(h.income))}/j</div>
+                      <div className="text-[11px] text-muted tabular">{num(h.qty)} parts · {share(h.qty)} · dividende {signedEur(h.qty * shareDividend(h.income))}/j
+                        {h.qty >= SHARES.control && <span className="font-semibold text-primary"> · vous contrôlez la ville : tribut {signedEur(SHARES.tribute * Math.max(0, h.income))}/j</span>}
+                      </div>
+                      {canRaid && (
+                        <ConfirmButton disabled={busy || game.cash < bid} confirmLabel={`Confirmer : ${compactEur(bid)} au plus`}
+                          onConfirm={() => act(() => hostileBid(h.city, h.name, bid), (v) => `Rachat hostile de ${h.name} : ${num(rest)} parts pour ${eur(v)}`, "Rachat hostile refusé : la situation a changé.")}
+                          className="mt-1.5 inline-flex items-center gap-1.5 rounded-[8px] border border-line px-2.5 py-1 text-[12px] font-semibold text-danger hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40">
+                          <span title={game.cash < bid ? "Liquidités insuffisantes" : `Force la vente des ${num(rest)} parts restantes, payées ${SHARES.raidPremium.toLocaleString("fr-FR")} fois leur prix au propriétaire`} className="inline-flex items-center gap-1.5"><Swords size={13} />Rachat hostile · {compactEur(sharePrice(h.netWorth) * rest * SHARES.raidPremium)}</span>
+                        </ConfirmButton>
+                      )}
                     </div>
                     <div className="shrink-0 text-right tabular">
                       <div className="text-[13px] font-semibold">{eur(value)}</div>
@@ -175,7 +191,8 @@ export default function ShareMarket({ players }: { players: PublicPlayer[] }) {
               })}
             </ul>
           )}
-          <p className="mt-3 text-[11px] text-muted">Vos parts comptent dans votre patrimoine. Elles vous sont payées au prix du jour quand le propriétaire les rachète. Jusqu&apos;à {SHARES.maxLines} villes différentes.</p>
+          <p className="mt-3 text-[11px] text-muted">Vos parts comptent dans votre patrimoine. Elles vous sont payées au prix du jour quand le propriétaire les rachète. Jusqu&apos;à {SHARES.maxLines} villes différentes.
+            Avec {num(SHARES.raidFrom)} parts d&apos;une ville, vous pouvez lancer un rachat hostile ; avec {num(SHARES.control)}, vous la contrôlez et touchez un tribut de {Math.round(SHARES.tribute * 100)} % de son flux net.</p>
         </Card>
       </div>
     </div>

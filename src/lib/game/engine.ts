@@ -7,7 +7,7 @@ import {
   NEED_PER_RANK, POLLUTION_FACTOR, POLLUTION_MAX, PRESTIGE_PER_GOAL, PRESTIGE_PER_RANK, PROJECTS, PROJECT_BY_ID,
   FEATURES, ORIENTATION_BY_ID, ORIENTATION_CHANGE_COST, ORIENTATION_MIN_RANK, type FeatureId, type OrientationId,
   RENOVATE_RATE, TERRITORY, WEAR_MAINTENANCE, WEAR_PER_DAY, WEAR_SATISFACTION,
-  ALLIANCE, BANK, CAPITAL, CITY_EFFECT_CAPS, LEVERAGE, SHARES, TOURISM, CITY_RANKS, FORECAST_DAYS, GOALS, UPGRADES, SERVICES, SERVICE_BONUS, SERVICE_IDS,
+  ALLIANCE, BANK, BLOCKADE, CAPITAL, CITY_EFFECT_CAPS, LEVERAGE, SANDBOX, SHARES, TOURISM, CITY_RANKS, FORECAST_DAYS, GOALS, UPGRADES, SERVICES, SERVICE_BONUS, SERVICE_IDS,
   STARTING_BUILDINGS, STARTING_CASH, STARTING_POPULATION, START_GRANT, TAX_PER_RESIDENT, TRADE_FEE_MIN, TRADE_FEE_RATE,
   type BuildingType, type Category, type Goal, type ServiceId, type Specialty,
 } from "./config";
@@ -15,6 +15,7 @@ import { isBuildable, layoutFrom, placeTile, type Plot } from "./layout";
 import { HUBS, HUB_BY_NAME, PLAYABLE, countryBonus, countryPrice, countrySpecialty, type Hub } from "../world/countries";
 import { ASSET_BY_SYMBOL, familyOf, regionOf, type Asset } from "../market/universe";
 import { RESEARCH_BY_ID, RETIRED_RESEARCH, STARTING_RESEARCH } from "./research";
+import { EVENTS, EVENT_BY_ID, effectText, eventStrength, pickEvent, scaledEffect, type CityEvent, type CityEventDef } from "./events";
 
 /** Ligne du portefeuille. `qty` = titres détenus (mise × levier), `debt` = part prêtée par la Banque de la ville.
  *  Ce que la ligne vaut pour le joueur : `qty × cours − debt` (voir holdingValue). */
@@ -113,6 +114,11 @@ export interface GameState {
   alliance?: AllianceState;
   /** Bourse des villes : copie de ce que le serveur connaît (parts détenues, actionnaires, paiements déjà encaissés). */
   shares?: ShareState;
+  /** Événement de ville en cours (ou le dernier), et dernière semaine pour laquelle le jeu a décidé. */
+  event?: CityEvent;
+  eventWeek?: number;
+  /** Mode test (comptes de test uniquement) : `saved` = la vraie partie, mise de côté pour pouvoir y revenir. */
+  sandbox?: { saved: unknown };
   /** Ancien système (positions à levier séparées) : converti en lignes du portefeuille au chargement. */
   positions?: LevPosition[];
   transactions: Transaction[];
@@ -133,7 +139,14 @@ export interface Shareholder { holder: string; name: string; qty: number }
 export interface ShareState { credit: number; float: number; sold: number; held: CityStake[]; holders: Shareholder[] }
 
 /** `members` = identifiants de toutes les villes de l'alliance (le joueur compris), `gift` = ce qu'il a versé à la caisse. */
-export interface AllianceState { id: string; name: string; tag: string; treasury: number; leader: string | null; members: string[]; gift: number }
+export interface AllianceState {
+  id: string; name: string; tag: string; treasury: number; leader: string | null; members: string[]; gift: number;
+  /** Guerre économique : blocus subi (sigle de l'alliance qui bloque, fin en millisecondes) et blocus mené. */
+  blockadedBy?: { tag: string; until: number };
+  blockading?: { tag: string; until: number };
+  /** Protection contre un nouveau blocus, jusqu'à cette date. */
+  shieldUntil?: number;
+}
 
 export type Prices = Record<string, number>;
 
@@ -201,6 +214,10 @@ export interface CityStats {
   /** Tourisme : attrait de la ville (satisfaction, pollution), visiteurs amenés par les transports,
    *  multiplicateur appliqué aux revenus des bâtiments touristiques, et ce qu'ils rapportent aujourd'hui. */
   tourism: { attractiveness: number; visitors: number; factor: number; revenue: number };
+  /** Événement de ville en cours : ce qu'il change à cette force, et combien de jours il reste. */
+  event: { id: string; name: string; kind: CityEventDef["kind"]; text: string; effect: string; daysLeft: number; strength: number } | null;
+  /** Tribut de la bourse des villes : versé à l'actionnaire qui contrôle la ville, reçu des villes que l'on contrôle. */
+  tribute: { paid: number; received: number };
   /** Effets des bâtiments spéciaux, plafonds appliqués : prix d'export (part du prix plein), vétusté ralentie,
    *  capital en plus, croissance en plus, points de satisfaction. */
   effects: { exportRatio: number; wearCut: number; capitalBoost: number; growthBoost: number; joy: number };
@@ -220,7 +237,7 @@ export interface CityStats {
 
 /** Ce dont le calcul de la ville a besoin ; seuls les bâtiments et la population sont obligatoires. */
 export type CityInput = Pick<GameState, "buildings" | "population">
-  & Partial<Pick<GameState, "branches" | "holdings" | "country" | "wear" | "projects" | "contracts" | "territory" | "orientation" | "shares" | "alliance">>;
+  & Partial<Pick<GameState, "branches" | "holdings" | "country" | "wear" | "projects" | "contracts" | "territory" | "orientation" | "shares" | "alliance" | "event" | "day">>;
 
 /** Côté de la carte du joueur (elle s'agrandit avec le territoire). */
 export const mapSize = (state: Partial<Pick<GameState, "territory">>) => TERRITORY[clamp(state.territory ?? 0, 0, TERRITORY.length - 1)].size;
@@ -273,13 +290,18 @@ export function computeCity(state: CityInput): CityStats {
   foodProd *= orientation?.food ?? 1;
   if (specialty === "energy") energyProd *= 1 + bonus;
   if (specialty === "agri") foodProd *= 1 + bonus;
+  // Événement de la semaine, tant qu'il dure
+  const ev = activeEvent(state), evFx = ev ? scaledEffect(ev.def, ev.strength) : null;
+  if (evFx) { energyProd *= evFx.energy; foodProd *= evFx.food; }
   // Les grands projets comptent dans le patrimoine (pas d'entretien)
   assetValue += projects.reduce((a, p) => a + p.cost, 0);
   // Le territoire acheté aussi
   for (let i = 1; i <= Math.min(state.territory ?? 0, TERRITORY.length - 1); i++) assetValue += TERRITORY[i].cost;
 
   for (const key of FX_KEYS) fx[key] = Math.min(fx[key], CITY_EFFECT_CAPS[key]);
-  const exportRatio = EXPORT_RATIO + fx.exportBonus;
+  // Blocus : les villes bloquées vendent leurs surplus moins cher, celles qui bloquent un peu plus cher
+  const exportRatio = Math.max(0.3, EXPORT_RATIO + fx.exportBonus
+    - (state.alliance?.blockadedBy ? BLOCKADE.targetLoss : 0) + (state.alliance?.blockading ? BLOCKADE.attackerGain : 0));
   const pop = Math.min(state.population, housing);
   energyUse += pop * ENERGY_PER_RESIDENT;
   const foodUse = pop * FOOD_PER_RESIDENT;
@@ -307,6 +329,7 @@ export function computeCity(state: CityInput): CityStats {
   factor("Pollution", -pollutionPenalty);
   factor("Vétusté", -wear * WEAR_SATISFACTION);
   if (orientation?.satisfaction) factor(orientation.name, orientation.satisfaction);
+  if (ev && evFx) factor(ev.def.name, evFx.satisfaction);
   factor("Culture et loisirs", fx.joy);
   // Équipements publics : un bonus quand ils sont là, une pénalité (qui monte avec le rang) quand la ville les attend
   const services = {} as CityStats["services"];
@@ -326,9 +349,9 @@ export function computeCity(state: CityInput): CityStats {
   const staffing = jobs > 0 ? employed / jobs : 0;
   // Tourisme : une ville agréable et propre attire, les transports amènent les visiteurs
   const attractiveness = clamp(TOURISM.base + TOURISM.perSatisfaction * satisfaction - TOURISM.perPollution * pollutionPenalty, TOURISM.min, TOURISM.max);
-  const tourismFactor = attractiveness * (1 + fx.visitors);
+  const tourismFactor = attractiveness * (1 + fx.visitors) * (evFx?.tourism ?? 1);
   const tourismIncome = tRevenue * tourismFactor * staffing;
-  const buildingsIncome = bRevenue * staffing + tourismIncome;
+  const buildingsIncome = bRevenue * staffing * (evFx?.revenue ?? 1) + tourismIncome;
 
   // Commerce : les contrats entre joueurs passent d'abord (meilleur prix des deux côtés), le reste au prix du marché
   // Entre alliés, le contrat se fait à un prix encore meilleur ; ces contrats-là sont servis en premier.
@@ -349,12 +372,15 @@ export function computeCity(state: CityInput): CityStats {
   const exportsValue = te.exports + tf.exports;
   const importsValue = te.imports + tf.imports;
 
-  const maintenance = cityValue * MAINTENANCE_RATE * (1 + wear * WEAR_MAINTENANCE);
+  const maintenance = cityValue * MAINTENANCE_RATE * (1 + wear * WEAR_MAINTENANCE) * (evFx?.maintenance ?? 1);
   const grant = START_GRANT.perDay * Math.max(0, 1 - pop / START_GRANT.untilPop);
   // Bourse des villes : on touche sa part du flux des villes dont on est actionnaire, on verse la leur à ses propres actionnaires
   const operating = taxes + buildingsIncome + exportsValue + grant - maintenance - importsValue;
-  const dividendsIn = (state.shares?.held ?? []).reduce((a, s) => a + s.qty * shareDividend(s.income), 0);
-  const dividendsOut = (state.shares?.sold ?? 0) * shareDividend(operating);
+  // Rachat hostile : l'actionnaire qui contrôle une ville touche en plus un tribut sur son flux net
+  const tributeIn = (state.shares?.held ?? []).reduce((a, s) => a + (s.qty >= SHARES.control ? SHARES.tribute * Math.max(0, s.income) : 0), 0);
+  const tributeOut = (state.shares?.holders ?? []).some((h) => h.qty >= SHARES.control) ? SHARES.tribute * Math.max(0, operating) : 0;
+  const dividendsIn = (state.shares?.held ?? []).reduce((a, s) => a + s.qty * shareDividend(s.income), 0) + tributeIn;
+  const dividendsOut = (state.shares?.sold ?? 0) * shareDividend(operating) + tributeOut;
   const incomeTotal = taxes + buildingsIncome + exportsValue + grant + dividendsIn;
   const expensesTotal = maintenance + importsValue + dividendsOut;
 
@@ -364,7 +390,7 @@ export function computeCity(state: CityInput): CityStats {
     growth = housing - state.population; // démolition : départ immédiat
   } else if (freeHousing > 0) {
     const jobPull = clamp(0.3 + (openJobs / Math.max(1, active)) * 3, 0.2, 1.5);
-    growth = Math.min(freeHousing, Math.max(3, Math.round(pop * 0.08 * satisfaction * jobPull * (1 + fx.growthBoost))));
+    growth = Math.min(freeHousing, Math.max(3, Math.round(pop * 0.08 * satisfaction * jobPull * (1 + fx.growthBoost) * (evFx?.growth ?? 1))));
   } else if (unemploymentRate > 0.2 && satisfaction < 0.5) {
     growth = -Math.round(pop * 0.01);
   }
@@ -380,6 +406,8 @@ export function computeCity(state: CityInput): CityStats {
     income: { taxes, buildings: buildingsIncome, exports: exportsValue, grant, dividends: dividendsIn, total: incomeTotal },
     expenses: { maintenance, imports: importsValue, dividends: dividendsOut, total: expensesTotal },
     tourism: { attractiveness, visitors: fx.visitors, factor: tourismFactor, revenue: tourismIncome },
+    event: ev ? { id: ev.def.id, name: ev.def.name, kind: ev.def.kind, text: ev.def.text, effect: effectText(ev.def, ev.strength), daysLeft: ev.daysLeft, strength: ev.strength } : null,
+    tribute: { paid: tributeOut, received: tributeIn },
     effects: { exportRatio, wearCut: fx.wearCut, capitalBoost: fx.capitalBoost, growthBoost: fx.growthBoost, joy: fx.joy },
     operating,
     exportsValue, importsValue,
@@ -566,12 +594,59 @@ export function tickDay(state: GameState, prices: Prices, at: number): GameState
     population: Math.max(0, state.population + c.growth),
     wear: nextWear(state.wear, state.population, c.effects.wearCut),
   };
+  // Mode test : la caisse ne se vide jamais et tout reste débloqué
+  if (state.sandbox) Object.assign(next, { cash: Math.max(next.cash, SANDBOX.cash), capital: Math.max(next.capital ?? 0, SANDBOX.capital), population: Math.max(next.population, SANDBOX.population) });
   delete next.today;
   const t = state.today ?? NO_COSTS;
+  // Une fois par semaine, le jeu décide s'il arrive quelque chose à la ville
+  let bonus = 0;
+  const week = Math.floor(next.day / EVENTS.every);
+  if (week > (state.eventWeek ?? 0)) {
+    const rolled = rollEvent(next, c, eventSeed(state, week), at);
+    Object.assign(next, rolled.state, { eventWeek: week });
+    bonus = rolled.cash;
+  }
   next.history = [...state.history, {
-    ...snapshot(next, prices, at), flow: round2(c.net + (t.extra ?? 0)), fees: round2(t.fees + interest), research: t.research, demolish: t.demolish,
+    ...snapshot(next, prices, at), flow: round2(c.net + (t.extra ?? 0) + bonus), fees: round2(t.fees + interest), research: t.research, demolish: t.demolish,
   }].slice(-500);
   return next;
+}
+
+// ─── Événements de ville ──────────────────────────────────────
+
+/** Événement dont les effets courent encore, avec sa définition. */
+function activeEvent(state: Partial<Pick<GameState, "event" | "day">>): { def: CityEventDef; strength: number; daysLeft: number } | null {
+  const e = state.event, def = e ? EVENT_BY_ID[e.id] : undefined;
+  if (!e || !def || state.day === undefined || state.day >= e.until) return null;
+  return { def, strength: clamp(e.strength, 0, 1), daysLeft: e.until - state.day };
+}
+/** Graine du tirage d'une semaine : propre à la partie, identique sur tous les appareils. */
+const eventSeed = (state: Pick<GameState, "createdAt">, week: number) => Math.floor(state.createdAt / 1000) * 31 + week * 7919;
+
+/** Tire l'événement de la semaine d'après l'état de la ville et l'applique. `cash` = aide versée d'un coup, s'il y en a une.
+ *  `force` écarte le « rien cette semaine » (mode test). */
+export function rollEvent(state: GameState, city: CityStats, seed: number, at: number, force = false): { state: GameState; cash: number; def: CityEventDef | null } {
+  const def = pickEvent(city, seed, force);
+  if (!def) return { state, cash: 0, def: null };
+  const strength = eventStrength(def, city);
+  const cash = def.effect.cashDays ? round2(def.effect.cashDays * Math.max(0, city.operating)) : 0;
+  return {
+    def, cash,
+    state: {
+      ...state, cash: round2(state.cash + cash), event: { id: def.id, until: state.day + EVENTS.duration, strength },
+      transactions: addTx(state, { kind: "reward", label: `Événement : ${def.name}`, amount: cash, at }),
+    },
+  };
+}
+
+// ─── Mode test ────────────────────────────────────────────────
+
+/** Passe la partie en mode test : argent et capital sans limite, tout débloqué. `saved` = la vraie partie, gardée de côté. */
+export function enterSandbox(state: GameState, saved: unknown): GameState {
+  return {
+    ...state, sandbox: { saved }, cash: Math.max(state.cash, SANDBOX.cash), capital: Math.max(state.capital ?? 0, SANDBOX.capital),
+    population: Math.max(state.population, SANDBOX.population), bank: BANK.length - 1, research: Object.keys(RESEARCH_BY_ID),
+  };
 }
 
 // ─── Bilan de période ─────────────────────────────────────────
@@ -856,6 +931,7 @@ export function absenceReport(before: GameState, after: GameState): AbsenceRepor
   if (b.rank > a.rank) notes.push({ tone: "good", text: `Votre ville est passée au rang « ${CITY_RANKS[b.rank].name} ».` });
   const claimable = goalStatuses(after, b).filter((g) => g.done && !g.claimed);
   if (claimable.length) notes.push({ tone: "good", text: `${claimable.length} subvention${claimable.length > 1 ? "s" : ""} à encaisser (${fmt(claimable.reduce((s, g) => s + g.goal.reward, 0))} €).` });
+  if (b.event && after.event?.until !== before.event?.until) notes.push({ tone: b.event.kind === "bonus" ? "good" : "bad", text: `${b.event.name} : ${b.event.effect}, encore ${b.event.daysLeft} jour${b.event.daysLeft > 1 ? "s" : ""}.` });
   if (after.cash < 0) notes.push({ tone: "bad", text: "Vos liquidités sont passées en négatif." });
   if (b.energy.balance < 0 && a.energy.balance >= 0) notes.push({ tone: "bad", text: "La ville manque maintenant d'énergie : elle en importe au prix fort." });
   if (b.food.balance < 0 && a.food.balance >= 0) notes.push({ tone: "bad", text: "La ville manque maintenant de nourriture : elle en importe au prix fort." });

@@ -362,7 +362,33 @@ export const SHARES = {
   maxLines: 12,
   /** Population minimale pour acheter des parts ou mettre sa ville en bourse (rang « Petite ville »). */
   minPop: 1_500,
+  // ── Guerre économique : le rachat hostile ──
+  /** Parts à détenir pour lancer un rachat hostile : seule une ville qui a ouvert son capital peut être visée. */
+  raidFrom: 200,
+  /** Le rachat hostile force la vente des parts restantes (jusqu'à `maxFloat`), payées plus cher au propriétaire. */
+  raidPremium: 1.5,
+  /** Parts à détenir pour contrôler une ville : le propriétaire verse alors un tribut en plus des dividendes. */
+  control: 400,
+  /** Tribut : part du flux net de la ville versée à l'actionnaire qui la contrôle. */
+  tribute: 0.1,
 };
+
+// ─── Guerre économique : le blocus ────────────────────────────
+/** Le chef d'une alliance peut bloquer le commerce d'une autre alliance pendant quelques jours réels. */
+export const BLOCKADE = {
+  /** Payé par la caisse commune de l'alliance qui attaque (elle peut y perdre un niveau). */
+  cost: 1_000_000,
+  /** Durée du blocus et protection de la cible après coup, en jours réels. */
+  days: 3,
+  shieldDays: 10,
+  /** Points de prix perdus à l'export par les villes bloquées, gagnés par celles qui bloquent. */
+  targetLoss: 0.15,
+  attackerGain: 0.05,
+};
+
+// ─── Mode test ────────────────────────────────────────────────
+/** Réservé aux comptes de test désignés dans la base : argent et capital sans limite, tout débloqué. */
+export const SANDBOX = { cash: 100_000_000_000, capital: 100_000_000_000, population: 600_000 };
 
 // ─── Alliances ────────────────────────────────────────────────
 // Une alliance réunit quelques villes. Sa caisse commune ne se retire pas : elle fait monter le niveau de l'alliance,

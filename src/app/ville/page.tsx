@@ -1,9 +1,10 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import {
-  BarChart3, ArrowUpCircle, Briefcase, CircleAlert, TriangleAlert, Copy, Undo2, Building2, Ellipsis, Handshake, Sparkles, Wrench, Factory, FastForward, Hammer, Home, Landmark, LayoutList, Lock, MousePointerClick, Move, Pencil, RotateCcw, Smile, Store, Target, Trash2, Trees, TrendingUp, Trophy, Users, Wheat, X, Zap,
+  BarChart3, ArrowUpCircle, Briefcase, CircleAlert, CloudLightning, FlaskConical, TriangleAlert, Copy, Undo2, Building2, Ellipsis, Handshake, Sparkles, Wrench, Factory, FastForward, Hammer, Home, Landmark, LayoutList, Lock, MousePointerClick, Move, Pencil, RotateCcw, Smile, Store, Target, Trash2, Trees, TrendingUp, Trophy, Users, Wheat, X, Zap,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { useOnline } from "@/lib/online";
 import { useDerived, useGame } from "@/store/game";
 import { BUILDINGS, BUILDING_BY_ID, CATEGORY_LABELS, CITY_RANKS, SERVICES, SERVICE_IDS, DEMOLISH_REFUND, EXPORT_RATIO, MAINTENANCE_RATE, RESOURCE_PRICES, type BuildingType, type Category } from "@/lib/game/config";
 import { Button, ConfirmButton, Progress, LockTag } from "@/components/ui";
@@ -275,8 +276,16 @@ function Budget({ city }: { city: CityStats }) {
     ["Dividendes reçus", city.income.dividends],
     ["Entretien", -city.expenses.maintenance], ["Importations", -city.expenses.imports], ["Dividendes versés", -city.expenses.dividends],
   ];
+  const ev = city.event;
   return (
     <div>
+      {/* Événement de la semaine : ce qui arrive à la ville, et pour combien de temps */}
+      {ev && (
+        <div className={`mb-3 rounded-[10px] px-2.5 py-2 text-[12px] ${ev.kind === "bonus" ? "bg-success-soft text-emerald-800" : "bg-danger-soft text-red-800"}`}>
+          <div className="flex items-center gap-1.5 font-semibold">{ev.kind === "bonus" ? <Sparkles size={13} /> : <CloudLightning size={13} />}{ev.name}</div>
+          <div className="mt-0.5">{ev.effect}. Encore {ev.daysLeft} jour{ev.daysLeft > 1 ? "s" : ""}.{ev.strength < 1 && " Vos équipements l'atténuent."}</div>
+        </div>
+      )}
       <div className="mb-2 flex items-center justify-between text-[11px] font-semibold uppercase tracking-wide text-muted">Budget du jour</div>
       <dl className="space-y-1 text-[12px]">
         {rows.filter(([, v]) => Math.round(v) !== 0).map(([k, v]) => (
@@ -566,11 +575,43 @@ function DockPanel({ title, onClose, children }: { title: string; onClose: () =>
   );
 }
 
+/** Mode test : visible seulement pour un compte de test désigné dans la base, ou quand la partie y est déjà. */
+function TestMode() {
+  const tester = useOnline((s) => s.tester);
+  const sandbox = useGame((s) => !!s.game.sandbox);
+  const { enterSandbox, leaveSandbox, skipDay, forceEvent, notify } = useGame.getState();
+  if (!tester && !sandbox) return null;
+  const tool = "rounded-[8px] border border-amber-300 bg-white px-2.5 py-1.5 text-[12px] font-semibold text-amber-900 hover:bg-amber-100";
+  return (
+    <div className="rounded-[12px] border border-amber-300 bg-amber-50 p-3 text-[12px] text-amber-900">
+      <div className="mb-1 flex items-center gap-1.5 text-[13px] font-semibold"><FlaskConical size={15} />Mode test{sandbox && " · actif"}</div>
+      {sandbox ? (
+        <>
+          <p>Argent et capital sans limite, tous les rangs, recherches et niveaux de Banque débloqués. Votre vraie partie est gardée de côté.</p>
+          <p className="mt-1">Attention : ce que vous faites avec les autres joueurs (parts achetées, alliance, blocus) est réel pour eux.</p>
+          <div className="mt-2.5 flex flex-wrap gap-2">
+            <button className={tool} onClick={() => { skipDay(1); notify("Un jour de ville est passé"); }}>+1 jour</button>
+            <button className={tool} onClick={() => { skipDay(24); notify("24 jours de ville sont passés"); }}>+24 jours</button>
+            <button className={tool} onClick={() => { const name = forceEvent(); notify(name ? `Événement déclenché : ${name}` : "Aucun événement possible dans cette ville", name ? "ok" : "error"); }}>Déclencher un événement</button>
+            <ConfirmButton onConfirm={leaveSandbox} confirmLabel="Confirmer : revenir à ma vraie partie" className={tool}>Quitter le mode test</ConfirmButton>
+          </div>
+        </>
+      ) : (
+        <>
+          <p>Votre compte est un compte de test. Le mode test donne argent et capital sans limite et débloque tout. Votre partie actuelle est gardée de côté : vous la retrouvez en quittant le mode test.</p>
+          <ConfirmButton onConfirm={enterSandbox} confirmLabel="Confirmer : passer en mode test" className={`mt-2.5 ${tool}`}>Activer le mode test</ConfirmButton>
+        </>
+      )}
+    </div>
+  );
+}
+
 function MoreMenu() {
   const skipDay = useGame((s) => s.skipDay);
   const reset = useGame((s) => s.reset);
   return (
     <div className="space-y-4">
+      <TestMode />
       <RenameCity />
       <ul className="list-disc space-y-1.5 pl-4 text-[12px] text-muted">
         <li>60 % des habitants cherchent un emploi.</li>
@@ -583,7 +624,7 @@ function MoreMenu() {
       </ul>
       <div className="flex flex-wrap items-center gap-3 border-t border-line pt-3">
         {/* Outil de test : absent du site publié */}
-        {DEV && <Button variant="secondary" onClick={skipDay} title="Outil de test (développement uniquement)" className="inline-flex items-center gap-1.5"><FastForward size={15} />Avancer d&apos;un jour</Button>}
+        {DEV && <Button variant="secondary" onClick={() => skipDay(1)} title="Outil de test (développement uniquement)" className="inline-flex items-center gap-1.5"><FastForward size={15} />Avancer d&apos;un jour</Button>}
         <ConfirmButton onConfirm={reset} confirmLabel="Confirmer : tout effacer"
           className="inline-flex items-center gap-1 text-[12px] text-danger hover:underline"><RotateCcw size={13} />Recommencer la partie</ConfirmButton>
       </div>

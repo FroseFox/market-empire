@@ -68,6 +68,10 @@ create table public.saves (               -- sauvegarde privée, une ligne par j
 -- Alliances (migrations/20261008d_alliances.sql) : table alliances (lecture publique), players.alliance / alliance_gift,
 -- fonctions create_alliance / join_alliance / leave_alliance / contribute_alliance.
 
+-- Guerre économique (migrations/20261008e_economic_war.sql) : alliances.blockade_target / blockade_until / shield_until,
+-- fonctions declare_blockade / hostile_bid.
+-- Comptes de test (migrations/20261008f_tester_accounts.sql) : players.tester, ignoré par players_guard.
+
 -- ─── Droits ───
 -- Lecture publique : assets, asset_prices, market_series, news, players.
 -- saves : lecture de SA ligne uniquement (authenticated). Aucune écriture directe :

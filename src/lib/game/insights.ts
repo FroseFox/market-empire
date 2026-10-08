@@ -63,6 +63,7 @@ export function nextActions(state: GameState, city: CityStats, prices: Prices, m
   const fmt = (n: number) => Math.round(n).toLocaleString("fr-FR");
   const claim = goalStatuses(state, city).filter((g) => g.done && !g.claimed);
   if (claim.length) out.push({ id: "claim", tone: "good", title: `Encaissez ${claim.length > 1 ? `${claim.length} subventions` : "votre subvention"}`, text: `${fmt(claim.reduce((a, g) => a + g.goal.reward, 0))} € à récupérer dans Ville › Objectifs.`, href: "/ville" });
+  if (city.event) out.push({ id: "event", tone: city.event.kind === "bonus" ? "good" : "bad", title: city.event.name, text: `${city.event.effect}. Encore ${city.event.daysLeft} jour${city.event.daysLeft > 1 ? "s" : ""}.`, href: "/ville" });
   if (state.cash < 0) out.push({ id: "cash", tone: "bad", title: "Redressez vos liquidités", text: "Elles sont négatives : vendez un actif ou démolissez un bâtiment.", href: "/portefeuille" });
   if (city.unemploymentRate >= 0.08) out.push({ id: "jobs", tone: "bad", title: "Créez des emplois", text: `${fmt(city.unemployed)} habitants sans travail : la satisfaction et les impôts baissent.`, href: "/ville" });
   if (city.energy.balance < 0) out.push({ id: "energy", tone: "bad", title: "Produisez plus d'énergie", text: `Il en manque ${fmt(-city.energy.balance)} par jour, importée au prix fort.`, href: "/ville" });

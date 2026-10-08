@@ -4,13 +4,14 @@ import Link from "next/link";
 import { BookOpen } from "lucide-react";
 import { useGame } from "@/store/game";
 import {
-  ACTIVE_RATIO, ALLIANCE, BANK, BRANCH_COST, CITIES_PER_COUNTRY, CITY_EFFECT_CAPS, SHARES, TOURISM, CAPITAL, LEVERAGE, BRANCH_EFFECTS, BRANCH_MIN_VALUE, BUILDINGS, BUILDING_BY_ID, CATEGORY_LABELS, CITY_RANKS, CONTRACT_RATIO, COUNTRY_PRICES,
+  ACTIVE_RATIO, ALLIANCE, BANK, BLOCKADE, BRANCH_COST, CITIES_PER_COUNTRY, CITY_EFFECT_CAPS, SHARES, TOURISM, CAPITAL, LEVERAGE, BRANCH_EFFECTS, BRANCH_MIN_VALUE, BUILDINGS, BUILDING_BY_ID, CATEGORY_LABELS, CITY_RANKS, CONTRACT_RATIO, COUNTRY_PRICES,
   DAY_LENGTH_MINUTES, DEMOLISH_REFUND, ENERGY_PER_RESIDENT, EXPORT_RATIO, FOOD_PER_RESIDENT, GOALS, HUB_DESK_COST, HUB_FEE_FACTOR, MAINTENANCE_RATE,
   FEATURES, ORIENTATIONS, ORIENTATION_CHANGE_COST, ORIENTATION_MIN_RANK,
   MAX_CATCHUP_DAYS, MAX_CONTRACTS, NEED_PER_RANK, POLLUTION_MAX, PROJECTS, RENOVATE_RATE, RESOURCE_PRICES, SERVICES, SERVICE_IDS, SPECIALTY_BONUS,
   STARTING_CASH, STARTING_POPULATION, START_GRANT, TAX_PER_RESIDENT, TERRITORY, TRADE_FEE_MIN, TRADE_FEE_RATE, UPGRADES, WEAR_PER_DAY, type BranchFamily, type Category,
 } from "@/lib/game/config";
 import { GUIDE } from "@/lib/game/guide";
+import { CITY_EVENTS, EVENTS, effectText } from "@/lib/game/events";
 import { BRANCH_COLOR, RESEARCH, RESEARCH_BY_ID } from "@/lib/game/research";
 import { HUBS, PLAYABLE, PLAYABLE_IDS, countryPrice, countryTier, specialtyText } from "@/lib/world/countries";
 import { BIG_MOVE } from "@/lib/notifs";
@@ -20,7 +21,7 @@ import { compactEur, eur, num } from "@/lib/format";
 
 const SECTIONS = [
   ["demarrer", "Démarrer"], ["jouer", "Comment jouer"], ["pages", "Les pages du jeu"], ["chiffres", "Lire les chiffres"], ["soucis", "Que faire si…"], ["temps", "Le temps"], ["bourse", "Bourse"], ["ville", "Ville"], ["batiments", "Bâtiments"], ["equipements", "Équipements et tensions"],
-  ["progression", "Rangs, objectifs, projets"], ["entreprises", "Entreprises implantées"], ["monde", "Monde et pays"], ["commerce", "Commerce"], ["bourse-villes", "Bourse des villes"], ["alliances", "Alliances"], ["recherche", "Recherche"], ["notifications", "Notifications"],
+  ["progression", "Rangs, objectifs, projets"], ["entreprises", "Entreprises implantées"], ["monde", "Monde et pays"], ["commerce", "Commerce"], ["bourse-villes", "Bourse des villes"], ["alliances", "Alliances"], ["guerre", "Guerre économique"], ["evenements", "Événements"], ["recherche", "Recherche"], ["notifications", "Notifications"],
 ] as const;
 const CATS: Category[] = ["housing", "commerce", "services", "industry", "agriculture", "energy", "public"];
 const pct = (v: number, d = 0) => `${(v * 100).toLocaleString("fr-FR", { maximumFractionDigits: d })} %`;
@@ -272,6 +273,26 @@ export default function WikiPage() {
               <li>Quitter une alliance est libre ; ce que vous avez versé reste dans sa caisse. Si le chef part, le membre qui a le plus versé le remplace.</li>
             </ul>
             <Table head={["Niveau", "Caisse commune", "Bonus de revenus"]} rows={ALLIANCE.levels.map((n, i) => [String(i), i ? compactEur(n) : "Départ", `+${Math.round(i * ALLIANCE.bonusPerLevel * 100)} %`])} />
+          </Section>
+
+          <Section id="guerre" title="Guerre économique">
+            <p>La guerre ne détruit rien : elle se joue sur l&apos;argent, entre alliances et à la bourse des villes.</p>
+            <ul className="mt-2 list-disc space-y-1.5 pl-5">
+              <li><b>Blocus</b> (Monde › Alliances) : le chef d&apos;une alliance peut bloquer le commerce d&apos;une autre pendant {BLOCKADE.days} jours réels. Cela coûte {compactEur(BLOCKADE.cost)} à la caisse commune, qui peut y perdre un niveau.</li>
+              <li>Les villes bloquées vendent leurs surplus d&apos;énergie et de nourriture {Math.round(BLOCKADE.targetLoss * 100)} points moins cher ; celles qui bloquent, {Math.round(BLOCKADE.attackerGain * 100)} points plus cher. Une alliance bloquée est ensuite protégée {BLOCKADE.shieldDays} jours.</li>
+              <li><b>Rachat hostile</b> (Monde › Bourse) : si vous détenez {SHARES.raidFrom} parts d&apos;une ville, vous pouvez forcer la vente du reste, jusqu&apos;à {SHARES.maxFloat} parts, payées {SHARES.raidPremium.toLocaleString("fr-FR")} fois leur prix au propriétaire.</li>
+              <li><b>Contrôle et tribut</b> : avec {SHARES.control} parts, vous contrôlez la ville. Son propriétaire vous verse un tribut de {Math.round(SHARES.tribute * 100)} % de son flux net en plus des dividendes, jusqu&apos;à ce qu&apos;il rachète ses parts.</li>
+              <li>Pour s&apos;en protéger : ne jamais vendre {SHARES.raidFrom} parts au même joueur, ou racheter ses parts à temps. Une ville qui n&apos;a rien vendu ne peut pas être visée, et deux villes d&apos;une même alliance ne peuvent pas se racheter.</li>
+            </ul>
+          </Section>
+
+          <Section id="evenements" title="Événements de ville">
+            <p>Tous les {EVENTS.every} jours de ville (une semaine réelle), le jeu regarde l&apos;état de votre ville et décide s&apos;il lui arrive quelque chose : un coup de pouce, une catastrophe, ou rien. Les effets durent {EVENTS.duration} jours de ville. Ils ne touchent que la ville, jamais les cours de bourse.</p>
+            <ul className="mt-2 list-disc space-y-1.5 pl-5">
+              <li>Les chances dépendent de la ville : une ville polluée risque un pic de pollution, une ville mécontente une grève, une ville touristique a plus de chances d&apos;avoir un festival.</li>
+              <li>Les équipements protègent : pompiers et commissariat atténuent tempêtes et inondations, l&apos;hôpital les épidémies. Une couverture complète divise l&apos;effet par deux.</li>
+            </ul>
+            <Table head={["Événement", "Type", "Effet à pleine force", "Atténué par"]} rows={CITY_EVENTS.map((e) => [e.name, e.kind === "bonus" ? "Coup de pouce" : "Catastrophe", effectText(e), e.guard ? SERVICES[e.guard].label : ""])} />
           </Section>
 
           <Section id="recherche" title="Recherche">
