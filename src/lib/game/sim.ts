@@ -6,7 +6,9 @@ import * as E from "./engine";
 
 /** Le robot vise ce qu'il peut s'offrir tout de suite ou en économisant une vingtaine de jours. */
 let reach = 0;
-const can = (g: E.GameState, b: BuildingType) => b.buildable !== false && (!b.unlockPop || g.population >= b.unlockPop) && b.cost <= g.cash + reach;
+/** Tailles de terrain (1, 2 ou 3 carreaux de côté) qui tiennent encore sur la carte, ou qu'un agrandissement permettrait. */
+let room = [true, true, true, true];
+const can = (g: E.GameState, b: BuildingType) => b.buildable !== false && (!b.unlockPop || g.population >= b.unlockPop) && b.cost <= g.cash + reach && room[b.size ?? 1];
 /** Meilleur rapport utilité / prix ; à rapport proche, le plus gros bâtiment (pour ne pas couvrir la carte de petits). */
 function best(g: E.GameState, score: (b: BuildingType) => number) {
   const list = BUILDINGS.filter((b) => can(g, b) && score(b) > 0).sort((a, b) => score(b) / b.cost - score(a) / a.cost);
@@ -20,6 +22,9 @@ const profit = (b: BuildingType) => (b.revenue ?? 0) + (b.foodProd ?? 0) * RESOU
 function choose(g: E.GameState): BuildingType | undefined {
   const c = E.computeCity(g);
   reach = Math.max(0, c.net) * 20;
+  // Faute de place pour un gros bâtiment, il se rabat sur un plus petit, comme le ferait un joueur
+  const land = E.nextTerritory(g), grow = !!land && c.rank >= land.minRank && land.cost <= g.cash;
+  room = [true, grow || E.hasRoom(g, 1), grow || E.hasRoom(g, 2), grow || E.hasRoom(g, 3)];
   // Déficits et équipements : réglés dès qu'on en a les moyens. Si les importations pèsent lourd, on économise pour ça.
   const fix = (c.energy.balance < 0 && best(g, (b) => b.energyProd ?? 0)) || (c.food.balance < 0 && best(g, (b) => b.foodProd ?? 0))
     || SERVICE_IDS.map((id) => c.services[id].needed && c.services[id].coverage < 1 && best(g, (b) => (b.service === id ? b.serves ?? 0 : 0))).find(Boolean);

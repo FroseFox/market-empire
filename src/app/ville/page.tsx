@@ -16,7 +16,7 @@ import { capitalCost, computeCity, landUse, activeBranches, branchAt, branchCost
 import { BRANCH_EFFECTS, BRANCH_MIN_VALUE, FEATURES, FORECAST_DAYS, LAND_ALMOST_FULL, ORIENTATIONS, ORIENTATION_BY_ID, PROJECTS } from "@/lib/game/config";
 import { specialtyText } from "@/lib/world/countries";
 import { ASSET_BY_SYMBOL, familyOf } from "@/lib/market/universe";
-import type { Plot } from "@/lib/game/layout";
+import { footprint, plotAt, type Plot } from "@/lib/game/layout";
 import { capitalFmt, compactEur, eur, num, pctPlain, signedEur, tone } from "@/lib/format";
 
 const CAT_ICON: Record<Category, LucideIcon> = {
@@ -83,10 +83,11 @@ export default function CityPage() {
   };
 
   const onTileClick = (x: number, y: number) => {
-    const hit = game.plots.find((p) => p.x === x && p.y === y);
+    // Un clic sur n'importe quel carreau d'un bâtiment désigne ce bâtiment, repéré par son carreau d'angle
+    const hit = plotAt(game.plots, x, y), spot = hit ? { x: hit.x, y: hit.y } : null;
     if (mode?.kind === "place") {
       const b = BUILDING_BY_ID[mode.id];
-      if (!isTileFree(game, x, y)) return;
+      if (!isTileFree(game, x, y, footprint(mode.id))) { if (footprint(mode.id) > 1) notify(`${b.name} occupe ${footprint(mode.id)} × ${footprint(mode.id)} carreaux : il faut un carré libre, sans route.`, "error"); return; }
       if (build(mode.id, { x, y }) && !canPay(useGame.getState().game, b)) setMode(null); // plus assez pour un autre
       return;
     }
@@ -94,14 +95,14 @@ export default function CityPage() {
       if (moveBuilding(mode.from, { x, y })) { setMode(null); setSelected(tool === "move" ? null : { x, y }); }
       return;
     }
-    if (tool === "move") { if (hit) setMode({ kind: "move", id: hit.id, from: { x, y } }); return; }
+    if (tool === "move") { if (hit && spot) setMode({ kind: "move", id: hit.id, from: spot }); return; }
     if (tool === "demolish") {
       if (hit?.id === "branch") { notify("Site d'entreprise : il se ferme depuis le bouton Entreprises.", "error"); return; }
       if (hit && BUILDING_BY_ID[hit.id]?.buildable === false) { notify("Bâtiment d'origine : il peut être déplacé mais pas démoli.", "error"); return; }
-      setSelected(hit ? { x, y } : null);
+      setSelected(spot);
       return;
     }
-    setSelected(hit ? { x, y } : null);
+    setSelected(spot);
     if (hit && (tool === "list" || tool === "stats" || tool === "more")) setTool(null);
   };
 
@@ -755,7 +756,7 @@ function SelectedPanel({ plot, city, confirmDemolish, alert, onFix, onUpgrade, o
         <div className="mt-2.5 flex items-center gap-2.5 rounded-[10px] border border-line p-2.5">
           <ArrowUpCircle size={18} className="shrink-0 text-primary" />
           <div className="min-w-0 flex-1 text-[12px]">
-            <div className="font-semibold">Améliorer en {next.name}</div>
+            <div className="font-semibold">Améliorer en {next.name}{(next.size ?? 1) > (b.size ?? 1) && <span className="font-normal text-muted"> · occupera {next.size} × {next.size} carreaux</span>}</div>
             <div className="text-muted">
               {!canUpgrade ? "Recherche « Rénovation urbaine » requise"
                 : popLocked ? `Débloqué à ${num(next.unlockPop!)} habitants`
@@ -812,6 +813,7 @@ function RenameCity() {
 
 function Effects({ b }: { b: BuildingType }) {
   const chips: { text: string; cls: string; icon?: LucideIcon }[] = [];
+  if (b.size) chips.push({ text: `${b.size} × ${b.size} carreaux`, cls: "bg-slate-800 text-white" });
   if (b.housing) chips.push({ text: `+${num(b.housing)} hab.`, cls: "bg-blue-50 text-blue-700" });
   if (b.jobs) chips.push({ text: `${num(b.jobs)} emplois`, cls: "bg-slate-100 text-slate-700" });
   if (b.revenue) chips.push({ text: `+${num(b.revenue)} €/j`, cls: "bg-success-soft text-emerald-700" });

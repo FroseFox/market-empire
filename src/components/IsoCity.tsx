@@ -9,7 +9,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Layers, Moon, Sun } from "lucide-react";
 import { BUILDING_BY_ID, CATEGORY_LABELS, type Category } from "@/lib/game/config";
-import { isBuildable, isRoad, mapBounds, MAP_SIZE, MAX_MAP_SIZE, type Plot } from "@/lib/game/layout";
+import { canPlace, footprint, isBuildable, isRoad, mapBounds, MAP_SIZE, MAX_MAP_SIZE, occupancy, sideOf, type Plot } from "@/lib/game/layout";
 
 /** Enseigne d'une entreprise implantée, affichée au-dessus de son bâtiment. */
 export interface CitySign {
@@ -232,7 +232,7 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
     }
 
     // Zone visible : autour des bâtiments (plus large en mode construction, pour avoir de la place)
-    const xs = plots.map((p) => p.x), ys = plots.map((p) => p.y);
+    const xs = plots.flatMap((p) => [p.x, p.x + sideOf(p) - 1]), ys = plots.flatMap((p) => [p.y, p.y + sideOf(p) - 1]);
     const pad = interactive ? 3 : 1, span = interactive ? 6 : 3;
     let x0 = Math.min(...xs, MAP_SIZE / 2 - span) - pad, x1 = Math.max(...xs, MAP_SIZE / 2 + span) + pad;
     let y0 = Math.min(...ys, MAP_SIZE / 2 - span) - pad, y1 = Math.max(...ys, MAP_SIZE / 2 + span) + pad;
@@ -242,7 +242,7 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
     x0 = Math.floor(x0 / 4) * 4; y0 = Math.floor(y0 / 4) * 4;
     x1 = Math.min(hi - 1, Math.ceil(x1 / 4) * 4); y1 = Math.min(hi - 1, Math.ceil(y1 / 4) * 4);
 
-    const byTile = new Map(plots.map((p) => [`${p.x},${p.y}`, p]));
+    const byTile = occupancy(plots);
     // Routes goudronnées : seulement autour des îlots bâtis, plus les deux axes qui relient la ville à l'extérieur.
     // Le reste du territoire reste en herbe : un village ressemble à un village, et la ville s'étend à vue d'œil.
     // (En mode construction ou déplacement, tout le quadrillage s'affiche pour montrer où l'on peut bâtir.)
@@ -1061,6 +1061,13 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
       main!.drawImage(groundCv, snap(ox - gox), snap(oy - goy), gw, gh);
     }
 
+    /** Agrandit ce qui sera dessiné sur le carreau (x, y) pour remplir un terrain de `side` × `side` (à refermer par g.restore()). */
+    const enlarge = (x: number, y: number, side: number) => {
+      const [cx, cy] = iso(x + side / 2, y + side / 2), [tx, ty] = iso(x + 0.5, y + 0.5);
+      g.save(); g.translate(cx, cy); g.scale(side, side); g.translate(-tx, -ty);
+    };
+    const quad = (x: number, y: number, side: number): Pt[] => [iso(x, y), iso(x + side, y), iso(x + side, y + side), iso(x, y + side)];
+
     // ─── Objets fixes (bâtiments, arbres, lampadaires), triés une seule fois par profondeur ───
     const statics: Item[] = [];
     for (let x = x0; x <= x1; x++) {
@@ -1068,13 +1075,18 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
         if (isRoad(x, y)) continue;
         const p = byTile.get(`${x},${y}`);
         if (p) {
-          statics.push({ depth: x + y + 0.5, ax: x + 0.5, ay: y + 0.5, draw: (t) => {
+          // Un bâtiment de plusieurs carreaux est dessiné une seule fois, depuis son angle, agrandi à la taille de son terrain
+          if (p.x !== x || p.y !== y) continue;
+          const side = sideOf(p);
+          statics.push({ depth: x + y + side - 0.5, ax: x + side / 2, ay: y + side / 2, draw: (t) => {
             const b = births.current.get(keyOf(p));
             const grow = b === undefined || reduce ? 1 : Math.min(1, (t - b) / 700);
             const m = modeRef.current;
             if (m?.kind === "move" && m.from.x === x && m.from.y === y) g.globalAlpha = 0.3;
             else if (layersRef.current) g.globalAlpha = 0.45;
+            const big = side > 1; if (big) enlarge(x, y, side);
             if (grow >= 1) drawBuilding(p, t); else building(p, t, 1 - Math.pow(1 - grow, 3));
+            if (big) g.restore();
             g.globalAlpha = 1;
           } });
         } else if (hash(x, y) < 0.35) {
@@ -1154,17 +1166,19 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
       // Carreau survolé
       const m = modeRef.current, hv = hoverRef.current;
       if (hv && hv.x >= x0 && hv.x <= x1 && hv.y >= y0 && hv.y <= y1) {
-        const q: Pt[] = [iso(hv.x, hv.y), iso(hv.x + 1, hv.y), iso(hv.x + 1, hv.y + 1), iso(hv.x, hv.y + 1)];
-        const taken = byTile.has(`${hv.x},${hv.y}`);
-        const free = isBuildable(hv.x, hv.y, mapSize) && !taken;
-        if (m) poly(q, free || (m.kind === "move" && m.from.x === hv.x && m.from.y === hv.y) ? "rgba(16,185,129,.45)" : "rgba(239,68,68,.35)");
-        else if (taken) poly(q, toneRef.current === "danger" ? "rgba(239,68,68,.28)" : "rgba(37,99,235,.22)");
+        const at = byTile.get(`${hv.x},${hv.y}`);
+        if (m) {
+          const moving = m.kind === "move" ? byTile.get(`${m.from.x},${m.from.y}`) : undefined, side = moving ? sideOf(moving) : footprint(m.id);
+          const ok = canPlace(byTile, hv.x, hv.y, side, mapSize, moving) || (!!moving && moving.x === hv.x && moving.y === hv.y);
+          poly(quad(hv.x, hv.y, side), ok ? "rgba(16,185,129,.45)" : "rgba(239,68,68,.35)");
+        } else if (at) poly(quad(at.x, at.y, sideOf(at)), toneRef.current === "danger" ? "rgba(239,68,68,.28)" : "rgba(37,99,235,.22)");
       }
 
       // Carreau sélectionné / bâtiment en cours de déplacement
       const sel = m?.kind === "move" ? m.from : selectedRef.current;
       if (sel) {
-        const q: Pt[] = [iso(sel.x, sel.y), iso(sel.x + 1, sel.y), iso(sel.x + 1, sel.y + 1), iso(sel.x, sel.y + 1)];
+        const sp = byTile.get(`${sel.x},${sel.y}`);
+        const q = sp ? quad(sp.x, sp.y, sideOf(sp)) : quad(sel.x, sel.y, 1);
         const col = m?.kind === "move" ? "#F59E0B" : toneRef.current === "danger" ? "#EF4444" : "#2563EB";
         g.beginPath(); g.moveTo(q[0][0], q[0][1]); q.slice(1).forEach((pt) => g.lineTo(pt[0], pt[1])); g.closePath();
         g.fillStyle = `${col}2E`; g.fill();
@@ -1208,10 +1222,13 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
           g.fillStyle = "#F5D0A9"; g.beginPath(); g.arc(px, py - 7.3 * scale, 1.35 * scale, 0, Math.PI * 2); g.fill();
         } });
       }
-      if (m && hv && isBuildable(hv.x, hv.y, mapSize) && !byTile.has(`${hv.x},${hv.y}`)) {
-        dynamic.push({ depth: hv.x + hv.y + 0.5, ax: hv.x + 0.5, ay: hv.y + 0.5, draw: (tt) => {
+      const moved = m?.kind === "move" ? byTile.get(`${m.from.x},${m.from.y}`) : undefined, gs = m ? (moved ? sideOf(moved) : footprint(m.id)) : 1;
+      if (m && hv && canPlace(byTile, hv.x, hv.y, gs, mapSize, moved) && !(moved && moved.x === hv.x && moved.y === hv.y)) {
+        dynamic.push({ depth: hv.x + hv.y + gs - 0.5, ax: hv.x + gs / 2, ay: hv.y + gs / 2, draw: (tt) => {
           g.globalAlpha = 0.6;
+          if (gs > 1) enlarge(hv.x, hv.y, gs);
           building({ id: m.id, x: hv.x, y: hv.y }, tt, 1);
+          if (gs > 1) g.restore();
           g.globalAlpha = 1;
         } });
       }
@@ -1358,8 +1375,8 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
       if (p && !modeRef.current) {
         // Infobulle ancrée au-dessus du bâtiment (elle ne suit pas la souris)
         const [ax, ay] = iso(tx + 0.5, ty + 0.5, (TOP[p.id] ?? 30) + 4);
-        const mk = markersRef.current.get(`${tx},${ty}`);
-        const sg = signsRef.current[`${tx},${ty}`];
+        const mk = markersRef.current.get(`${p.x},${p.y}`);
+        const sg = signsRef.current[`${p.x},${p.y}`];
         setTip({ left: ax, top: ay - (mk ? 34 : sg ? 30 : 6), title: sg?.title ?? b?.name ?? p.id, text: (mk && markerTip(mk)) ?? sg?.text ?? b?.description ?? "", warn: !!mk });
       } else setTip(null);
       if (!raf) frame(performance.now());
