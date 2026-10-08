@@ -36,7 +36,7 @@ export function buildingThumb(id: string): string | null {
   let url: string | null = null;
   try {
     const m = buildingModel(id);
-    s.solid.geometry = m.solid;
+    s.solid.geometry = m.still;
     s.lit.visible = !!m.lit;
     if (m.lit) s.lit.geometry = m.lit;
     // Cadrage : le carreau fait 1 de côté ; on recule assez pour voir tout le bâtiment, même les tours
