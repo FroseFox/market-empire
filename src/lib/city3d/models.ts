@@ -552,6 +552,174 @@ const BUILD: Record<string, (k: Kit) => void> = {
     k.box(0.24, 0.1, 0.1, P.fire, 0.16, B + 0.012, 0.4, 0.015); k.box(0.08, 0.075, 0.095, P.snow, 0.3, B + 0.012, 0.4, 0.012);
     k.box(0.2, 0.012, 0.03, P.metal, 0.14, B + 0.115, 0.4, 0);
   },
+  // ── Tourisme, transports et bâtiments spéciaux ──
+  museum(k) {
+    k.lot(P.pave);
+    k.box(0.84, 0.06, 0.8, P.stone, 0, B, 0, 0.015); k.box(0.5, 0.04, 0.1, P.concrete, 0, B + 0.03, 0.38, 0.008);
+    k.box(0.72, 0.36, 0.5, P.cream, 0, B + 0.06, -0.1, 0.03);
+    for (let i = 0; i < 6; i++) k.cyl(0.026, 0.32, P.snow, -0.3 + i * 0.12, B + 0.06, 0.2, 0.023, 10);
+    k.box(0.78, 0.05, 0.16, P.stone, 0, B + 0.38, 0.2, 0.01);
+    k.gable(0.16, 0.78, 0.12, P.stone, 0, B + 0.43, 0.2, Math.PI / 2);
+    k.box(0.76, 0.05, 0.54, P.stone, 0, B + 0.42, -0.1, 0.012);
+    // Verrière en pyramide
+    k.hip(0.36, 0.36, 0.24, P.glassL, 0, B + 0.47, -0.14); k.box(0.38, 0.02, 0.38, P.glassD, 0, B + 0.46, -0.14, 0.006);
+    k.box(0.05, 0.2, 0.012, P.fire, -0.18, B + 0.14, 0.156, 0); k.box(0.05, 0.2, 0.012, P.primary, 0.18, B + 0.14, 0.156, 0);
+    k.box(0.1, 0.18, 0.012, P.door, 0, B + 0.06, 0.156, 0);
+    k.wins(0.72, 0.5, B + 0.14, 0.2, 1, 0, 0, -0.1, 4);
+    // Statue sur son socle
+    k.cyl(0.045, 0.06, P.stone, 0.36, B + 0.06, 0.36, 0.045, 10); k.cyl(0.018, 0.09, P.gold, 0.36, B + 0.12, 0.36, 0.014, 8); k.ball(0.022, P.gold, 0.36, B + 0.225, 0.36);
+    k.bush(-0.4, 0.42); k.tree(-0.4, -0.4, 0.6);
+  },
+  stadium(k) {
+    k.lot(P.paveD);
+    // Tribunes en anneau ovale autour de la pelouse
+    const ring = (r: number, tube: number, c: number, y: number, sy: number) => {
+      const g = new THREE.TorusGeometry(r, tube, 8, 28); g.rotateX(Math.PI / 2); g.scale(1, sy, 0.82); k.add(g, c, 0, y, 0);
+    };
+    ring(0.33, 0.1, P.concrete, B + 0.1, 1.5);
+    ring(0.3, 0.075, P.primary, B + 0.17, 1.1);
+    ring(0.37, 0.035, P.snow, B + 0.27, 0.7);
+    k.box(0.42, 0.016, 0.26, P.lawn, 0, B + 0.05, 0, 0.004);
+    k.box(0.004, 0.004, 0.26, P.snow, 0, B + 0.068, 0, 0); k.cyl(0.04, 0.003, P.snow, 0, B + 0.067, 0, 0.04, 16); k.cyl(0.034, 0.004, P.lawn, 0, B + 0.067, 0, 0.034, 16);
+    k.box(0.006, 0.03, 0.07, P.snow, -0.2, B + 0.066, 0, 0); k.box(0.006, 0.03, 0.07, P.snow, 0.2, B + 0.066, 0, 0);
+    // Projecteurs aux quatre coins
+    for (const [x, z] of [[-0.4, -0.38], [0.4, -0.38], [-0.4, 0.38], [0.4, 0.38]] as const) {
+      k.cyl(0.012, 0.5, P.steelL, x, B, z, 0.012, 6); k.box(0.09, 0.05, 0.02, P.snow, x, B + 0.5, z, 0.006, x * z > 0 ? -Math.PI / 4 : Math.PI / 4);
+    }
+    k.box(0.14, 0.09, 0.012, P.black, 0, B + 0.3, -0.34, 0.004); k.win(0.11, 0.06, 0, B + 0.345, -0.332, 0, true);
+  },
+  themepark(k) {
+    k.lot(P.lawn);
+    // Grande roue, tournée vers la caméra
+    const wheel = (g: THREE.BufferGeometry, c: number) => k.add(g, c, -0.14, B + 0.5, -0.14, Math.PI / 4);
+    wheel(new THREE.TorusGeometry(0.34, 0.012, 6, 32), P.snow);
+    wheel(new THREE.TorusGeometry(0.28, 0.007, 6, 32), P.metal);
+    for (let i = 0; i < 4; i++) { const s = new THREE.BoxGeometry(0.68, 0.008, 0.008); s.rotateZ((i * Math.PI) / 4); wheel(s, P.steelL); }
+    const hues = [P.fire, P.gold, P.primary, P.teal, P.pink, P.orange, P.violet, P.green];
+    for (let i = 0; i < 8; i++) {
+      const a = (i * Math.PI) / 4, g = rbox(0.06, 0.05, 0.05, 0.012);
+      g.translate(Math.cos(a) * 0.34, Math.sin(a) * 0.34 - 0.045, 0); wheel(g, hues[i]);
+    }
+    k.ball(0.03, P.fire, -0.14, B + 0.5, -0.14);
+    for (const s of [-1, 1]) { const leg = new THREE.BoxGeometry(0.018, 0.56, 0.018); leg.rotateZ(s * 0.3); leg.translate(s * 0.085, -0.27, 0); wheel(leg, P.steel); }
+    // Chapiteau rayé
+    k.cyl(0.17, 0.09, P.snow, 0.26, B, 0.22, 0.17, 14); k.cone(0.2, 0.2, P.fire, 0.26, B + 0.09, 0.22, 14);
+    k.cone(0.2, 0.2, P.snow, 0.26, B + 0.0905, 0.22, 7); k.flag(0.26, B + 0.28, 0.22, 0.12, P.gold);
+    // Manège
+    k.cyl(0.11, 0.02, P.gold, -0.28, B, 0.3, 0.11, 14); k.cyl(0.012, 0.13, P.snow, -0.28, B + 0.02, 0.3, 0.012, 6); k.cone(0.13, 0.08, P.pink, -0.28, B + 0.14, 0.3, 14);
+    for (let i = 0; i < 4; i++) k.ball(0.018, hues[i + 2], -0.28 + Math.cos(i * 1.57) * 0.075, B + 0.05, 0.3 + Math.sin(i * 1.57) * 0.075);
+    k.box(0.1, 0.07, 0.08, P.orange, 0.34, B, -0.3, 0.012); k.box(0.12, 0.02, 0.1, P.snow, 0.34, B + 0.07, -0.3, 0.006);
+    k.tree(0.4, -0.06, 0.6); k.bush(0.04, 0.4);
+  },
+  bizdistrict(k) {
+    k.lot(P.pave);
+    k.box(0.34, 1.7, 0.34, P.glassD, -0.24, B, -0.24, 0.045); k.bands(0.34, 0.34, B + 0.1, 1.56, 9, P.glassL, -0.24, -0.24);
+    k.box(0.2, 0.16, 0.2, P.steel, -0.24, B + 1.69, -0.24, 0.02); k.cyl(0.008, 0.22, P.fire, -0.24, B + 1.85, -0.24, 0.008, 6);
+    k.box(0.32, 1.16, 0.3, P.glass, 0.22, B, -0.26, 0.04); k.bands(0.32, 0.3, B + 0.1, 1.02, 6, P.snow, 0.22, -0.26);
+    k.box(0.36, 0.05, 0.34, P.white, 0.22, B + 1.14, -0.26, 0.015); k.roofUnit(0.2, B + 1.19, -0.28);
+    k.box(0.3, 0.78, 0.3, P.aqua, -0.22, B, 0.22, 0.04); k.bands(0.3, 0.3, B + 0.08, 0.66, 4, P.glass, -0.22, 0.22);
+    k.box(0.34, 0.05, 0.34, P.glassD, -0.22, B + 0.76, 0.22, 0.015); k.box(0.16, 0.012, 0.16, P.fire, -0.22, B + 0.81, 0.22, 0.004);
+    k.win(0.14, 0.09, -0.22, B + 0.055, 0.374, 0, true); k.win(0.16, 0.09, 0.22, B + 0.055, -0.106, 0, true);
+    // Parvis
+    k.cyl(0.09, 0.03, P.stone, 0.26, B, 0.26, 0.09, 14); k.cyl(0.07, 0.012, P.water, 0.26, B + 0.03, 0.26, 0.07, 14);
+    k.tree(0.42, 0.06, 0.6); k.bush(0.06, 0.42); k.car(0.26, 0.44, P.black, 0);
+  },
+  recycling(k) {
+    k.lot(P.paveD);
+    k.box(0.6, 0.26, 0.4, P.green, -0.12, B, -0.22, 0.03); k.barrel(0.6, 0.2, P.metal, -0.12, B + 0.25, -0.22, 0, 0.3);
+    k.box(0.62, 0.05, 0.42, P.snow, -0.12, B + 0.15, -0.22, 0.01);
+    k.box(0.16, 0.15, 0.012, P.steel, -0.24, B, -0.016, 0); k.box(0.16, 0.15, 0.012, P.steel, -0.02, B, -0.016, 0);
+    // Tapis de tri incliné
+    { const g = rbox(0.4, 0.03, 0.08, 0.008); g.rotateZ(0.42); k.add(g, P.black, 0.3, B + 0.1, -0.24); }
+    k.cyl(0.012, 0.19, P.steelL, 0.42, B, -0.24, 0.012, 6); k.cyl(0.012, 0.08, P.steelL, 0.2, B, -0.24, 0.012, 6);
+    // Bennes de tri, une couleur par matière
+    for (const [i, c] of [P.yellow, P.primary, P.fire, P.leaf].entries()) {
+      k.box(0.15, 0.1, 0.11, c, -0.33 + i * 0.2, B, 0.18, 0.015); k.box(0.16, 0.02, 0.12, P.steel, -0.33 + i * 0.2, B + 0.1, 0.18, 0.006);
+    }
+    // Camion-benne
+    k.box(0.2, 0.1, 0.1, P.leafL, -0.02, B + 0.02, 0.38, 0.015); k.box(0.08, 0.08, 0.095, P.snow, 0.13, B + 0.02, 0.38, 0.012);
+    k.tree(0.4, 0.38, 0.75); k.bush(-0.42, 0.4);
+  },
+  port(k) {
+    k.lot(P.paveD);
+    // Bassin et navire
+    k.box(0.94, 0.03, 0.36, P.water, 0, B - 0.004, 0.29, 0.01); k.box(0.94, 0.05, 0.05, P.concrete, 0, B, 0.1, 0.008);
+    k.box(0.56, 0.08, 0.16, P.navy, -0.08, B + 0.02, 0.32, 0.03); k.box(0.56, 0.015, 0.17, P.fire, -0.08, B + 0.02, 0.32, 0.004);
+    k.box(0.1, 0.12, 0.13, P.snow, -0.3, B + 0.1, 0.32, 0.015); k.cyl(0.018, 0.06, P.fire, -0.3, B + 0.22, 0.32, 0.018, 8);
+    for (const [i, c] of [P.fire, P.primary, P.gold, P.teal].entries()) k.box(0.085, 0.06, 0.13, c, -0.17 + i * 0.095, B + 0.1, 0.32, 0.006);
+    k.box(0.085, 0.06, 0.13, P.orange, -0.075, B + 0.16, 0.32, 0.006);
+    // Portique de quai
+    for (const x of [0.16, 0.42]) { k.box(0.025, 0.5, 0.025, P.orange, x, B, 0.02, 0.004); k.box(0.025, 0.5, 0.025, P.orange, x, B, -0.14, 0.004); k.box(0.03, 0.03, 0.2, P.orange, x, B + 0.48, -0.06, 0.004); }
+    k.box(0.32, 0.035, 0.035, P.orange, 0.29, B + 0.5, -0.06, 0.004); k.box(0.035, 0.035, 0.62, P.fire, 0.29, B + 0.535, 0.1, 0.004);
+    k.box(0.06, 0.05, 0.06, P.snow, 0.29, B + 0.47, 0.26, 0.008); k.cyl(0.004, 0.2, P.steel, 0.29, B + 0.27, 0.26, 0.004, 4);
+    // Conteneurs empilés et entrepôt
+    for (const [i, c] of [P.primary, P.fire, P.green].entries()) k.box(0.2, 0.07, 0.09, c, -0.32, B + i * 0.07, -0.02, 0.006);
+    k.box(0.2, 0.07, 0.09, P.gold, -0.1, B, -0.02, 0.006); k.box(0.2, 0.07, 0.09, P.teal, -0.1, B + 0.07, -0.02, 0.006);
+    k.box(0.52, 0.2, 0.24, P.metal, -0.18, B, -0.32, 0.025); k.barrel(0.52, 0.12, P.steelL, -0.18, B + 0.19, -0.32, 0, 0.35);
+  },
+  workshop(k) {
+    k.lot(P.paveD);
+    k.box(0.74, 0.26, 0.4, P.concrete, 0, B, -0.24, 0.03); k.box(0.76, 0.06, 0.42, P.orange, 0, B + 0.2, -0.24, 0.01);
+    k.box(0.78, 0.03, 0.44, P.steel, 0, B + 0.26, -0.24, 0.01);
+    for (let i = 0; i < 3; i++) { k.box(0.18, 0.17, 0.012, P.yellow, -0.24 + i * 0.24, B, -0.036, 0); for (let j = 1; j < 4; j++) k.box(0.18, 0.005, 0.014, P.black, -0.24 + i * 0.24, B + j * 0.042, -0.035, 0); }
+    k.roofUnit(-0.2, B + 0.29, -0.26); k.cyl(0.02, 0.14, P.steelL, 0.26, B + 0.29, -0.3, 0.02, 8);
+    // Camion-nacelle et matériaux
+    k.box(0.22, 0.09, 0.1, P.orange, -0.2, B + 0.02, 0.26, 0.015); k.box(0.08, 0.08, 0.095, P.snow, -0.05, B + 0.02, 0.26, 0.012);
+    { const arm = new THREE.BoxGeometry(0.22, 0.014, 0.014); arm.rotateZ(0.8); k.add(arm, P.steelL, -0.2, B + 0.19, 0.26); }
+    k.box(0.06, 0.05, 0.06, P.snow, -0.12, B + 0.26, 0.26, 0.008);
+    k.cone(0.07, 0.07, P.sand, 0.22, B, 0.2, 10); k.cone(0.06, 0.06, P.stone, 0.36, B, 0.3, 10);
+    for (let i = 0; i < 3; i++) k.cone(0.018, 0.045, P.orange, 0.06 + i * 0.07, B, 0.4, 8);
+    k.box(0.16, 0.03, 0.06, P.wood, 0.3, B, 0.06, 0.004); k.box(0.16, 0.03, 0.06, P.wood, 0.3, B + 0.03, 0.06, 0.004);
+  },
+  station(k) {
+    k.lot(P.paveD);
+    // Halle des voyageurs sous verrière
+    k.box(0.82, 0.24, 0.34, P.brick, 0.04, B, -0.26, 0.03); k.barrel(0.82, 0.17, P.glassL, 0.04, B + 0.23, -0.26, 0, 0.7);
+    k.box(0.84, 0.03, 0.36, P.brickD, 0.04, B + 0.22, -0.26, 0.008);
+    k.wins(0.82, 0.34, B + 0.05, 0.15, 1, 5, 0.04, -0.26, 2); k.box(0.12, 0.16, 0.012, P.door, 0.1, B, -0.086, 0);
+    // Tour de l'horloge
+    k.box(0.16, 0.56, 0.16, P.cream, -0.34, B, -0.06, 0.02); k.hip(0.2, 0.2, 0.14, P.tileD, -0.34, B + 0.56, -0.06);
+    k.cyl(0.05, 0.012, P.snow, -0.34, B + 0.4, 0.022, 0.05, 14); k.box(0.006, 0.04, 0.004, P.black, -0.34, B + 0.4, 0.03, 0);
+    // Quai, voies et train
+    k.box(0.94, 0.035, 0.1, P.concrete, 0, B, 0.12, 0.008); k.box(0.94, 0.008, 0.24, P.stone, 0, B, 0.32, 0);
+    for (const z of [0.27, 0.37]) k.box(0.94, 0.012, 0.012, P.steel, 0, B + 0.008, z, 0);
+    for (let i = 0; i < 9; i++) k.box(0.02, 0.006, 0.14, P.wood, -0.4 + i * 0.1, B + 0.006, 0.32, 0);
+    k.box(0.34, 0.1, 0.1, P.primary, -0.22, B + 0.025, 0.32, 0.025); k.box(0.34, 0.1, 0.1, P.snow, 0.15, B + 0.025, 0.32, 0.025);
+    k.box(0.36, 0.02, 0.102, P.fire, 0.15, B + 0.05, 0.32, 0.004); k.win(0.26, 0.035, -0.22, B + 0.09, 0.372, 0, true); k.win(0.26, 0.035, 0.15, B + 0.09, 0.372, 0, true);
+    for (const x of [-0.2, 0.2]) { k.cyl(0.008, 0.16, P.steel, x, B + 0.035, 0.12, 0.008, 6); k.box(0.2, 0.012, 0.1, P.steelL, x, B + 0.19, 0.12, 0.004); }
+  },
+  police(k) {
+    k.lot(P.pave);
+    k.box(0.72, 0.4, 0.48, P.slate, 0, B, -0.14, 0.03); k.box(0.76, 0.06, 0.52, P.snow, 0, B + 0.38, -0.14, 0.012);
+    k.box(0.74, 0.05, 0.5, P.navy, 0, B + 0.2, -0.14, 0.008);
+    k.wins(0.72, 0.48, B + 0.06, 0.3, 2, 4, 0, -0.14, 3); k.box(0.12, 0.17, 0.012, P.door, 0, B, 0.104, 0);
+    k.box(0.3, 0.02, 0.12, P.navy, 0, B + 0.18, 0.15, 0.006); k.box(0.2, 0.06, 0.014, P.snow, 0, B + 0.24, 0.106, 0.004);
+    // Antenne et gyrophare
+    k.cyl(0.012, 0.34, P.steelL, 0.26, B + 0.44, -0.28, 0.008, 6); k.cyl(0.05, 0.012, P.steelL, 0.26, B + 0.62, -0.28, 0.05, 10);
+    k.cyl(0.03, 0.04, P.primary, -0.24, B + 0.44, -0.04, 0.03, 10); k.flag(-0.26, B + 0.44, -0.3, 0.3, P.primary);
+    // Voitures de patrouille
+    for (const x of [-0.24, 0.2]) { k.car(x, 0.34, P.snow, 0); k.box(0.172, 0.014, 0.092, P.navy, x, B + 0.03, 0.34, 0.004); k.box(0.03, 0.012, 0.05, P.fire, x - 0.01, B + 0.098, 0.34, 0.003); }
+    k.bush(0.42, 0.1); k.bush(-0.42, 0.1);
+  },
+  airport(k) {
+    k.lot(P.paveD);
+    // Piste
+    k.box(0.94, 0.008, 0.34, P.asphalt, 0, B, 0.28, 0);
+    for (let i = 0; i < 5; i++) k.box(0.09, 0.004, 0.014, P.snow, -0.36 + i * 0.18, B + 0.008, 0.28, 0);
+    for (const z of [0.13, 0.43]) k.box(0.94, 0.004, 0.008, P.gold, 0, B + 0.008, z, 0);
+    // Aérogare
+    k.box(0.6, 0.2, 0.26, P.glass, -0.14, B, -0.28, 0.04); k.barrel(0.6, 0.13, P.snow, -0.14, B + 0.19, -0.28, 0, 0.55);
+    k.box(0.62, 0.025, 0.28, P.glassD, -0.14, B + 0.1, -0.28, 0.008); k.win(0.5, 0.06, -0.14, B + 0.05, -0.146, 0, true);
+    k.box(0.1, 0.05, 0.16, P.steelL, -0.3, B + 0.07, -0.08, 0.01); k.box(0.1, 0.05, 0.16, P.steelL, 0, B + 0.07, -0.08, 0.01);
+    // Tour de contrôle
+    k.cyl(0.05, 0.6, P.snow, 0.34, B, -0.3, 0.038, 10); k.cyl(0.07, 0.09, P.glassD, 0.34, B + 0.6, -0.3, 0.09, 10);
+    k.cyl(0.1, 0.02, P.snow, 0.34, B + 0.69, -0.3, 0.1, 10); k.cyl(0.006, 0.12, P.fire, 0.34, B + 0.71, -0.3, 0.006, 5);
+    // Avion sur la piste
+    k.box(0.36, 0.06, 0.06, P.snow, 0.04, B + 0.035, 0.28, 0.028); k.box(0.08, 0.012, 0.38, P.snow, 0.03, B + 0.055, 0.28, 0.004);
+    k.box(0.05, 0.09, 0.012, P.fire, -0.12, B + 0.08, 0.28, 0.004); k.box(0.04, 0.01, 0.14, P.snow, -0.12, B + 0.075, 0.28, 0.004);
+    k.box(0.37, 0.012, 0.062, P.primary, 0.04, B + 0.055, 0.28, 0.004); k.win(0.2, 0.014, 0.06, B + 0.075, 0.311, 0, true);
+    for (const z of [0.2, 0.36]) k.cyl(0.014, 0.05, P.steel, 0.03, B + 0.02, z, 0.014, 8);
+  },
 };
 
 /** Volume neutre pour un type inconnu (jamais censé arriver). */

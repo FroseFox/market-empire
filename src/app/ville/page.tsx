@@ -271,7 +271,7 @@ function Pill({ icon: Icon, label, value, sub, bad, warn, good, title }: { icon:
 /** Stats n°2 : d'où vient et où part l'argent de la ville, chaque jour. */
 function Budget({ city }: { city: CityStats }) {
   const rows: [string, number][] = [
-    ["Impôts", city.income.taxes], ["Entreprises", city.income.buildings], ["Exportations", city.income.exports], ["Dotation de l'État", city.income.grant],
+    ["Impôts", city.income.taxes], ["Entreprises", city.income.buildings - city.tourism.revenue], ["Tourisme", city.tourism.revenue], ["Exportations", city.income.exports], ["Dotation de l'État", city.income.grant],
     ["Dividendes reçus", city.income.dividends],
     ["Entretien", -city.expenses.maintenance], ["Importations", -city.expenses.imports], ["Dividendes versés", -city.expenses.dividends],
   ];
@@ -788,6 +788,15 @@ function Effects({ b }: { b: BuildingType }) {
   if (b.serves) chips.push({ text: `dessert ${num(b.serves)} hab.`, cls: "bg-emerald-50 text-emerald-700" });
   if (b.pollution) chips.push({ text: b.pollution > 0 ? `pollution +${num(b.pollution)}` : `pollution −${num(-b.pollution)}`, cls: b.pollution > 0 ? "bg-slate-200 text-slate-700" : "bg-emerald-50 text-emerald-700" });
   if (b.energyUse) chips.push({ text: `−${num(b.energyUse)}`, cls: "bg-danger-soft text-red-700", icon: Zap });
+  // Effets de ville : ce que le bâtiment change ailleurs dans le jeu
+  const special = "bg-violet-50 text-violet-700", p100 = (v: number) => Math.round(v * 100);
+  if (b.tourist) chips.push({ text: "tourisme", cls: special });
+  if (b.visitors) chips.push({ text: `visiteurs +${p100(b.visitors)} %`, cls: special });
+  if (b.growthBoost) chips.push({ text: `arrivées +${p100(b.growthBoost)} %`, cls: special });
+  if (b.exportBonus) chips.push({ text: `exports +${p100(b.exportBonus)} pts`, cls: special });
+  if (b.wearCut) chips.push({ text: `vétusté −${p100(b.wearCut)} %`, cls: special });
+  if (b.capitalBoost) chips.push({ text: `capital +${p100(b.capitalBoost)} %`, cls: special });
+  if (b.joy) chips.push({ text: `satisfaction +${p100(b.joy)} pt${p100(b.joy) > 1 ? "s" : ""}`, cls: special });
   return (
     <div className="flex flex-wrap gap-1">
       {chips.map(({ text, cls, icon: Icon }) => (

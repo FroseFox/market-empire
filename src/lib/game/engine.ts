@@ -7,7 +7,7 @@ import {
   NEED_PER_RANK, POLLUTION_FACTOR, POLLUTION_MAX, PRESTIGE_PER_GOAL, PRESTIGE_PER_RANK, PROJECTS, PROJECT_BY_ID,
   FEATURES, ORIENTATION_BY_ID, ORIENTATION_CHANGE_COST, ORIENTATION_MIN_RANK, type FeatureId, type OrientationId,
   RENOVATE_RATE, TERRITORY, WEAR_MAINTENANCE, WEAR_PER_DAY, WEAR_SATISFACTION,
-  ALLIANCE, BANK, CAPITAL, LEVERAGE, SHARES, CITY_RANKS, FORECAST_DAYS, GOALS, UPGRADES, SERVICES, SERVICE_BONUS, SERVICE_IDS,
+  ALLIANCE, BANK, CAPITAL, CITY_EFFECT_CAPS, LEVERAGE, SHARES, TOURISM, CITY_RANKS, FORECAST_DAYS, GOALS, UPGRADES, SERVICES, SERVICE_BONUS, SERVICE_IDS,
   STARTING_BUILDINGS, STARTING_CASH, STARTING_POPULATION, START_GRANT, TAX_PER_RESIDENT, TRADE_FEE_MIN, TRADE_FEE_RATE,
   type BuildingType, type Category, type Goal, type ServiceId, type Specialty,
 } from "./config";
@@ -198,6 +198,12 @@ export interface CityStats {
   income: { taxes: number; buildings: number; exports: number; grant: number; dividends: number; total: number };
   /** `dividends` = versés aux actionnaires de la ville. */
   expenses: { maintenance: number; imports: number; dividends: number; total: number };
+  /** Tourisme : attrait de la ville (satisfaction, pollution), visiteurs amenés par les transports,
+   *  multiplicateur appliqué aux revenus des bâtiments touristiques, et ce qu'ils rapportent aujourd'hui. */
+  tourism: { attractiveness: number; visitors: number; factor: number; revenue: number };
+  /** Effets des bâtiments spéciaux, plafonds appliqués : prix d'export (part du prix plein), vétusté ralentie,
+   *  capital en plus, croissance en plus, points de satisfaction. */
+  effects: { exportRatio: number; wearCut: number; capitalBoost: number; growthBoost: number; joy: number };
   /** Flux net de la ville hors dividendes (reçus et versés) : c'est lui qui est publié et partagé avec les actionnaires. */
   operating: number;
   exportsValue: number;
@@ -234,7 +240,8 @@ export function computeCity(state: CityInput): CityStats {
   const revBoost = (cat: Category) => 1 + (specialty === cat ? bonus : 0) + (orientation?.revenue?.[cat] ?? 0) + allianceBonus(state)
     + projects.reduce((a, p) => a + (p.perk.kind === "revenue" && p.perk.category === cat ? p.perk.bonus : 0), 0);
 
-  let housing = 0, jobs = 0, energyProd = 0, energyUse = 0, foodProd = 0, bRevenue = 0, cityValue = 0, assetValue = 0, emitted = 0, absorbed = 0;
+  let housing = 0, jobs = 0, energyProd = 0, energyUse = 0, foodProd = 0, bRevenue = 0, tRevenue = 0, cityValue = 0, assetValue = 0, emitted = 0, absorbed = 0;
+  const fx = { visitors: 0, growthBoost: 0, exportBonus: 0, wearCut: 0, capitalBoost: 0, joy: 0 };
   for (const [id, count] of Object.entries(state.buildings)) {
     const b = BUILDING_BY_ID[id];
     if (!b || count <= 0) continue;
@@ -243,7 +250,10 @@ export function computeCity(state: CityInput): CityStats {
     energyProd += (b.energyProd ?? 0) * count;
     energyUse += (b.energyUse ?? 0) * count;
     foodProd += (b.foodProd ?? 0) * count;
-    bRevenue += (b.revenue ?? 0) * count * revBoost(b.category);
+    // Les bâtiments touristiques sont comptés à part : leur revenu suit l'attrait de la ville, connu plus bas
+    if (b.tourist) tRevenue += (b.revenue ?? 0) * count * revBoost(b.category);
+    else bRevenue += (b.revenue ?? 0) * count * revBoost(b.category);
+    for (const key of FX_KEYS) fx[key] += (b[key] ?? 0) * count;
     if (b.service) capacity[b.service] += (b.serves ?? 0) * count;
     if ((b.pollution ?? 0) > 0) emitted += b.pollution! * count; else absorbed -= (b.pollution ?? 0) * count;
     cityValue += b.cost * count;
@@ -268,6 +278,8 @@ export function computeCity(state: CityInput): CityStats {
   // Le territoire acheté aussi
   for (let i = 1; i <= Math.min(state.territory ?? 0, TERRITORY.length - 1); i++) assetValue += TERRITORY[i].cost;
 
+  for (const key of FX_KEYS) fx[key] = Math.min(fx[key], CITY_EFFECT_CAPS[key]);
+  const exportRatio = EXPORT_RATIO + fx.exportBonus;
   const pop = Math.min(state.population, housing);
   energyUse += pop * ENERGY_PER_RESIDENT;
   const foodUse = pop * FOOD_PER_RESIDENT;
@@ -295,6 +307,7 @@ export function computeCity(state: CityInput): CityStats {
   factor("Pollution", -pollutionPenalty);
   factor("Vétusté", -wear * WEAR_SATISFACTION);
   if (orientation?.satisfaction) factor(orientation.name, orientation.satisfaction);
+  factor("Culture et loisirs", fx.joy);
   // Équipements publics : un bonus quand ils sont là, une pénalité (qui monte avec le rang) quand la ville les attend
   const services = {} as CityStats["services"];
   for (const id of SERVICE_IDS) {
@@ -311,7 +324,11 @@ export function computeCity(state: CityInput): CityStats {
   const taxes = pop * TAX_PER_RESIDENT * (0.6 + 0.4 * satisfaction) * (1 - unemploymentRate * 0.5);
   // Les bâtiments tournent au prorata des travailleurs disponibles
   const staffing = jobs > 0 ? employed / jobs : 0;
-  const buildingsIncome = bRevenue * staffing;
+  // Tourisme : une ville agréable et propre attire, les transports amènent les visiteurs
+  const attractiveness = clamp(TOURISM.base + TOURISM.perSatisfaction * satisfaction - TOURISM.perPollution * pollutionPenalty, TOURISM.min, TOURISM.max);
+  const tourismFactor = attractiveness * (1 + fx.visitors);
+  const tourismIncome = tRevenue * tourismFactor * staffing;
+  const buildingsIncome = bRevenue * staffing + tourismIncome;
 
   // Commerce : les contrats entre joueurs passent d'abord (meilleur prix des deux côtés), le reste au prix du marché
   // Entre alliés, le contrat se fait à un prix encore meilleur ; ces contrats-là sont servis en premier.
@@ -323,7 +340,7 @@ export function computeCity(state: CityInput): CityStats {
     const sold = Math.min(surplus, contracted(resource, "sell")), bought = Math.min(deficit, contracted(resource, "buy"));
     const soldAlly = Math.min(sold, contracted(resource, "sell", true)), boughtAlly = Math.min(bought, contracted(resource, "buy", true));
     return {
-      exports: (soldAlly * ALLIANCE.contract.sell + (sold - soldAlly) * CONTRACT_RATIO + (surplus - sold) * EXPORT_RATIO) * price,
+      exports: (soldAlly * ALLIANCE.contract.sell + (sold - soldAlly) * CONTRACT_RATIO + (surplus - sold) * exportRatio) * price,
       imports: (boughtAlly * ALLIANCE.contract.buy + (bought - boughtAlly) * CONTRACT_RATIO + (deficit - bought)) * price,
       sold, bought,
     };
@@ -347,7 +364,7 @@ export function computeCity(state: CityInput): CityStats {
     growth = housing - state.population; // démolition : départ immédiat
   } else if (freeHousing > 0) {
     const jobPull = clamp(0.3 + (openJobs / Math.max(1, active)) * 3, 0.2, 1.5);
-    growth = Math.min(freeHousing, Math.max(3, Math.round(pop * 0.08 * satisfaction * jobPull)));
+    growth = Math.min(freeHousing, Math.max(3, Math.round(pop * 0.08 * satisfaction * jobPull * (1 + fx.growthBoost))));
   } else if (unemploymentRate > 0.2 && satisfaction < 0.5) {
     growth = -Math.round(pop * 0.01);
   }
@@ -362,6 +379,8 @@ export function computeCity(state: CityInput): CityStats {
     contracts: { energySold: te.sold, energyBought: te.bought, foodSold: tf.sold, foodBought: tf.bought },
     income: { taxes, buildings: buildingsIncome, exports: exportsValue, grant, dividends: dividendsIn, total: incomeTotal },
     expenses: { maintenance, imports: importsValue, dividends: dividendsOut, total: expensesTotal },
+    tourism: { attractiveness, visitors: fx.visitors, factor: tourismFactor, revenue: tourismIncome },
+    effects: { exportRatio, wearCut: fx.wearCut, capitalBoost: fx.capitalBoost, growthBoost: fx.growthBoost, joy: fx.joy },
     operating,
     exportsValue, importsValue,
     tradeBalance: exportsValue - importsValue,
@@ -373,7 +392,8 @@ export function computeCity(state: CityInput): CityStats {
 }
 
 /** La vétusté n'apparaît qu'à partir du rang « Bourg » : un village n'a pas encore ce souci. */
-const nextWear = (wear = 0, population: number) => (cityRank(population) >= 1 ? Math.min(1, wear + WEAR_PER_DAY) : wear);
+const nextWear = (wear = 0, population: number, cut = 0) => (cityRank(population) >= 1 ? Math.min(1, wear + WEAR_PER_DAY * (1 - cut)) : wear);
+const FX_KEYS = ["visitors", "growthBoost", "exportBonus", "wearCut", "capitalBoost", "joy"] as const;
 
 /** Rang atteint pour une population donnée (indice dans CITY_RANKS). */
 export function cityRank(population: number): number {
@@ -542,9 +562,9 @@ export function tickDay(state: GameState, prices: Prices, at: number): GameState
     ...state,
     day: state.day + 1,
     cash: round2(state.cash + c.net - interest),
-    capital: round2((state.capital ?? 0) + capitalPerDay(state.holdings, prices)),
+    capital: round2((state.capital ?? 0) + capitalPerDay(state.holdings, prices) * (1 + c.effects.capitalBoost)),
     population: Math.max(0, state.population + c.growth),
-    wear: nextWear(state.wear, state.population),
+    wear: nextWear(state.wear, state.population, c.effects.wearCut),
   };
   delete next.today;
   const t = state.today ?? NO_COSTS;
@@ -1079,7 +1099,7 @@ export function forecast(state: CityInput, days = FORECAST_DAYS): { population: 
     const c = computeCity({ ...state, population, wear });
     cash += c.net;
     population = Math.max(0, population + c.growth);
-    wear = nextWear(wear, population);
+    wear = nextWear(wear, population, c.effects.wearCut);
   }
   return { population, net: computeCity({ ...state, population, wear }).net, cash };
 }
@@ -1088,7 +1108,7 @@ export function forecast(state: CityInput, days = FORECAST_DAYS): { population: 
 export function buildingAudit(buildingId: string, city: CityStats): { revenue: number; resources: number; maintenance: number; net: number; staffing: number } {
   const b = BUILDING_BY_ID[buildingId];
   const staffing = city.jobs > 0 ? city.employed / city.jobs : 0;
-  const revenue = (b.revenue ?? 0) * staffing;
+  const revenue = (b.revenue ?? 0) * staffing * (b.tourist ? city.tourism.factor : 1);
   // Une unité produite vaut le prix plein tant que la ville importe, le prix d'export sinon ; idem pour ce qui est consommé
   const unit = (balance: number, price: number) => (balance < 0 ? price : price * EXPORT_RATIO);
   const resources = ((b.energyProd ?? 0) - (b.energyUse ?? 0)) * unit(city.energy.balance, RESOURCE_PRICES.energy)
