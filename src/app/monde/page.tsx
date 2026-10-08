@@ -271,7 +271,7 @@ function Stat({ icon: Icon, label, value, sub }: { icon: typeof Globe2; label: s
   return (
     <div className="card p-3 sm:p-4 flex items-center gap-3 appear min-w-0">
       <span className="hidden sm:grid h-10 w-10 rounded-full bg-primary-soft text-primary place-items-center shrink-0"><Icon size={18} /></span>
-      <div className="min-w-0"><div className="text-[11px] sm:text-[12px] text-muted truncate">{label}</div><div className="text-[15px] sm:text-[18px] font-bold truncate">{value}</div><div className="text-[10px] sm:text-[11px] text-muted truncate">{sub}</div></div>
+      <div className="min-w-0"><div className="text-[11px] sm:text-[12px] text-muted truncate">{label}</div><div className="text-[15px] sm:text-[18px] font-bold truncate">{value}</div><div className="text-[10px] sm:text-[11px] text-muted line-clamp-2 sm:line-clamp-1">{sub}</div></div>
     </div>
   );
 }
