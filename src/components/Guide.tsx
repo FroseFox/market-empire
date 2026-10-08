@@ -102,7 +102,7 @@ export default function Guide() {
     const badge = step ? String(index + 1) : worried ? "!" : todo.length ? String(todo.length) : "";
     return (
       <button onClick={() => fold(false)} aria-label={`Ouvrir Tic, le guide : ${label}`} title={label}
-        className={`fixed z-[25] grid h-12 w-12 place-items-center rounded-full border bg-card shadow-lg transition-transform hover:scale-105 ${worried ? "border-red-300" : "border-line"} ${onCity ? "left-3 top-[332px] lg:left-[252px]" : "bottom-[84px] right-3 lg:bottom-6 lg:left-[256px] lg:right-auto"}`}>
+        className={`fixed z-[25] grid h-12 w-12 place-items-center rounded-full border bg-card shadow-lg transition-transform hover:scale-105 ${worried ? "border-red-300" : "border-line"} ${onCity ? "left-3 top-[368px] lg:left-[252px]" : "bottom-[84px] right-3 lg:bottom-6 lg:left-[256px] lg:right-auto"}`}>
         <span className="relative block h-10 w-10 overflow-hidden rounded-full"><span className="absolute left-1/2 top-[5px] -translate-x-1/2 [&>svg]:block"><Robot size={50} mood={mood} still /></span></span>
         {badge && <span className={`absolute -right-0.5 -top-0.5 grid h-[18px] min-w-[18px] place-items-center rounded-full px-1 text-[10px] font-bold leading-none text-white ${worried ? "bg-danger" : "bg-primary"}`}>{badge}</span>}
       </button>

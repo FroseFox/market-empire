@@ -14,8 +14,10 @@ export interface CityFrame { height: number | "fill"; compact: boolean; interact
 export interface CityLive {
   mode: CityMode | null; selected: { x: number; y: number } | null; tone: "primary" | "danger";
   markers: CityMarker[]; signs: Record<string, CitySign>; layers: boolean; light: Light;
+  /** Graphismes légers : sans ombres ni animations, image moins fine. */
+  lite?: boolean;
 }
-interface Callbacks { tip: (t: CityTip | null) => void; click: (x: number, y: number) => void; lost: () => void }
+interface Callbacks { tip: (t: CityTip | null) => void; click: (x: number, y: number) => void; lost: () => void; /** La vue rame depuis plusieurs secondes. */ slow?: () => void }
 
 const MIN_ZOOM = 0.6, MAX_ZOOM = 4;
 // Le zoom est relatif à « toute la carte tient dans le cadre » : sur un écran étroit, ×4 restait minuscule.
@@ -122,7 +124,10 @@ export class CityEngine {
   private hoverTile: { x: number; y: number } | null = null;
   // Boucle
   private raf = 0; private onScreen = true; private lastDraw = 0; private disposed = false;
-  private reduce = false; private pts = new Map<number, { x: number; y: number }>();
+  private reduce = false; private lite = false; private slowFrames = 0; private prevT = 0; private told = false;
+  /** Vue figée : le joueur préfère moins de mouvement, ou les graphismes légers sont actifs. */
+  private get calm() { return this.reduce || this.lite; }
+  private pts = new Map<number, { x: number; y: number }>();
   private drag: { x: number; y: number; moved: boolean } | null = null;
   private pinch: { dist: number; mx: number; my: number } | null = null;
   private io: IntersectionObserver; private ro: ResizeObserver;
@@ -421,6 +426,13 @@ export class CityEngine {
 
   private applyLive() {
     const l = this.live;
+    if (!!l.lite !== this.lite) {
+      this.lite = !!l.lite;
+      this.sun.castShadow = !this.lite;
+      this.overlayKey = ""; // les pastilles sont refaites : elles ne se balancent plus en léger
+      this.layout();
+      this.run();
+    }
     this.markerMap = new Map(l.markers.map((m) => [`${m.x},${m.y}`, m]));
     if (l.mode && !this.modeGrid) this.buildModeGrid();
     if (this.modeGrid) this.modeGrid.visible = !!l.mode;
@@ -542,7 +554,7 @@ export class CityEngine {
       el.style.cssText = "position:absolute;left:0;top:0;will-change:transform;pointer-events:auto;cursor:pointer;padding:8px 8px 0;touch-action:manipulation";
       el.innerHTML = markerSvg(mk.kind);
       el.addEventListener("click", (e) => { e.stopPropagation(); this.cb.click(mk.x, mk.y); });
-      if (!this.reduce) (el.firstElementChild as HTMLElement).animate([{ transform: "translateY(0)" }, { transform: "translateY(-4px)" }], { duration: 1300 + ((mk.x * 37 + mk.y * 11) % 5) * 90, direction: "alternate", iterations: Infinity, easing: "ease-in-out" });
+      if (!this.calm) (el.firstElementChild as HTMLElement).animate([{ transform: "translateY(0)" }, { transform: "translateY(-4px)" }], { duration: 1300 + ((mk.x * 37 + mk.y * 11) % 5) * 90, direction: "alternate", iterations: Infinity, easing: "ease-in-out" });
       this.overlay.appendChild(el);
       this.pins.push({ el, x: ctr(p, "x"), y: ctr(p, "y"), top: topOf(p), lift: l.signs[`${mk.x},${mk.y}`] ? 1 : 0 });
     }
@@ -564,7 +576,7 @@ export class CityEngine {
   private layout() {
     const f = this.frameOpts;
     this.W = Math.max(1, this.box.clientWidth); this.H = Math.max(1, f.height === "fill" ? this.box.clientHeight : f.height);
-    const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2, Math.sqrt(3_200_000 / (this.W * this.H))));
+    const dpr = this.lite ? 1 : Math.max(1, Math.min(window.devicePixelRatio || 1, 2, Math.sqrt(3_200_000 / (this.W * this.H))));
     this.renderer.setPixelRatio(dpr); this.renderer.setSize(this.W, this.H, false);
     this.canvas.style.width = `${this.W}px`; this.canvas.style.height = `${this.H}px`;
     const n = this.x1 + 1 - this.x0 + (this.y1 + 1 - this.y0), allow = (f.compact ? 1 : 1.8) * COS;
@@ -627,7 +639,7 @@ export class CityEngine {
     return { zoom, ox: gx - a - b - this.base.tx, oz: gz + a - b - this.base.tz };
   }
   private go(target: { zoom: number; ox: number; oz: number }, smooth: boolean) {
-    if (!smooth || this.reduce || !this.raf) { this.goal = null; this.view = { ...target }; this.applyView(); this.draw(); return; }
+    if (!smooth || this.calm || !this.raf) { this.goal = null; this.view = { ...target }; this.applyView(); this.draw(); return; }
     this.goal = target;
   }
   zoomAt(f: number, sx = this.W / 2, sy = this.H / 2) { this.go(this.viewAround((this.goal?.zoom ?? this.view.zoom) * f, sx, sy), true); }
@@ -659,12 +671,12 @@ export class CityEngine {
       this.night = this.live.light === "day" ? 0 : nightFactor(); this.nightAt = t; this.nightSeen = this.live.light;
     }
     if (this.night !== this.nightDrawn) this.applyNight();
-    const tt = this.reduce ? 0 : t;
+    const tt = this.calm ? 0 : t;
 
     // Chantiers : les nouveaux bâtiments sortent de terre
     if (this.births.size) {
       for (const [k, b] of this.births) {
-        const g = this.reduce ? 1 : Math.min(1, (t - b) / 700);
+        const g = this.calm ? 1 : Math.min(1, (t - b) / 700);
         if (k !== this.hidden) this.scaleInst(k, Math.max(0.02, 1 - Math.pow(1 - g, 3)));
         if (g >= 1) this.births.delete(k);
       }
@@ -714,12 +726,19 @@ export class CityEngine {
     // Pleine fluidité tant que le joueur est sur le jeu. Fenêtre visible mais sans le focus (autre fenêtre ou
     // autre appli au premier plan) : 30 images par seconde suffisent. Onglet caché : la boucle est arrêtée (run).
     if (document.hasFocus() || this.goal || this.pts.size > 0 || t < this.growUntil || t - this.lastDraw >= 33) { this.lastDraw = t; this.frame(t); }
+    // Mesure de fluidité : sous ~20 images par seconde pendant plusieurs secondes d'affilée, on prévient (une fois)
+    if (document.hasFocus() && this.prevT) {
+      const dt = t - this.prevT;
+      this.slowFrames = dt > 50 && dt < 1000 ? this.slowFrames + 1 : Math.max(0, this.slowFrames - 2);
+      if (this.slowFrames > 60 && !this.told) { this.told = true; this.cb.slow?.(); }
+    }
+    this.prevT = t;
     this.raf = requestAnimationFrame(this.loop);
   };
   private run = () => {
     cancelAnimationFrame(this.raf); this.raf = 0;
     if (this.disposed) return;
-    if (this.reduce || !this.onScreen || document.hidden) { this.frame(performance.now()); return; }
+    if (this.calm || !this.onScreen || document.hidden) { this.frame(performance.now()); return; }
     this.raf = requestAnimationFrame(this.loop);
   };
 

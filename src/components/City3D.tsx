@@ -3,10 +3,11 @@
 // La bibliothèque 3D n'est chargée qu'ici, au moment où une ville s'affiche. Si la 3D ne peut pas démarrer
 // (WebGL absent ou perdu), l'ancienne vue dessinée (IsoCity) prend le relais : le jeu reste jouable partout.
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { Layers, Moon, Sun } from "lucide-react";
+import { Layers, Moon, Sparkles, Sun } from "lucide-react";
+import { useGame } from "@/store/game";
 import { CATEGORY_LABELS } from "@/lib/game/config";
 import { MAP_SIZE, type Plot } from "@/lib/game/layout";
-import IsoCity, { CAT_COLOR, LEGEND, readLight, setLight, subLight, ZOOM_BUTTONS, type CityMarker, type CityMode, type CitySign, type Light, type ZoomKind } from "@/components/IsoCity";
+import IsoCity, { CAT_COLOR, LEGEND, readGfx, readLight, setGfx, setLight, subGfx, subLight, ZOOM_BUTTONS, type CityMarker, type CityMode, type CitySign, type Light, type ZoomKind } from "@/components/IsoCity";
 import type { CityEngine, CityTip } from "@/lib/city3d/engine";
 
 interface Props {
@@ -31,6 +32,8 @@ export default function City3D(props: Props) {
   const [tip, setTip] = useState<CityTip | null>(null);
   const [layers, setLayers] = useState(false);
   const light = useSyncExternalStore(subLight, readLight, () => "auto" as Light);
+  const gfx = useSyncExternalStore(subGfx, readGfx, () => null);
+  const lite = gfx === "light";
   const interactive = !!onTileClick;
 
   useEffect(() => { clickRef.current = onTileClick; });
@@ -42,7 +45,11 @@ export default function City3D(props: Props) {
     let cancelled = false, made: CityEngine | null = null;
     import("@/lib/city3d/engine").then(({ CityEngine }) => {
       if (cancelled) return;
-      made = new CityEngine(box, cv, ov, { tip: setTip, click: (x, y) => clickRef.current?.(x, y), lost: () => setFailed(true) });
+      made = new CityEngine(box, cv, ov, {
+        tip: setTip, click: (x, y) => clickRef.current?.(x, y), lost: () => setFailed(true),
+        // La vue rame et le joueur n'a rien réglé : on allège tout seul, en le disant
+        slow: () => { if (readGfx() === null) { setGfx("light"); useGame.getState().notify("Ville allégée pour rester fluide. Bouton ✦ pour remettre les détails."); } },
+      });
       engine.current = made; setReady(true);
     }).catch(() => { if (!cancelled) setFailed(true); });
     return () => { cancelled = true; made?.dispose(); engine.current = null; };
@@ -57,8 +64,8 @@ export default function City3D(props: Props) {
   // Sélection, mode, indicateurs, calque, éclairage
   useEffect(() => {
     if (!ready) return;
-    engine.current?.setLive({ mode, selected, tone: selectedTone, markers: markers ?? [], signs: signs ?? {}, layers, light });
-  }, [ready, mode, selected, selectedTone, markers, signs, layers, light, plots]);
+    engine.current?.setLive({ mode, selected, tone: selectedTone, markers: markers ?? [], signs: signs ?? {}, layers, light, lite });
+  }, [ready, mode, selected, selectedTone, markers, signs, layers, light, lite, plots]);
 
   if (failed) return <IsoCity {...props} />;
 
@@ -97,7 +104,11 @@ export default function City3D(props: Props) {
           <button type="button" onClick={() => setLight(auto ? "day" : "auto")}
             aria-label={auto ? "Garder la ville en plein jour" : "Suivre l'heure réelle (nuit le soir)"}
             title={auto ? "Éclairage : suit l'heure réelle. Cliquer pour rester en plein jour." : "Éclairage : plein jour. Cliquer pour suivre l'heure réelle."}
-            className="h-9 w-9 grid place-items-center text-ink hover:bg-slate-50">{auto ? <Moon size={16} /> : <Sun size={16} />}</button>
+            className="h-9 w-9 grid place-items-center border-b border-line text-ink hover:bg-slate-50">{auto ? <Moon size={16} /> : <Sun size={16} />}</button>
+          <button type="button" aria-pressed={!lite} onClick={() => setGfx(lite ? "full" : "light")}
+            aria-label={lite ? "Remettre les ombres et les animations" : "Passer en graphismes légers"}
+            title={lite ? "Graphismes légers : sans ombres ni animations. Cliquer pour tout remettre." : "Graphismes complets. Cliquer pour alléger si la ville rame."}
+            className={`h-9 w-9 grid place-items-center ${lite ? "text-muted hover:bg-slate-50" : "text-primary hover:bg-slate-50"}`}><Sparkles size={16} className={lite ? "opacity-50" : ""} /></button>
         </div>
       )}
       {!compact && layers && (
