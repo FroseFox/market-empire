@@ -8,9 +8,25 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 export type V3 = [number, number, number];
 /** Hélice animée (éolienne) : centre du moyeu et longueur des pales. */
 export interface Rotor { at: V3; size: number }
+/** Pièce animée d'un bâtiment (grande roue, train, gyrophare…). Sa géométrie est centrée sur son propre pivot `at`.
+ *  - spin  : tourne sans fin autour de `axis` (`amount` tours par seconde) ;
+ *  - rock  : se balance autour de `axis` (`amount` radians de part et d'autre) ;
+ *  - bob   : monte et descend de `amount` ;
+ *  - slide : va de `at` à `to`, marque un arrêt, puis revient ;
+ *  - pass  : traverse de `at` à `to` puis disparaît jusqu'au passage suivant ;
+ *  - pulse : bat (son échelle varie de `amount`), comme un feu qui clignote.
+ *  `ry` oriente la pièce avant l'animation ; `period` = durée d'un cycle en secondes. */
+export interface Motion {
+  geo: THREE.BufferGeometry; at: V3;
+  kind: "spin" | "rock" | "bob" | "slide" | "pass" | "pulse";
+  axis?: "x" | "y" | "z"; ry?: number; amount?: number; period?: number; to?: V3;
+}
 export interface Model {
   /** Volumes opaques, couleur par sommet. */
   solid: THREE.BufferGeometry;
+  /** Pièces animées, et le modèle complet à l'arrêt (pièces comprises) pour les aperçus. */
+  motions: Motion[];
+  still: THREE.BufferGeometry;
   /** Fenêtres qui s'allument la nuit. */
   lit: THREE.BufferGeometry | null;
   /** Hauteur du point le plus haut (pour poser indicateurs et infobulles). */
@@ -68,6 +84,19 @@ class Kit {
   private lits: THREE.BufferGeometry[] = [];
   private smoke: V3[] = [];
   private rotors: Rotor[] = [];
+  private motions: Motion[] = [];
+
+  /** Pièce animée : `build` la dessine autour de son pivot (0, 0, 0), qui sera posé en `def.at`. */
+  motion(def: Omit<Motion, "geo">, build: (m: Kit) => void) {
+    const m = new Kit(); build(m);
+    const geo = mergeGeometries(m.parts, false)!;
+    for (const p of m.parts) p.dispose();
+    this.motions.push({ ...def, geo });
+  }
+  /** Feu clignotant (balise de toit, gyrophare). */
+  beacon(x: number, y: number, z: number, c: number = P.red, r = 0.022, period = 1.6) {
+    this.motion({ kind: "pulse", at: [x, y, z], amount: 0.45, period }, (m) => m.ball(r, c, 0, 0, 0));
+  }
 
   add(g: THREE.BufferGeometry, color: number, x: number, y: number, z: number, ry = 0, lit = false) {
     if (ry) g.rotateY(ry);
@@ -176,6 +205,40 @@ class Kit {
     this.box(0.06, 0.04, 0.09, P.snow, x, y + h - 0.01, z, 0.012, Math.PI / 4);
     this.rotors.push({ at: [x + 0.045, y + h + 0.01, z + 0.045], size });
   }
+  /** Fumée ou vapeur qui s'échappe de ce point. */
+  puff(x: number, y: number, z: number) { this.smoke.push([x, y, z]); }
+  /** Disque vertical (horloge, enseigne ronde), face tournée vers +z (ou +x avec ry = π/2). */
+  disc(r: number, c: number, x: number, y: number, z: number, ry = 0, t = 0.012) {
+    const g = new THREE.CylinderGeometry(r, r, t, 16); g.rotateX(Math.PI / 2); this.add(g, c, x, y, z, ry);
+  }
+  /** Lampadaire de jardin : fût et globe. */
+  lamp(x: number, z: number, h = 0.2, y = B) {
+    this.cyl(0.009, h, P.steel, x, y, z, 0.007, 6); this.ball(0.024, P.gold, x, y + h + 0.012, z, 1, 0);
+  }
+  bench(x: number, z: number, ry = 0, y = B) {
+    this.box(0.13, 0.014, 0.045, P.wood, x, y + 0.03, z, 0.004, ry); this.box(0.13, 0.03, 0.01, P.wood, x - Math.sin(ry) * 0.02, y + 0.044, z - Math.cos(ry) * 0.02, 0.003, ry);
+  }
+  /** Clôture basse entre deux points (piquets et lisse). */
+  fence(x0: number, z0: number, x1: number, z1: number, c: number = P.wood, y = B) {
+    const len = Math.hypot(x1 - x0, z1 - z0), n = Math.max(2, Math.round(len / 0.11)), ry = -Math.atan2(z1 - z0, x1 - x0);
+    for (let i = 0; i <= n; i++) this.cyl(0.008, 0.055, c, x0 + ((x1 - x0) * i) / n, y, z0 + ((z1 - z0) * i) / n, 0.008, 5);
+    this.box(len, 0.01, 0.01, c, (x0 + x1) / 2, y + 0.036, (z0 + z1) / 2, 0, ry);
+  }
+  /** Massif de fleurs. */
+  flowers(x: number, z: number, c: number, n = 3, y = B) {
+    this.box(0.035 * n + 0.02, 0.016, 0.05, P.soil, x, y, z, 0.006);
+    for (let i = 0; i < n; i++) this.ball(0.017, i % 2 ? P.snow : c, x + (i - (n - 1) / 2) * 0.035, y + 0.024, z, 1, 0);
+  }
+  /** Antenne de toit, avec ou sans feu clignotant. */
+  mast(x: number, y: number, z: number, h: number, light = true) {
+    this.cyl(0.009, h, P.steelL, x, y, z, 0.005, 6);
+    if (light) this.beacon(x, y + h + 0.012, z, P.red, 0.016, 1.8);
+  }
+  /** Ascenseur vitré le long d'une façade (+z, ou +x avec ry = π/2). */
+  lift(x: number, y0: number, y1: number, z: number, ry = 0, period = 10) {
+    this.box(0.014, y1 - y0 + 0.12, 0.014, P.metal, x, y0 - 0.02, z, 0, ry);
+    this.motion({ kind: "slide", at: [x, y0, z], to: [x, y1, z], ry, period }, (m) => { m.box(0.07, 0.09, 0.03, P.glassL, 0, 0, 0.012, 0.008); m.box(0.074, 0.012, 0.034, P.steel, 0, 0.088, 0.012, 0.003); });
+  }
   flag(x: number, y: number, z: number, h: number, c: number) {
     this.cyl(0.008, h, P.snow, x, y, z, 0.008, 6);
     this.box(0.11, 0.065, 0.01, c, x + 0.06, y + h - 0.075, z, 0);
@@ -194,11 +257,18 @@ class Kit {
   done(): Model {
     const solid = mergeGeometries(this.parts, false)!;
     const lit = this.lits.length ? mergeGeometries(this.lits, false) : null;
-    solid.computeBoundingBox();
-    const top = solid.boundingBox ? solid.boundingBox.max.y : 1;
+    // Modèle à l'arrêt : les pièces animées posées à leur place de départ
+    let still = solid;
+    if (this.motions.length) {
+      const rest = this.motions.map((mv) => { const g = mv.geo.clone(); if (mv.ry) g.rotateY(mv.ry); g.translate(mv.at[0], mv.at[1], mv.at[2]); return g; });
+      still = mergeGeometries([...this.parts, ...rest], false)!;
+      for (const g of rest) g.dispose();
+    }
+    still.computeBoundingBox();
+    const top = still.boundingBox ? still.boundingBox.max.y : 1;
     for (const p of this.parts) p.dispose();
     for (const p of this.lits) p.dispose();
-    return { solid, lit, top, smoke: this.smoke, rotors: this.rotors };
+    return { solid, lit, top, smoke: this.smoke, rotors: this.rotors, motions: this.motions, still };
   }
 }
 
@@ -592,14 +662,14 @@ const BUILD: Record<string, (k: Kit) => void> = {
     k.lot(P.lawn);
     // Grande roue, tournée vers la caméra
     const wheel = (g: THREE.BufferGeometry, c: number) => k.add(g, c, -0.14, B + 0.5, -0.14, Math.PI / 4);
-    wheel(new THREE.TorusGeometry(0.34, 0.012, 6, 32), P.snow);
-    wheel(new THREE.TorusGeometry(0.28, 0.007, 6, 32), P.metal);
-    for (let i = 0; i < 4; i++) { const s = new THREE.BoxGeometry(0.68, 0.008, 0.008); s.rotateZ((i * Math.PI) / 4); wheel(s, P.steelL); }
     const hues = [P.fire, P.gold, P.primary, P.teal, P.pink, P.orange, P.violet, P.green];
-    for (let i = 0; i < 8; i++) {
-      const a = (i * Math.PI) / 4, g = rbox(0.06, 0.05, 0.05, 0.012);
-      g.translate(Math.cos(a) * 0.34, Math.sin(a) * 0.34 - 0.045, 0); wheel(g, hues[i]);
-    }
+    // La roue tourne lentement ; ses nacelles sont rondes, pour ne jamais paraître à l'envers
+    k.motion({ kind: "spin", axis: "z", ry: Math.PI / 4, at: [-0.14, B + 0.5, -0.14], amount: 0.035 }, (m) => {
+      m.add(new THREE.TorusGeometry(0.34, 0.012, 6, 32), P.snow, 0, 0, 0);
+      m.add(new THREE.TorusGeometry(0.28, 0.007, 6, 32), P.metal, 0, 0, 0);
+      for (let i = 0; i < 4; i++) { const s = new THREE.BoxGeometry(0.68, 0.008, 0.008); s.rotateZ((i * Math.PI) / 4); m.add(s, P.steelL, 0, 0, 0); }
+      for (let i = 0; i < 8; i++) { const a = (i * Math.PI) / 4; m.ball(0.036, hues[i], Math.cos(a) * 0.34, Math.sin(a) * 0.34, 0, 0.9); }
+    });
     k.ball(0.03, P.fire, -0.14, B + 0.5, -0.14);
     for (const s of [-1, 1]) { const leg = new THREE.BoxGeometry(0.018, 0.56, 0.018); leg.rotateZ(s * 0.3); leg.translate(s * 0.085, -0.27, 0); wheel(leg, P.steel); }
     // Chapiteau rayé
@@ -607,7 +677,9 @@ const BUILD: Record<string, (k: Kit) => void> = {
     k.cone(0.2, 0.2, P.snow, 0.26, B + 0.0905, 0.22, 7); k.flag(0.26, B + 0.28, 0.22, 0.12, P.gold);
     // Manège
     k.cyl(0.11, 0.02, P.gold, -0.28, B, 0.3, 0.11, 14); k.cyl(0.012, 0.13, P.snow, -0.28, B + 0.02, 0.3, 0.012, 6); k.cone(0.13, 0.08, P.pink, -0.28, B + 0.14, 0.3, 14);
-    for (let i = 0; i < 4; i++) k.ball(0.018, hues[i + 2], -0.28 + Math.cos(i * 1.57) * 0.075, B + 0.05, 0.3 + Math.sin(i * 1.57) * 0.075);
+    k.motion({ kind: "spin", axis: "y", at: [-0.28, B + 0.02, 0.3], amount: 0.14 }, (m) => {
+      for (let i = 0; i < 4; i++) { const x = Math.cos(i * 1.57) * 0.075, z = Math.sin(i * 1.57) * 0.075; m.ball(0.02, hues[i + 2], x, 0.035, z); m.cyl(0.004, 0.11, P.gold, x, 0.02, z, 0.004, 4); }
+    });
     k.box(0.1, 0.07, 0.08, P.orange, 0.34, B, -0.3, 0.012); k.box(0.12, 0.02, 0.1, P.snow, 0.34, B + 0.07, -0.3, 0.006);
     k.tree(0.4, -0.06, 0.6); k.bush(0.04, 0.4);
   },
@@ -651,7 +723,9 @@ const BUILD: Record<string, (k: Kit) => void> = {
     // Portique de quai
     for (const x of [0.16, 0.42]) { k.box(0.025, 0.5, 0.025, P.orange, x, B, 0.02, 0.004); k.box(0.025, 0.5, 0.025, P.orange, x, B, -0.14, 0.004); k.box(0.03, 0.03, 0.2, P.orange, x, B + 0.48, -0.06, 0.004); }
     k.box(0.32, 0.035, 0.035, P.orange, 0.29, B + 0.5, -0.06, 0.004); k.box(0.035, 0.035, 0.62, P.fire, 0.29, B + 0.535, 0.1, 0.004);
-    k.box(0.06, 0.05, 0.06, P.snow, 0.29, B + 0.47, 0.26, 0.008); k.cyl(0.004, 0.2, P.steel, 0.29, B + 0.27, 0.26, 0.004, 4);
+    k.motion({ kind: "slide", at: [0.29, B + 0.47, -0.08], to: [0.29, B + 0.47, 0.3], period: 11 }, (m) => {
+      m.box(0.06, 0.05, 0.06, P.snow, 0, 0, 0, 0.008); m.cyl(0.004, 0.16, P.steel, 0, -0.16, 0, 0.004, 4); m.box(0.085, 0.055, 0.12, P.teal, 0, -0.21, 0, 0.006);
+    });
     // Conteneurs empilés et entrepôt
     for (const [i, c] of [P.primary, P.fire, P.green].entries()) k.box(0.2, 0.07, 0.09, c, -0.32, B + i * 0.07, -0.02, 0.006);
     k.box(0.2, 0.07, 0.09, P.gold, -0.1, B, -0.02, 0.006); k.box(0.2, 0.07, 0.09, P.teal, -0.1, B + 0.07, -0.02, 0.006);
@@ -684,8 +758,11 @@ const BUILD: Record<string, (k: Kit) => void> = {
     k.box(0.94, 0.035, 0.1, P.concrete, 0, B, 0.12, 0.008); k.box(0.94, 0.008, 0.24, P.stone, 0, B, 0.32, 0);
     for (const z of [0.27, 0.37]) k.box(0.94, 0.012, 0.012, P.steel, 0, B + 0.008, z, 0);
     for (let i = 0; i < 9; i++) k.box(0.02, 0.006, 0.14, P.wood, -0.4 + i * 0.1, B + 0.006, 0.32, 0);
-    k.box(0.34, 0.1, 0.1, P.primary, -0.22, B + 0.025, 0.32, 0.025); k.box(0.34, 0.1, 0.1, P.snow, 0.15, B + 0.025, 0.32, 0.025);
-    k.box(0.36, 0.02, 0.102, P.fire, 0.15, B + 0.05, 0.32, 0.004); k.win(0.26, 0.035, -0.22, B + 0.09, 0.372, 0, true); k.win(0.26, 0.035, 0.15, B + 0.09, 0.372, 0, true);
+    k.motion({ kind: "slide", at: [-0.2, B + 0.025, 0.32], to: [0.2, B + 0.025, 0.32], period: 16 }, (m) => {
+      m.box(0.26, 0.1, 0.1, P.primary, -0.135, 0, 0, 0.025); m.box(0.26, 0.1, 0.1, P.snow, 0.135, 0, 0, 0.025);
+      m.box(0.27, 0.02, 0.102, P.fire, 0.135, 0.025, 0, 0.004); m.box(0.02, 0.03, 0.04, P.steel, 0, 0.03, 0, 0.004);
+      m.box(0.2, 0.03, 0.104, P.glassL, -0.135, 0.055, 0, 0.004); m.box(0.2, 0.03, 0.104, P.glassL, 0.135, 0.055, 0, 0.004);
+    });
     for (const x of [-0.2, 0.2]) { k.cyl(0.008, 0.16, P.steel, x, B + 0.035, 0.12, 0.008, 6); k.box(0.2, 0.012, 0.1, P.steelL, x, B + 0.19, 0.12, 0.004); }
   },
   police(k) {
@@ -715,10 +792,393 @@ const BUILD: Record<string, (k: Kit) => void> = {
     k.cyl(0.05, 0.6, P.snow, 0.34, B, -0.3, 0.038, 10); k.cyl(0.07, 0.09, P.glassD, 0.34, B + 0.6, -0.3, 0.09, 10);
     k.cyl(0.1, 0.02, P.snow, 0.34, B + 0.69, -0.3, 0.1, 10); k.cyl(0.006, 0.12, P.fire, 0.34, B + 0.71, -0.3, 0.006, 5);
     // Avion sur la piste
-    k.box(0.36, 0.06, 0.06, P.snow, 0.04, B + 0.035, 0.28, 0.028); k.box(0.08, 0.012, 0.38, P.snow, 0.03, B + 0.055, 0.28, 0.004);
-    k.box(0.05, 0.09, 0.012, P.fire, -0.12, B + 0.08, 0.28, 0.004); k.box(0.04, 0.01, 0.14, P.snow, -0.12, B + 0.075, 0.28, 0.004);
-    k.box(0.37, 0.012, 0.062, P.primary, 0.04, B + 0.055, 0.28, 0.004); k.win(0.2, 0.014, 0.06, B + 0.075, 0.311, 0, true);
-    for (const z of [0.2, 0.36]) k.cyl(0.014, 0.05, P.steel, 0.03, B + 0.02, z, 0.014, 8);
+    k.motion({ kind: "pass", at: [-0.24, B + 0.035, 0.28], to: [0.3, B + 0.26, 0.28], period: 13 }, (m) => {
+      m.box(0.3, 0.055, 0.055, P.snow, 0, 0, 0, 0.026); m.box(0.07, 0.01, 0.32, P.snow, -0.01, 0.02, 0, 0.004);
+      m.box(0.045, 0.08, 0.012, P.fire, -0.13, 0.04, 0, 0.004); m.box(0.035, 0.01, 0.12, P.snow, -0.13, 0.036, 0, 0.004);
+      m.box(0.31, 0.012, 0.057, P.primary, 0, 0.02, 0, 0.004); m.box(0.18, 0.014, 0.058, P.glassD, 0.03, 0.036, 0, 0.003);
+      for (const z of [-0.08, 0.08]) m.cyl(0.013, 0.045, P.steel, -0.01, -0.012, z, 0.013, 8);
+    });
+  },
+};
+
+// ─── Finitions : détails et petites animations ajoutés à chaque maquette ───
+// Même esprit que le reste (volumes simples, couleurs franches) : du mobilier, des toits habités, et une chose qui bouge
+// là où elle raconte le bâtiment (un train à quai, une grande roue, un gyrophare).
+
+/** Chariot élévateur qui fait des allers-retours le long d'un quai. */
+function forklift(k: Kit, x0: number, x1: number, z: number, period = 8) {
+  k.motion({ kind: "slide", at: [x0, B, z], to: [x1, B, z], period }, (m) => {
+    m.box(0.075, 0.04, 0.05, P.orange, 0, 0.012, 0, 0.01); m.box(0.035, 0.05, 0.045, P.black, -0.018, 0.05, 0, 0.006);
+    m.box(0.008, 0.09, 0.04, P.steel, 0.04, 0.012, 0, 0); m.box(0.05, 0.035, 0.04, P.wood, 0.07, 0.03, 0, 0.005);
+  });
+}
+/** Petit véhicule de chantier ou tracteur qui va et vient. */
+function rover(k: Kit, from: V3, to: V3, body: number, period: number, cab: number = P.black) {
+  k.motion({ kind: "slide", at: from, to, period }, (m) => {
+    m.box(0.1, 0.045, 0.06, body, 0, 0.022, 0, 0.012); m.box(0.045, 0.045, 0.055, cab, -0.022, 0.062, 0, 0.008);
+    for (const x of [-0.03, 0.035]) for (const z of [-0.032, 0.032]) m.cyl(0.018, 0.012, P.black, x, 0.004, z, 0.018, 8);
+  });
+}
+/** Roue à pales (éolienne de pompage, ventilateur) tournée vers la caméra. */
+function fan(k: Kit, x: number, y: number, z: number, r: number, c: number, speed = 0.5, blades = 6) {
+  k.motion({ kind: "spin", axis: "z", ry: Math.PI / 4, at: [x, y, z], amount: speed }, (m) => {
+    for (let i = 0; i < blades; i++) { const g = new THREE.BoxGeometry(r, r * 0.34, 0.006); g.translate(r * 0.56, 0, 0); g.rotateZ((i * Math.PI * 2) / blades); m.add(g, c, 0, 0, 0); }
+    m.ball(r * 0.16, P.steel, 0, 0, 0, 1, 0);
+  });
+}
+
+const EXTRA: Record<string, (k: Kit) => void> = {
+  village(k) {
+    k.fence(-0.46, 0.46, -0.06, 0.46); k.fence(0.08, 0.46, 0.46, 0.46);
+    k.flowers(-0.12, 0.12, P.pink); k.flowers(0.12, -0.1, P.gold);
+    // Corde à linge
+    k.cyl(0.006, 0.1, P.wood, -0.42, B, -0.08, 0.006, 5); k.cyl(0.006, 0.1, P.wood, -0.42, B, 0.1, 0.006, 5);
+    k.box(0.004, 0.004, 0.18, P.snow, -0.42, B + 0.095, 0.01, 0);
+    for (const [i, c] of [P.fire, P.snow, P.primary].entries()) k.box(0.006, 0.04, 0.03, c, -0.42, B + 0.055, -0.04 + i * 0.05, 0);
+    k.lamp(0.08, 0.08, 0.16);
+  },
+  house_s(k) {
+    k.fence(-0.46, 0.46, -0.2, 0.46); k.fence(-0.06, 0.46, 0.18, 0.46); k.fence(0.32, 0.46, 0.46, 0.46);
+    k.flowers(-0.32, 0.02, P.pink); k.flowers(0.08, 0.3, P.gold, 2);
+    // Boîte aux lettres, table de jardin et parasol
+    k.cyl(0.006, 0.06, P.steel, -0.19, B, 0.42, 0.006, 5); k.box(0.035, 0.025, 0.025, P.fire, -0.19, B + 0.06, 0.42, 0.005);
+    k.cyl(0.035, 0.008, P.snow, 0.02, B + 0.045, -0.3, 0.035, 10); k.cyl(0.005, 0.12, P.steel, 0.02, B, -0.3, 0.005, 5); k.cone(0.07, 0.035, P.orange, 0.02, B + 0.11, -0.3, 10);
+    k.car(0.4, 0.3, P.teal, Math.PI / 2);
+  },
+  house_m(k) {
+    for (let r = 0; r < 3; r++) k.box(0.17, 0.018, 0.03, P.leafL, -0.04, B + 0.31 + r * 0.19, 0.262, 0.005);
+    // Citerne et antennes sur le toit
+    k.cyl(0.06, 0.09, P.wood, 0.1, B + 0.92, 0.08, 0.06, 10); k.cone(0.068, 0.04, P.steel, 0.1, B + 1.01, 0.08, 10);
+    k.mast(-0.24, B + 0.9, 0.14, 0.16);
+    k.lamp(-0.4, 0.14); k.bench(0.12, 0.4);
+    k.box(0.05, 0.05, 0.05, P.steelL, 0.244, B + 0.3, -0.2, 0.006); k.box(0.05, 0.05, 0.05, P.steelL, 0.244, B + 0.5, 0.1, 0.006);
+  },
+  house_l(k) {
+    k.mast(-0.12, B + 1.46, -0.12, 0.22);
+    // Pergola du toit-jardin, auvents d'entrée
+    for (const [x, z] of [[0.12, 0.1], [0.32, 0.1], [0.12, 0.3], [0.32, 0.3]] as const) k.cyl(0.006, 0.09, P.wood, x, B + 1.06, z, 0.006, 5);
+    k.box(0.24, 0.01, 0.24, P.wood, 0.22, B + 1.15, 0.2, 0.004);
+    k.box(0.14, 0.02, 0.07, P.tile, 0.22, B + 0.16, 0.41, 0.006); k.box(0.07, 0.12, 0.012, P.door, 0.22, B, 0.382, 0);
+    k.box(0.07, 0.02, 0.14, P.slate, 0.0, B + 0.16, -0.21, 0.006);
+    k.lamp(0.42, -0.3); k.flowers(-0.08, 0.38, P.pink); k.car(0.3, -0.3, P.red, 0);
+    k.lift(-0.21, B + 0.2, B + 1.25, -0.015);
+  },
+  house_eco(k) {
+    // Petite éolienne de toit à axe vertical, mur végétal, potager
+    k.cyl(0.006, 0.12, P.steelL, -0.34, B + 0.78, -0.34, 0.006, 5);
+    k.motion({ kind: "spin", axis: "y", at: [-0.34, B + 0.9, -0.34], amount: 0.6 }, (m) => { for (let i = 0; i < 3; i++) m.box(0.012, 0.1, 0.05, P.snow, Math.cos(i * 2.094) * 0.035, 0, Math.sin(i * 2.094) * 0.035, 0.004, -i * 2.094); });
+    k.box(0.012, 0.46, 0.12, P.leafL, 0.004, B + 0.14, -0.3, 0.004); k.box(0.012, 0.3, 0.1, P.leaf, 0.416, B + 0.12, 0.26, 0.004);
+    k.box(0.16, 0.02, 0.12, P.soil, -0.34, B, 0.08, 0.006);
+    for (let i = 0; i < 3; i++) { k.ball(0.018, P.crop, -0.39 + i * 0.05, B + 0.026, 0.05, 1, 0); k.ball(0.016, P.red, -0.39 + i * 0.05, B + 0.026, 0.11, 1, 0); }
+    k.cyl(0.03, 0.07, P.teal, -0.42, B, -0.06, 0.03, 8);
+    k.lamp(0.42, -0.06, 0.16); k.bench(0.1, 0.42);
+  },
+  house_xl(k) {
+    k.mast(0.14, B + 2.3, -0.14, 0.2);
+    // Terrasse du socle : bassin, parasols
+    k.box(0.13, 0.014, 0.3, P.stone, 0.33, B + 0.368, -0.08, 0.006); k.box(0.1, 0.014, 0.26, P.water, 0.33, B + 0.372, -0.08, 0.006);
+    for (const z of [-0.3, -0.14]) { k.cyl(0.004, 0.09, P.steel, -0.33, B + 0.37, z, 0.004, 5); k.cone(0.06, 0.03, z < -0.2 ? P.fire : P.gold, -0.33, B + 0.45, z, 10); }
+    k.box(0.3, 0.02, 0.12, P.teal, 0, B + 0.2, 0.46, 0.006);
+    k.lift(0.245, B + 0.5, B + 2.05, 0.0, Math.PI / 2, 11);
+  },
+  house_tower(k) {
+    k.beacon(0, B + 3.86, 0, P.red, 0.03, 1.6);
+    k.lift(0.0, B + 0.42, B + 2.45, 0.303, 0, 12);
+    // Jardin suspendu au retrait de la tour
+    for (const [x, z] of [[0.24, 0.24], [-0.24, 0.24], [0.24, -0.24]] as const) { k.box(0.1, 0.03, 0.1, P.lawnD, x, B + 2.6, z, 0.01); k.tree(x, z, 0.4, x < 0, B + 2.62); }
+    k.box(0.26, 0.02, 0.1, P.glassD, 0, B + 0.17, 0.46, 0.006); k.lamp(0.42, 0.44, 0.14); k.lamp(-0.42, 0.44, 0.14);
+  },
+  shop(k) {
+    // Ardoise sur le trottoir, enseigne tournante, lampadaire
+    { const a = rbox(0.05, 0.07, 0.008, 0.002); a.rotateX(0.3); k.add(a, P.black, 0.06, B, 0.37); const b = rbox(0.05, 0.07, 0.008, 0.002); b.rotateX(-0.3); k.add(b, P.black, 0.06, B, 0.41); }
+    k.cyl(0.006, 0.1, P.steel, 0.24, B + 0.31, -0.22, 0.006, 5);
+    k.motion({ kind: "spin", axis: "y", at: [0.24, B + 0.41, -0.22], amount: 0.12 }, (m) => { m.box(0.12, 0.08, 0.02, P.gold, 0, 0, 0, 0.006); m.box(0.08, 0.03, 0.024, P.violet, 0, 0.025, 0, 0.004); });
+    k.lamp(0.42, 0.12); k.bench(-0.1, 0.42);
+    k.box(0.06, 0.05, 0.06, P.wood, -0.26, B, 0.34, 0.006); k.ball(0.028, P.crop, -0.26, B + 0.07, 0.34);
+  },
+  market(k) {
+    // Guirlande de fanions devant les étals
+    k.cyl(0.006, 0.27, P.wood, -0.42, B, 0.45, 0.006, 5); k.cyl(0.006, 0.27, P.wood, 0.42, B, 0.45, 0.006, 5);
+    k.box(0.84, 0.004, 0.004, P.snow, 0, B + 0.265, 0.45, 0);
+    for (const [i, c] of [P.fire, P.gold, P.teal, P.primary, P.pink, P.orange, P.green, P.fire, P.gold].entries()) k.box(0.035, 0.04, 0.004, c, -0.36 + i * 0.09, B + 0.225, 0.45, 0);
+    k.box(0.07, 0.05, 0.07, P.wood, 0.38, B, 0.16, 0.006); k.box(0.07, 0.05, 0.07, P.wood, 0.38, B + 0.05, 0.16, 0.006); k.ball(0.024, P.red, 0.38, B + 0.115, 0.16);
+    k.disc(0.045, P.snow, 0.404, B + 0.3, -0.08, Math.PI / 2);
+  },
+  hotel(k) {
+    for (let i = 0; i < 5; i++) k.box(0.045, 0.07, 0.012, P.gold, -0.2 + i * 0.07, B + 1.47, 0.07, 0.003);
+    // Porte tambour, piscine et transats
+    k.motion({ kind: "spin", axis: "y", at: [0, B + 0.01, 0.43], amount: 0.22 }, (m) => { m.box(0.1, 0.11, 0.006, P.glassL, 0, 0, 0, 0); m.box(0.006, 0.11, 0.1, P.glassL, 0, 0, 0, 0); });
+    k.box(0.22, 0.016, 0.3, P.stone, 0.34, B, -0.16, 0.008); k.box(0.18, 0.016, 0.26, P.water, 0.34, B + 0.004, -0.16, 0.008);
+    k.cyl(0.004, 0.1, P.steel, 0.4, B, 0.05, 0.004, 5); k.cone(0.06, 0.03, P.fire, 0.4, B + 0.09, 0.05, 10);
+    k.box(0.07, 0.014, 0.03, P.snow, 0.3, B + 0.01, 0.05, 0.004);
+    k.mast(0.08, B + 1.44, -0.3, 0.18); k.lamp(-0.42, 0.3); k.lamp(0.42, 0.3);
+  },
+  mall(k) {
+    // Enseigne tournante sur le toit, ballons à l'entrée
+    k.cyl(0.008, 0.13, P.steel, -0.3, B + 0.35, -0.34, 0.008, 5);
+    k.motion({ kind: "spin", axis: "y", at: [-0.3, B + 0.48, -0.34], amount: 0.1 }, (m) => { m.box(0.13, 0.09, 0.13, P.pink, 0, 0, 0, 0.012); m.box(0.135, 0.03, 0.135, P.snow, 0, 0.03, 0, 0.004); });
+    k.motion({ kind: "bob", at: [0.36, B + 0.16, 0.18], amount: 0.018, period: 3.2 }, (m) => { m.ball(0.03, P.fire, 0, 0.05, 0); m.ball(0.028, P.gold, 0.035, 0.03, 0.01); m.ball(0.028, P.primary, -0.03, 0.025, 0.012); m.cyl(0.003, 0.12, P.snow, 0, -0.1, 0, 0.003, 4); });
+    k.box(0.36, 0.02, 0.1, P.violet, 0, B + 0.19, 0.2, 0.006);
+    k.lamp(-0.44, 0.22, 0.22); k.lamp(0.44, 0.22, 0.22);
+    k.box(0.05, 0.03, 0.03, P.metal, -0.08, B + 0.012, 0.44, 0.004); k.box(0.05, 0.03, 0.03, P.metal, -0.14, B + 0.012, 0.44, 0.004);
+  },
+  services(k) {
+    k.mast(-0.16, B + 1.46, 0.14, 0.2);
+    k.cyl(0.006, 0.05, P.steel, 0.16, B + 1.46, 0.14, 0.006, 5); k.cone(0.05, 0.03, P.snow, 0.16, B + 1.5, 0.14, 10);
+    // Nacelle de lavage de vitres
+    k.box(0.004, 1.2, 0.004, P.steel, 0.286, B + 0.24, -0.02, 0); k.box(0.004, 1.2, 0.004, P.steel, 0.286, B + 0.24, 0.12, 0);
+    k.motion({ kind: "slide", at: [0.29, B + 0.3, 0.05], to: [0.29, B + 1.2, 0.05], period: 14 }, (m) => { m.box(0.03, 0.04, 0.16, P.metal, 0, 0, 0, 0.006); m.ball(0.014, P.orange, 0.004, 0.055, 0.03, 1, 0); });
+    k.flowers(-0.2, 0.42, P.gold); k.lamp(0.42, 0.1);
+  },
+  bank(k) {
+    k.disc(0.04, P.snow, 0, B + 0.555, 0.345); k.box(0.004, 0.03, 0.004, P.black, 0, B + 0.555, 0.353, 0);
+    // Pièce d'or qui tourne au-dessus de l'entrée
+    k.motion({ kind: "spin", axis: "y", at: [0, B + 0.84, -0.1], amount: 0.2 }, (m) => { const g = new THREE.CylinderGeometry(0.06, 0.06, 0.014, 18); g.rotateX(Math.PI / 2); m.add(g, P.gold, 0, 0, 0); });
+    k.lamp(-0.32, 0.44, 0.18); k.lamp(0.32, 0.44, 0.18);
+    k.flag(0.3, B + 0.56, -0.3, 0.22, P.navy);
+    // Fourgon blindé
+    k.box(0.15, 0.08, 0.085, P.navy, -0.2, B + 0.082, 0.44, 0.012); k.box(0.155, 0.014, 0.088, P.gold, -0.2, B + 0.11, 0.44, 0.003);
+  },
+  tech(k) {
+    // Drone en vol stationnaire, tondeuse robot
+    k.motion({ kind: "bob", at: [0.12, B + 0.78, 0.02], amount: 0.035, period: 3 }, (m) => {
+      m.box(0.05, 0.02, 0.05, P.black, 0, 0, 0, 0.006);
+      for (const [x, z] of [[0.045, 0.045], [-0.045, 0.045], [0.045, -0.045], [-0.045, -0.045]] as const) { m.cyl(0.026, 0.004, P.steelL, x, 0.022, z, 0.026, 10); m.box(0.004, 0.004, 0.06, P.steel, x / 2, 0.012, z / 2, 0, Math.atan2(x, z)); }
+    });
+    rover(k, [0.14, B + 0.02, -0.34], [0.4, B + 0.02, -0.34], P.orange, 9);
+    k.mast(-0.36, B + 0.56, -0.36, 0.16);
+    // Bornes de recharge et voiture
+    k.box(0.02, 0.07, 0.02, P.teal, -0.3, B, 0.45, 0.004); k.box(0.02, 0.07, 0.02, P.teal, -0.18, B, 0.45, 0.004);
+    k.lamp(0.44, 0.44, 0.16); k.bench(0.3, 0.02, Math.PI / 2);
+  },
+  townhall(k) {
+    k.disc(0.045, P.snow, 0, B + 0.61, 0.024); k.box(0.004, 0.035, 0.004, P.black, 0, B + 0.61, 0.033, 0);
+    for (const [x, c] of [[-0.3, P.primary], [-0.26, P.snow], [-0.22, P.fire], [0.22, P.primary], [0.26, P.snow], [0.3, P.fire]] as const) k.box(0.035, 0.13, 0.006, c, x, B + 0.2, 0.206, 0);
+    k.lamp(-0.3, 0.44, 0.18); k.lamp(0.3, 0.44, 0.18);
+    k.flowers(-0.16, 0.45, P.fire, 2); k.flowers(0.16, 0.45, P.gold, 2);
+    k.bench(-0.42, 0.2, Math.PI / 2);
+  },
+  branch(k) {
+    k.box(0.05, 0.22, 0.05, P.primary, 0.4, B, 0.1, 0.008); k.box(0.06, 0.06, 0.06, P.snow, 0.4, B + 0.2, 0.1, 0.008);
+    k.mast(0.2, B + 0.82, -0.2, 0.16);
+    k.flag(-0.36, B, 0.2, 0.3, P.primary); k.flag(-0.28, B, 0.2, 0.3, P.gold);
+    k.lamp(0.2, 0.44); k.flowers(0.2, 0.3, P.gold, 2);
+  },
+  factory_s(k) { forklift(k, -0.3, 0.2, 0.44); k.box(0.3, 0.02, 0.08, P.steel, 0.18, B + 0.17, 0.4, 0.004); k.box(0.5, 0.03, 0.03, P.steelL, -0.05, B + 0.2, -0.2, 0.012); k.lamp(-0.42, 0.42); },
+  factory_m(k) {
+    forklift(k, -0.3, 0.2, 0.44); k.box(0.3, 0.02, 0.08, P.steel, 0.18, B + 0.19, 0.4, 0.004);
+    k.box(0.5, 0.03, 0.03, P.steelL, -0.1, B + 0.22, -0.2, 0.012);
+    k.cyl(0.06, 0.2, P.metal, 0.38, B, -0.3, 0.06, 12); k.ball(0.06, P.metal, 0.38, B + 0.2, -0.3, 0.5); k.box(0.006, 0.2, 0.02, P.steel, 0.44, B, -0.3, 0);
+    k.lamp(-0.42, 0.42);
+  },
+  factory_l(k) {
+    forklift(k, -0.34, 0.14, 0.45); k.beacon(0.3, B + 0.92, -0.33, P.red, 0.02);
+    k.box(0.5, 0.03, 0.03, P.steelL, -0.1, B + 0.25, -0.2, 0.012); k.box(0.03, 0.2, 0.03, P.steelL, 0.16, B + 0.06, -0.2, 0.012);
+    // Tapis roulant et caisses qui sortent de l'usine
+    k.box(0.26, 0.02, 0.05, P.black, 0.3, B + 0.07, 0.12, 0.004); k.cyl(0.008, 0.07, P.steel, 0.2, B, 0.12, 0.008, 5); k.cyl(0.008, 0.07, P.steel, 0.4, B, 0.12, 0.008, 5);
+    k.motion({ kind: "pass", at: [0.2, B + 0.09, 0.12], to: [0.4, B + 0.09, 0.12], period: 3.5 }, (m) => m.box(0.04, 0.035, 0.04, P.wood, 0, 0, 0, 0.004));
+    k.lamp(-0.44, 0.3);
+  },
+  warehouse(k) {
+    forklift(k, -0.14, 0.02, 0.44, 6);
+    for (let i = 0; i < 3; i++) k.box(0.1, 0.012, 0.16, P.glassL, -0.26 + i * 0.26, B + 0.325, -0.12, 0.004);
+    k.flag(-0.4, B + 0.26, -0.36, 0.2, P.primary); k.lamp(0.44, 0.2, 0.22);
+    k.box(0.9, 0.006, 0.012, P.gold, 0, B + 0.006, 0.19, 0);
+  },
+  foodplant(k) {
+    k.puff(0.16, B + 0.42, 0.16);
+    // Camion-citerne en livraison, passerelle des silos
+    k.motion({ kind: "slide", at: [-0.26, B, 0.44], to: [0.24, B, 0.44], period: 12 }, (m) => {
+      const t = new THREE.CylinderGeometry(0.03, 0.03, 0.13, 10); t.rotateZ(Math.PI / 2); m.add(t, P.metal, -0.02, 0.045, 0);
+      m.box(0.05, 0.055, 0.055, P.crop, 0.075, 0.012, 0, 0.008); for (const x of [-0.06, 0.02, 0.08]) m.cyl(0.014, 0.05, P.black, x, 0, 0.0, 0.014, 6);
+    });
+    k.box(0.008, 0.5, 0.008, P.steel, -0.38, B, -0.3, 0); k.box(0.008, 0.5, 0.008, P.steel, 0.04, B, -0.3, 0);
+    k.lamp(0.44, 0.44, 0.16); k.box(0.06, 0.05, 0.06, P.wood, 0.4, B, -0.08, 0.006);
+  },
+  farm_s(k) {
+    // Épouvantail, poules
+    k.cyl(0.006, 0.12, P.wood, 0.0, B + 0.03, 0.18, 0.006, 5); k.box(0.1, 0.012, 0.012, P.wood, 0.0, B + 0.11, 0.18, 0); k.box(0.05, 0.05, 0.02, P.fire, 0.0, B + 0.07, 0.18, 0.004); k.ball(0.022, P.hay, 0.0, B + 0.15, 0.18, 1, 0);
+    for (const [x, z] of [[0.06, -0.14], [0.12, -0.18], [0.02, -0.19]] as const) { k.ball(0.016, P.snow, x, B + 0.016, z, 0.9, 0); k.ball(0.008, P.fire, x + 0.012, B + 0.03, z, 1, 0); }
+    k.fence(-0.46, -0.12, 0.1, -0.12);
+    fan(k, -0.2, B + 0.3, -0.36, 0.07, P.snow, 0.4); k.cyl(0.008, 0.3, P.wood, -0.21, B, -0.37, 0.006, 5);
+  },
+  farm_m(k) {
+    rover(k, [-0.34, B + 0.03, 0.25], [0.34, B + 0.03, 0.25], P.fire, 12, P.snow);
+    fan(k, 0.41, B + 0.34, -0.02, 0.07, P.snow, 0.4); k.cyl(0.008, 0.34, P.wood, 0.4, B, -0.03, 0.006, 5);
+    k.fence(0.0, -0.46, 0.46, -0.46);
+    for (const [x, z] of [[0.04, -0.12], [0.1, -0.08]] as const) { k.ball(0.016, P.snow, x, B + 0.016, z, 0.9, 0); k.ball(0.008, P.fire, x + 0.012, B + 0.03, z, 1, 0); }
+  },
+  farm_l(k) {
+    rover(k, [-0.34, B + 0.03, 0.25], [0.34, B + 0.03, 0.25], P.fire, 12, P.snow);
+    k.box(0.16, 0.012, 0.012, P.steel, -0.02, B + 0.4, -0.37, 0); k.box(0.006, 0.42, 0.02, P.steel, 0.13, B, -0.36, 0);
+    k.fence(0.0, -0.46, 0.46, -0.46);
+    k.cyl(0.035, 0.07, P.hay, 0.16, B, 0.0, 0.035, 10); k.cyl(0.035, 0.07, P.hay, 0.16, B, -0.09, 0.035, 10); k.cyl(0.035, 0.07, P.hay, 0.16, B + 0.07, -0.045, 0.035, 10);
+  },
+  greenhouse(k) {
+    // Ventilateurs en pignon, bacs de récolte
+    for (let i = 0; i < 3; i++) fan(k, -0.29 + i * 0.29 + 0.004, B + 0.135, 0.412, 0.03, P.steelL, 0.9, 4);
+    k.cyl(0.04, 0.12, P.teal, 0.44, B, -0.42, 0.04, 10);
+    for (let i = 0; i < 3; i++) { k.box(0.05, 0.03, 0.035, P.wood, -0.38 + i * 0.07, B, 0.45, 0.004); k.ball(0.014, i % 2 ? P.red : P.crop, -0.38 + i * 0.07, B + 0.04, 0.45, 1, 0); }
+  },
+  ranch(k) {
+    // Éolienne de pompage, abreuvoir, un veau qui se promène
+    k.cyl(0.01, 0.36, P.steel, -0.02, B, -0.34, 0.006, 5); fan(k, -0.005, B + 0.37, -0.325, 0.085, P.snow, 0.5, 8);
+    k.box(0.13, 0.03, 0.05, P.wood, -0.32, B, 0.34, 0.006); k.box(0.11, 0.008, 0.035, P.water, -0.32, B + 0.03, 0.34, 0.002);
+    k.motion({ kind: "slide", at: [-0.28, B + 0.02, 0.0], to: [0.12, B + 0.02, 0.0], period: 15 }, (m) => { m.box(0.06, 0.035, 0.035, P.wood, 0, 0, 0, 0.01); m.box(0.026, 0.028, 0.028, P.snow, 0.04, 0.016, 0, 0.006); });
+  },
+  power_s(k) {
+    k.fence(0.16, -0.42, 0.44, -0.42, P.steelL); k.fence(0.44, -0.42, 0.44, -0.16, P.steelL);
+    k.box(0.14, 0.09, 0.1, P.snow, 0.3, B, -0.08, 0.012); k.box(0.142, 0.02, 0.102, P.amber, 0.3, B + 0.05, -0.08, 0.003);
+    k.beacon(0.3, B + 0.1, -0.3, P.amber, 0.012, 2.2); k.bush(-0.42, 0.42); k.bush(-0.42, -0.42, 0.8);
+  },
+  power_m(k) {
+    k.beacon(0.3, B + 0.97, -0.28, P.red, 0.02);
+    // Pylône de départ de ligne
+    for (const x of [0.06, 0.14]) k.cyl(0.006, 0.5, P.steel, x, B, -0.38, 0.004, 4);
+    for (const y of [0.3, 0.42]) k.box(0.2, 0.008, 0.008, P.steel, 0.1, B + y, -0.38, 0);
+    k.box(0.4, 0.03, 0.03, P.steelL, -0.2, B + 0.12, -0.2, 0.012);
+    k.puff(-0.1, B + 0.45, 0.12); k.lamp(0.42, 0.06, 0.2);
+  },
+  power_l(k) {
+    k.beacon(-0.09, B + 0.75, -0.2, P.red, 0.02, 1.7); k.beacon(0.35, B + 0.75, 0.16, P.red, 0.02, 2.1);
+    k.box(0.2, 0.008, 0.008, P.steel, 0.3, B + 0.32, -0.32, 0); k.box(0.14, 0.008, 0.008, P.steel, 0.3, B + 0.4, -0.32, 0);
+    k.box(0.03, 0.03, 0.3, P.steelL, -0.22, B + 0.1, 0.04, 0.012);
+    k.fence(-0.46, 0.46, 0.0, 0.46, P.steelL); k.lamp(-0.44, 0.06, 0.2);
+  },
+  solar(k) {
+    // Anémomètre sur le local technique
+    k.cyl(0.005, 0.16, P.steel, 0.4, B + 0.1, 0.38, 0.005, 5);
+    k.motion({ kind: "spin", axis: "y", at: [0.4, B + 0.26, 0.38], amount: 0.9 }, (m) => { for (let i = 0; i < 3; i++) { const a = i * 2.094; m.box(0.05, 0.004, 0.004, P.steel, Math.cos(a) * 0.025, 0, Math.sin(a) * 0.025, 0, -a); m.ball(0.012, P.snow, Math.cos(a) * 0.05, 0, Math.sin(a) * 0.05, 1, 0); } });
+    k.fence(-0.46, 0.46, 0.3, 0.46, P.steelL); k.bush(0.42, -0.4); k.bush(0.42, 0.1, 0.8);
+  },
+  wind(k) {
+    k.beacon(-0.26, B + 1.2, -0.26, P.red, 0.016, 2);
+    k.box(0.5, 0.01, 0.06, P.path, 0.08, B, 0.2, 0, -0.5);
+    k.fence(0.24, 0.44, 0.44, 0.44, P.steelL); k.flowers(-0.36, 0.36, P.gold); k.bush(0.36, -0.36, 0.9);
+  },
+  park(k) {
+    // Canard sur la mare, lampadaire, fleurs
+    k.motion({ kind: "slide", at: [0.1, B + 0.014, 0.22], to: [0.3, B + 0.014, 0.32], period: 10 }, (m) => { m.ball(0.02, P.snow, 0, 0.012, 0, 0.8, 0); m.ball(0.012, P.snow, 0.016, 0.03, 0, 1, 0); m.box(0.012, 0.005, 0.008, P.orange, 0.03, 0.028, 0, 0); });
+    k.lamp(-0.1, 0.08); k.lamp(0.36, -0.08);
+    k.flowers(-0.4, -0.08, P.pink); k.flowers(0.1, -0.1, P.gold, 2); k.bench(0.1, 0.07);
+    k.cyl(0.02, 0.05, P.green, -0.14, B, 0.1, 0.018, 8);
+  },
+  park_l(k) {
+    // Jet de la fontaine, balançoire à bascule, cerf-volant
+    k.motion({ kind: "bob", at: [0, B + 0.15, 0], amount: 0.03, period: 1.5 }, (m) => { m.ball(0.022, P.waterL, 0, 0, 0, 1.4, 0); m.cyl(0.006, 0.06, P.waterL, 0, -0.06, 0, 0.01, 6); });
+    k.cone(0.02, 0.035, P.steel, -0.24, B, 0.14, 6);
+    k.motion({ kind: "rock", axis: "z", ry: Math.PI / 4, at: [-0.24, B + 0.04, 0.14], amount: 0.22, period: 2.6 }, (m) => { m.box(0.2, 0.012, 0.03, P.fire, 0, 0, 0, 0.004); m.ball(0.016, P.primary, -0.085, 0.022, 0, 1, 0); m.ball(0.016, P.gold, 0.085, 0.022, 0, 1, 0); });
+    k.motion({ kind: "bob", at: [0.3, B + 0.62, -0.06], amount: 0.04, period: 4 }, (m) => { const g = new THREE.ConeGeometry(0.045, 0.012, 4); g.rotateX(Math.PI / 2); m.add(g, P.fire, 0, 0, 0, Math.PI / 4); m.box(0.004, 0.07, 0.004, P.gold, -0.02, -0.07, 0.02, 0); });
+    k.lamp(-0.44, 0.06); k.lamp(0.44, -0.06); k.lamp(0.06, 0.44); k.lamp(-0.06, -0.44);
+    k.bench(-0.2, 0.09); k.bench(-0.09, -0.24, Math.PI / 2);
+  },
+  school(k) {
+    // La balançoire se balance, panier de basket, marelle
+    k.motion({ kind: "rock", axis: "x", at: [0.3, B + 0.13, -0.2], amount: 0.5, period: 1.9 }, (m) => { for (const x of [-0.03, 0.03]) m.box(0.004, 0.09, 0.004, P.steel, x, -0.09, 0, 0); m.box(0.07, 0.01, 0.025, P.wood, 0, -0.095, 0, 0.003); });
+    k.cyl(0.008, 0.2, P.steel, 0.42, B, 0.2, 0.008, 5); k.box(0.07, 0.05, 0.008, P.snow, 0.42, B + 0.19, 0.19, 0.003); k.cyl(0.02, 0.006, P.fire, 0.42, B + 0.19, 0.17, 0.02, 8);
+    for (let i = 0; i < 4; i++) k.box(0.035, 0.004, 0.035, i % 2 ? P.pink : P.teal, 0.22, B + 0.012, 0.14 + i * 0.04, 0);
+    k.disc(0.045, P.snow, -0.14, B + 0.46, 0.106); k.box(0.004, 0.03, 0.004, P.black, -0.14, B + 0.46, 0.114, 0);
+    // Car scolaire
+    k.box(0.2, 0.085, 0.085, P.yellow, -0.2, B + 0.012, 0.42, 0.015); k.box(0.16, 0.025, 0.088, P.glassD, -0.2, B + 0.06, 0.42, 0.004);
+    k.lamp(0.44, -0.06, 0.16);
+  },
+  university(k) {
+    // Girouette, bannières, parc à vélos
+    k.motion({ kind: "spin", axis: "y", at: [-0.28, B + 1.14, -0.3], amount: 0.15 }, (m) => { m.box(0.11, 0.01, 0.012, P.gold, 0, 0, 0, 0); m.cone(0.02, 0.04, P.gold, 0.06, -0.015, 0, 4); });
+    k.cyl(0.005, 0.06, P.steel, -0.28, B + 1.08, -0.3, 0.005, 5);
+    k.box(0.04, 0.2, 0.006, P.primary, -0.16, B + 0.14, 0.166, 0); k.box(0.04, 0.2, 0.006, P.gold, 0.16, B + 0.14, 0.166, 0);
+    k.lamp(-0.12, 0.44); k.lamp(0.12, 0.44); k.bench(0.3, 0.14); k.flowers(-0.3, 0.14, P.fire);
+    k.cyl(0.035, 0.06, P.stone, 0.4, B, 0.08, 0.035, 8); k.cyl(0.014, 0.08, P.gold, 0.4, B + 0.06, 0.08, 0.01, 6); k.ball(0.02, P.gold, 0.4, B + 0.16, 0.08, 1, 0);
+  },
+  hospital(k) {
+    // Hélicoptère sur son aire, gyrophare de l'ambulance
+    k.cyl(0.13, 0.008, P.steel, 0.22, B + 0.376, 0.22, 0.13, 18); k.box(0.012, 0.004, 0.1, P.snow, 0.19, B + 0.384, 0.22, 0); k.box(0.012, 0.004, 0.1, P.snow, 0.25, B + 0.384, 0.22, 0); k.box(0.07, 0.004, 0.012, P.snow, 0.22, B + 0.384, 0.22, 0);
+    k.box(0.1, 0.045, 0.05, P.snow, 0.22, B + 0.4, 0.22, 0.02); k.box(0.08, 0.012, 0.012, P.fire, 0.15, B + 0.425, 0.22, 0.003); k.box(0.102, 0.012, 0.052, P.fire, 0.22, B + 0.415, 0.22, 0.003);
+    k.motion({ kind: "spin", axis: "y", at: [0.22, B + 0.455, 0.22], amount: 1.1 }, (m) => { m.box(0.24, 0.004, 0.014, P.steel, 0, 0, 0, 0); m.box(0.014, 0.004, 0.24, P.steel, 0, 0, 0, 0); });
+    k.beacon(0.3, B + 0.105, 0.44, P.primary, 0.012, 0.7);
+    k.lamp(-0.44, 0.2, 0.2); k.bench(-0.24, 0.44); k.flowers(-0.4, 0.3, P.fire, 2);
+  },
+  fire(k) {
+    k.beacon(-0.28, B + 0.83, -0.3, P.red, 0.022, 0.9); k.beacon(0.28, B + 0.1, 0.4, P.primary, 0.012, 0.7);
+    // Borne d'incendie, tuyaux qui sèchent, drapeau
+    k.cyl(0.014, 0.05, P.fire, -0.4, B, 0.4, 0.012, 6); k.ball(0.014, P.fire, -0.4, B + 0.05, 0.4, 1, 0);
+    k.box(0.004, 0.3, 0.02, P.yellow, -0.176, B + 0.36, -0.36, 0); k.box(0.004, 0.3, 0.02, P.yellow, -0.176, B + 0.36, -0.3, 0);
+    k.flag(0.32, B + 0.34, -0.2, 0.24, P.fire); k.lamp(0.44, 0.2, 0.2);
+  },
+  museum(k) {
+    // Sculpture qui tourne sur son socle
+    k.cyl(0.04, 0.05, P.stone, -0.36, B + 0.06, 0.3, 0.04, 10);
+    k.motion({ kind: "spin", axis: "y", at: [-0.36, B + 0.19, 0.3], amount: 0.07 }, (m) => { const a = new THREE.TorusGeometry(0.05, 0.01, 6, 18); m.add(a, P.primary, 0, 0, 0); const b = new THREE.TorusGeometry(0.035, 0.009, 6, 16); b.rotateY(Math.PI / 2); m.add(b, P.fire, 0, 0, 0); });
+    k.lamp(-0.2, 0.44, 0.16); k.lamp(0.2, 0.44, 0.16); k.bench(0.38, 0.14, Math.PI / 2);
+    k.flag(-0.3, B + 0.47, -0.3, 0.2, P.fire);
+  },
+  stadium(k) {
+    // Dirigeable qui tourne au-dessus, drapeaux des tribunes
+    k.motion({ kind: "spin", axis: "y", at: [0, B + 0.78, 0], amount: 0.035 }, (m) => { m.box(0.07, 0.07, 0.2, P.snow, 0.36, 0, 0, 0.034); m.box(0.074, 0.02, 0.1, P.fire, 0.36, 0.025, 0, 0.004); m.box(0.006, 0.05, 0.04, P.fire, 0.36, 0.05, -0.09, 0); m.box(0.03, 0.02, 0.05, P.steel, 0.36, -0.02, 0.01, 0.006); });
+    for (const [i, c] of [P.fire, P.gold, P.primary, P.teal, P.fire, P.gold].entries()) { const a = (i / 6) * Math.PI * 2 + 0.5; k.flag(Math.cos(a) * 0.38, B + 0.29, Math.sin(a) * 0.31, 0.12, c); }
+    k.box(0.12, 0.08, 0.06, P.snow, 0.4, B, 0.0, 0.01); k.box(0.13, 0.02, 0.08, P.fire, 0.4, B + 0.08, 0.0, 0.004);
+  },
+  themepark(k) {
+    // Ballons du marchand, wagonnet qui file sur son rail
+    k.motion({ kind: "bob", at: [0.34, B + 0.22, -0.3], amount: 0.02, period: 2.8 }, (m) => { m.ball(0.03, P.fire, 0, 0.04, 0); m.ball(0.028, P.gold, 0.035, 0.02, 0.01); m.ball(0.028, P.teal, -0.03, 0.015, 0.012); m.cyl(0.003, 0.12, P.snow, 0, -0.1, 0, 0.003, 4); });
+    { const g = new THREE.TorusGeometry(0.12, 0.008, 6, 22); g.rotateX(Math.PI / 2); g.scale(1.5, 1, 1); k.add(g, P.steelL, 0.2, B + 0.06, -0.06); }
+    for (const [x, z] of [[0.03, -0.06], [0.37, -0.06], [0.2, -0.17], [0.2, 0.05]] as const) k.cyl(0.006, 0.06, P.steel, x, B, z, 0.006, 4);
+    k.motion({ kind: "spin", axis: "y", at: [0.2, B + 0.075, -0.06], amount: 0.16 }, (m) => { m.box(0.05, 0.03, 0.035, P.fire, 0.16, 0, 0, 0.008); m.box(0.05, 0.03, 0.035, P.gold, 0.15, 0, 0.06, 0.008, -0.38); });
+    k.lamp(-0.44, -0.44, 0.16); k.lamp(0.44, 0.42, 0.16); k.flowers(0.0, 0.2, P.pink);
+  },
+  bizdistrict(k) {
+    k.beacon(-0.24, B + 2.09, -0.24, P.red, 0.022); k.mast(0.3, B + 1.19, -0.34, 0.16);
+    k.lift(-0.24, B + 0.2, B + 1.5, -0.066, 0, 9);
+    k.motion({ kind: "bob", at: [0.26, B + 0.09, 0.26], amount: 0.02, period: 1.4 }, (m) => { m.ball(0.018, P.waterL, 0, 0, 0, 1.4, 0); m.cyl(0.005, 0.04, P.waterL, 0, -0.045, 0, 0.008, 6); });
+    k.lamp(0.44, 0.3, 0.18); k.bench(0.1, 0.3, Math.PI / 2); k.flowers(-0.0, 0.44, P.gold, 2);
+    k.cyl(0.07, 0.006, P.snow, -0.22, B + 0.812, 0.22, 0.07, 14);
+  },
+  recycling(k) {
+    k.beacon(-0.38, B + 0.34, -0.38, P.amber, 0.014, 1.3);
+    // Déchets qui montent sur le tapis de tri
+    k.motion({ kind: "pass", at: [0.14, B + 0.06, -0.24], to: [0.44, B + 0.2, -0.24], period: 3.2 }, (m) => m.box(0.035, 0.03, 0.04, P.yellow, 0, 0, 0, 0.004));
+    k.motion({ kind: "pass", at: [0.14, B + 0.06, -0.22], to: [0.44, B + 0.2, -0.22], period: 4.7 }, (m) => m.box(0.03, 0.03, 0.035, P.primary, 0, 0, 0, 0.004));
+    k.disc(0.05, P.snow, -0.12, B + 0.36, -0.016); k.lamp(0.44, 0.1, 0.18);
+  },
+  port(k) {
+    k.beacon(0.29, B + 0.6, -0.2, P.red, 0.016, 1.5);
+    // Remorqueur dans le bassin, mouette qui tourne
+    k.motion({ kind: "slide", at: [0.38, B + 0.012, 0.43], to: [-0.38, B + 0.012, 0.44], period: 18 }, (m) => { m.box(0.08, 0.03, 0.04, P.fire, 0, 0, 0, 0.012); m.box(0.03, 0.03, 0.03, P.snow, 0.01, 0.028, 0, 0.006); m.cyl(0.006, 0.025, P.black, -0.01, 0.055, 0, 0.006, 5); });
+    k.motion({ kind: "spin", axis: "y", at: [-0.1, B + 0.72, 0.2], amount: 0.09 }, (m) => { m.box(0.008, 0.004, 0.03, P.snow, 0.2, 0, 0.014, 0, 0.5); m.box(0.008, 0.004, 0.03, P.snow, 0.2, 0, -0.014, 0, -0.5); });
+    for (const x of [-0.42, -0.2, 0.02]) k.cyl(0.012, 0.03, P.black, x, B + 0.05, 0.1, 0.012, 6);
+    k.lamp(-0.44, -0.14, 0.2);
+  },
+  workshop(k) {
+    k.beacon(-0.05, B + 0.115, 0.26, P.amber, 0.014, 0.9);
+    // Étincelles de soudure dans l'atelier, barrière de chantier
+    k.beacon(0.0, B + 0.03, -0.02, P.gold, 0.012, 0.35);
+    for (const x of [0.02, 0.14]) k.cyl(0.006, 0.05, P.snow, x, B, 0.44, 0.006, 5);
+    k.box(0.16, 0.02, 0.008, P.fire, 0.08, B + 0.03, 0.44, 0);
+    k.lamp(-0.44, 0.44, 0.18); k.flag(0.34, B + 0.29, -0.4, 0.2, P.orange);
+  },
+  station(k) {
+    // Signal en bout de quai, voyageurs, lampadaires
+    k.cyl(0.006, 0.18, P.steel, 0.44, B, 0.2, 0.006, 5); k.box(0.022, 0.05, 0.016, P.black, 0.44, B + 0.17, 0.2, 0.003); k.beacon(0.44, B + 0.2, 0.212, P.green, 0.01, 2.6);
+    for (const [x, c] of [[-0.06, P.fire], [0.02, P.primary], [0.32, P.gold]] as const) { k.box(0.02, 0.04, 0.016, c, x, B + 0.035, 0.12, 0.005); k.ball(0.011, P.skin, x, B + 0.086, 0.12, 1, 0); }
+    k.box(0.004, 0.022, 0.004, P.black, -0.333, B + 0.41, 0.03, 0, 0.9);
+    k.lamp(-0.44, 0.12, 0.18); k.flowers(0.36, -0.06, P.fire, 2);
+  },
+  police(k) {
+    k.beacon(-0.24, B + 0.5, -0.04, P.primary, 0.02, 0.7);
+    for (const x of [-0.24, 0.2]) k.beacon(x - 0.01, B + 0.115, 0.34, P.red, 0.01, 0.6);
+    // Radar tournant sur l'antenne
+    k.motion({ kind: "spin", axis: "y", at: [0.26, B + 0.8, -0.28], amount: 0.2 }, (m) => { m.box(0.1, 0.035, 0.012, P.snow, 0, 0, 0, 0.004); });
+    k.lamp(-0.44, 0.44, 0.18); k.lamp(0.44, 0.44, 0.18);
+    k.box(0.16, 0.006, 0.04, P.snow, 0, B + 0.006, 0.22, 0);
+  },
+  airport(k) {
+    // Radar de la tour, manche à air, chariot à bagages, feux de piste
+    k.motion({ kind: "spin", axis: "y", at: [0.34, B + 0.76, -0.3], amount: 0.3 }, (m) => { m.box(0.13, 0.04, 0.012, P.snow, 0, 0, 0, 0.004); m.box(0.02, 0.02, 0.03, P.steel, 0, 0.01, -0.016, 0); });
+    k.cyl(0.006, 0.2, P.steel, -0.42, B, 0.06, 0.006, 5);
+    k.motion({ kind: "rock", axis: "y", at: [-0.42, B + 0.2, 0.06], amount: 0.35, period: 3.4 }, (m) => { const g = new THREE.ConeGeometry(0.02, 0.09, 8); g.rotateZ(Math.PI / 2); m.add(g, P.orange, 0.045, 0, 0); });
+    k.motion({ kind: "slide", at: [-0.32, B + 0.004, 0.03], to: [0.02, B + 0.004, 0.03], period: 9 }, (m) => { m.box(0.05, 0.03, 0.035, P.gold, 0, 0, 0, 0.006); m.box(0.045, 0.025, 0.035, P.steelL, -0.055, 0, 0, 0.004); m.box(0.045, 0.025, 0.035, P.steelL, -0.105, 0, 0, 0.004); });
+    k.beacon(-0.44, B + 0.016, 0.28, P.green, 0.012, 1.2); k.beacon(0.44, B + 0.016, 0.28, P.red, 0.012, 1.2);
+    k.box(0.1, 0.06, 0.08, P.fire, 0.2, B, -0.06, 0.01); k.box(0.11, 0.012, 0.03, P.metal, 0.2, B + 0.06, -0.06, 0.003);
   },
 };
 
@@ -729,7 +1189,7 @@ const cache = new Map<string, Model>();
 /** Modèle d'un bâtiment, construit à la première demande puis gardé. */
 export function buildingModel(id: string): Model {
   let m = cache.get(id);
-  if (!m) { const k = new Kit(); (BUILD[id] ?? fallback)(k); m = k.done(); cache.set(id, m); }
+  if (!m) { const k = new Kit(); (BUILD[id] ?? fallback)(k); EXTRA[id]?.(k); m = k.done(); cache.set(id, m); }
   return m;
 }
 

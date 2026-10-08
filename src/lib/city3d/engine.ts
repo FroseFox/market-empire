@@ -7,7 +7,7 @@ import * as THREE from "three";
 import { BUILDING_BY_ID } from "@/lib/game/config";
 import { canPlace, footprint, isBuildable, isRoad, mapBounds, MAP_SIZE, MAX_MAP_SIZE, occupancy, sideOf, type Plot } from "@/lib/game/layout";
 import { CAT_COLOR, MARKER_COLOR, markerTip, nightFactor, type CityMarker, type CityMode, type CitySign, type Light, type MarkerKind } from "@/components/IsoCity";
-import { buildingModel, propModel, treeModel, type V3 } from "./models";
+import { buildingModel, propModel, treeModel, type Motion, type V3 } from "./models";
 
 export interface CityTip { left: number; top: number; title: string; text: string; warn?: boolean }
 export interface CityFrame { height: number | "fill"; compact: boolean; interactive: boolean; initialZoom: number; padTop: number; padBottom: number }
@@ -67,6 +67,8 @@ class Flat {
 
 interface Inst { solid: THREE.InstancedMesh; lit: THREE.InstancedMesh | null; index: number; plot: Plot }
 interface Puff { at: V3; off: number }
+/** Pièces animées d'un type de bâtiment : une instance par bâtiment posé. */
+interface Part { mesh: THREE.InstancedMesh; def: Motion; items: { key: string; x: number; z: number; w: number; h: number; off: number }[] }
 interface Spin { at: V3; size: number; off: number }
 interface Mover { axis: "x" | "y"; k: number; speed: number; off: number; dir: number; side: number }
 
@@ -102,6 +104,7 @@ export class CityEngine {
   private modeGrid: THREE.Group | null = null; private layerTiles: THREE.InstancedMesh | null = null;
   private puffs: Puff[] = []; private puffMesh: THREE.InstancedMesh | null = null;
   private spins: Spin[] = []; private spinMesh: THREE.InstancedMesh | null = null;
+  private parts: Part[] = []; private partScale = new Map<string, number>();
   private cars: Mover[] = []; private carMesh: THREE.InstancedMesh | null = null;
   private walkers: Mover[] = []; private bodyMesh: THREE.InstancedMesh | null = null; private headMesh: THREE.InstancedMesh | null = null;
   private glow: THREE.InstancedMesh | null = null;
@@ -212,7 +215,7 @@ export class CityEngine {
       if ((o as THREE.InstancedMesh).isInstancedMesh) (o as THREE.InstancedMesh).dispose();
     });
     this.world.clear();
-    this.inst.clear(); this.puffs = []; this.spins = []; this.cars = []; this.walkers = [];
+    this.inst.clear(); this.puffs = []; this.spins = []; this.cars = []; this.walkers = []; this.parts = []; this.partScale.clear();
     this.puffMesh = this.spinMesh = this.carMesh = this.bodyMesh = this.headMesh = this.glow = this.layerTiles = null;
     this.modeGrid = null; this.hidden = null;
   }
@@ -323,6 +326,13 @@ export class CityEngine {
         for (const r of model.rotors) this.spins.push({ at: [cx + r.at[0] * w, r.at[1] * h, cy + r.at[2] * w], size: r.size * w, off: hash(p.x * 3, p.y * 5) * 6 });
       });
       this.world.add(solid); if (lit) this.world.add(lit);
+      // Pièces animées de ce type de bâtiment
+      for (const def of model.motions) {
+        const mesh = new THREE.InstancedMesh(def.geo, this.bMat, list.length);
+        mesh.castShadow = true; mesh.frustumCulled = false;
+        this.parts.push({ mesh, def, items: list.map((p) => ({ key: keyOf(p), x: ctr(p, "x"), z: ctr(p, "y"), w: sideOf(p), h: tall(sideOf(p)), off: hash(p.x * 7 + 1, p.y * 3 + 2) })) });
+        this.world.add(mesh);
+      }
     }
 
     // ─── Arbres : dans la ville (carreaux libres) et bosquets de campagne ───
@@ -425,7 +435,7 @@ export class CityEngine {
       this.hidden = hideKey;
     }
     this.fade.visible = !!from;
-    if (from) { const w = sideOf(from); this.fade.geometry = buildingModel(from.id).solid; this.fade.position.set(ctr(from, "x"), 0, ctr(from, "y")); this.fade.scale.set(w, tall(w), w); }
+    if (from) { const w = sideOf(from); this.fade.geometry = buildingModel(from.id).still; this.fade.position.set(ctr(from, "x"), 0, ctr(from, "y")); this.fade.scale.set(w, tall(w), w); }
     // Bâtiment sélectionné : tout son terrain
     const sel = l.mode?.kind === "move" ? l.mode.from : l.selected;
     this.sel.visible = this.ring.visible = !!sel;
@@ -440,9 +450,41 @@ export class CityEngine {
     this.syncOverlay();
   }
 
+  /** Place chaque pièce animée pour l'instant `sec` (0 = pose de départ, quand le joueur préfère moins de mouvement). */
+  private moveParts(sec: number) {
+    const TAU = Math.PI * 2, ease = (u: number) => u * u * (3 - 2 * u);
+    for (const part of this.parts) {
+      const d = part.def, period = d.period ?? 4, amount = d.amount ?? 0;
+      part.items.forEach((it, i) => {
+        const grow = this.partScale.get(it.key) ?? 1, u = sec === 0 ? 0 : (sec / period + it.off) % 1;
+        let px = d.at[0], py = d.at[1], pz = d.at[2], angle = 0, size = 1;
+        if (d.kind === "spin") angle = sec * amount * TAU + (sec === 0 ? 0 : it.off * TAU);
+        else if (d.kind === "rock") angle = Math.sin(u * TAU) * amount;
+        else if (d.kind === "bob") py += Math.sin(u * TAU) * amount;
+        else if (d.kind === "pulse") size = 1 + Math.sin(u * TAU) * amount;
+        else if (d.to) {
+          // slide : aller, arrêt, retour, arrêt ; pass : une traversée, puis rien jusqu'à la suivante
+          const k = d.kind === "slide" ? (u < 0.38 ? ease(u / 0.38) : u < 0.5 ? 1 : u < 0.88 ? 1 - ease((u - 0.5) / 0.38) : 0) : Math.min(1, u / 0.6);
+          px += (d.to[0] - px) * k; py += (d.to[1] - py) * k; pz += (d.to[2] - pz) * k;
+          if (d.kind === "pass") size = u > 0.6 ? 0 : Math.min(1, u * 14, (0.6 - u) * 14);
+        }
+        // Une rotation couchée (grande roue) garde ses proportions ; le reste suit l'échelle du bâtiment
+        const flat = (d.kind === "spin" || d.kind === "rock") && d.axis !== "y" && d.axis !== undefined;
+        const sx = flat ? it.h : it.w, sy = it.h, sz = flat ? it.h : it.w;
+        this.e.set(0, d.ry ?? 0, 0); this.q.setFromEuler(this.e);
+        if (angle) { this.e.set(d.axis === "x" ? angle : 0, d.axis === "y" || !d.axis ? angle : 0, d.axis === "z" ? angle : 0); this.q2.setFromEuler(this.e); this.q.multiply(this.q2); }
+        const f = grow * size;
+        this.m4.compose(this.v.set(it.x + px * it.w, py * it.h * grow, it.z + pz * it.w), this.q, this.s.set(sx * f, sy * f, sz * f));
+        part.mesh.setMatrixAt(i, this.m4);
+      });
+      part.mesh.instanceMatrix.needsUpdate = true;
+    }
+  }
+
   private scaleInst(key: string, sy: number) {
     const it = this.inst.get(key); if (!it) return;
     const w = sideOf(it.plot);
+    if (sy === 1) this.partScale.delete(key); else this.partScale.set(key, sy);
     this.place(it.solid, it.index, ctr(it.plot, "x"), 0, ctr(it.plot, "y"), sy === 0 ? 0 : w, sy * tall(w), sy === 0 ? 0 : w);
     it.solid.instanceMatrix.needsUpdate = true;
     if (it.lit) { it.lit.setMatrixAt(it.index, this.m4); it.lit.instanceMatrix.needsUpdate = true; }
@@ -463,7 +505,7 @@ export class CityEngine {
       const free = canPlace(this.byTile, x, y, w, this.mapSize, moving), back = !!moving && moving.x === x && moving.y === y;
       const ok = free || back;
       this.hoverMat.color.set(ok ? 0x10b981 : 0xef4444); this.hoverMat.opacity = ok ? 0.45 : 0.35; this.hover.visible = true;
-      if (free && !back) { this.ghost.geometry = buildingModel(m.id).solid; this.ghost.position.set(x + w / 2, 0, y + w / 2); this.ghost.scale.set(w, tall(w), w); this.ghost.visible = true; }
+      if (free && !back) { this.ghost.geometry = buildingModel(m.id).still; this.ghost.position.set(x + w / 2, 0, y + w / 2); this.ghost.scale.set(w, tall(w), w); this.ghost.visible = true; }
     } else if (at) {
       x = at.x; y = at.y; w = sideOf(at);
       this.hoverMat.color.set(this.live.tone === "danger" ? 0xef4444 : 0x2563eb); this.hoverMat.opacity = this.live.tone === "danger" ? 0.28 : 0.22; this.hover.visible = true;
@@ -634,6 +676,7 @@ export class CityEngine {
       });
       this.puffMesh.instanceMatrix.needsUpdate = true;
     }
+    this.moveParts(tt / 1000);
     if (this.spinMesh) {
       this.spins.forEach((r, i) => {
         this.e.set(0, Math.PI / 4, 0); this.q.setFromEuler(this.e); this.e.set(0, 0, tt / 700 + r.off); this.q2.setFromEuler(this.e); this.q.multiply(this.q2);
