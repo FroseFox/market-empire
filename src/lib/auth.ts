@@ -2,6 +2,7 @@
 // Connexion avec Discord (Supabase Auth), sans bibliothèque : quelques appels HTTP.
 // - « Se connecter » envoie vers Discord, qui renvoie sur le site avec la session dans l'URL (#access_token=…).
 // - La session est gardée dans le navigateur et renouvelée automatiquement.
+// - Plusieurs comptes peuvent rester mémorisés sur l'appareil : on passe de l'un à l'autre sans se reconnecter.
 // Seul le site publié l'utilise ; la page claude.ai a sa propre identité.
 import { create } from "zustand";
 import { BASE_PATH, STATIC_MODE, SUPABASE_ANON, SUPABASE_URL } from "@/lib/market/client";
@@ -13,16 +14,36 @@ interface AuthStore {
   status: "loading" | "out" | "in";
   user: Account | null;
   error: string | null;
+  /** Comptes mémorisés sur cet appareil (celui en cours compris). */
+  saved: Account[];
 }
-export const useAuth = create<AuthStore>(() => ({ status: STATIC_MODE ? "out" : "loading", user: null, error: null }));
+export const useAuth = create<AuthStore>(() => ({ status: STATIC_MODE ? "out" : "loading", user: null, error: null, saved: [] }));
 
 const KEY = "market-empire-session";
+// ─── Comptes mémorisés ───
+// La session de chaque compte connecté sur cet appareil est gardée ici, pour y revenir d'un clic.
+// « Se déconnecter » retire le compte de la liste ; « Ajouter un compte » le laisse en place.
+const ACCOUNTS_KEY = "market-empire-accounts";
+export const MAX_ACCOUNTS = 5;
+function readSaved(): Session[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(ACCOUNTS_KEY) ?? "[]");
+    return Array.isArray(v) ? v.filter((s) => s && typeof s.access === "string" && s.user && typeof s.user.id === "string") : [];
+  } catch { return []; }
+}
+function writeSaved(list: Session[]) {
+  try { localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(list.slice(0, MAX_ACCOUNTS))); } catch { /* stockage indisponible */ }
+  useAuth.setState({ saved: list.slice(0, MAX_ACCOUNTS).map((s) => s.user) });
+}
+const remember = (s: Session) => writeSaved([s, ...readSaved().filter((o) => o.user.id !== s.user.id)]);
+const forget = (id: string) => writeSaved(readSaved().filter((o) => o.user.id !== id));
 let session: Session | null = null;
 let refreshing: Promise<Session | null> | null = null;
 
 function store(s: Session | null) {
   session = s;
   try { if (s) localStorage.setItem(KEY, JSON.stringify(s)); else localStorage.removeItem(KEY); } catch { /* stockage indisponible */ }
+  if (s) remember(s);
   useAuth.setState({ status: s ? "in" : "out", user: s?.user ?? null });
 }
 
@@ -53,7 +74,7 @@ async function refreshSession(): Promise<Session | null> {
     refreshing = (async () => {
       const r = await authFetch("token?grant_type=refresh_token", { method: "POST", body: JSON.stringify({ refresh_token: session!.refresh }) }).catch(() => null);
       if (!r) return session; // hors ligne : on garde la session, on réessaiera
-      if (!r.ok) { store(null); return null; } // session révoquée ou expirée
+      if (!r.ok) { forget(session!.user.id); store(null); return null; } // session révoquée ou expirée
       const j = await r.json();
       const next = { access: j.access_token, refresh: j.refresh_token, exp: Date.now() + (j.expires_in ?? 3600) * 1000, user: j.user ? accountFrom(j.user) : session!.user };
       store(next);
@@ -89,7 +110,8 @@ export async function initAuth() {
     return;
   }
   try { session = JSON.parse(localStorage.getItem(KEY) ?? "null"); } catch { session = null; }
-  if (!session?.access) { store(null); return; }
+  if (!session?.access) { store(null); writeSaved(readSaved()); return; }
+  remember(session); // sessions d'avant les comptes mémorisés : celle en cours entre dans la liste
   useAuth.setState({ status: "in", user: session.user });
   if (session.exp - Date.now() < 60_000) await refreshSession();
 }
@@ -120,10 +142,36 @@ export async function loginWithPassword(username: string, password: string): Pro
   return null;
 }
 
+/** Déconnecte le compte en cours et l'oublie sur cet appareil. Les autres comptes mémorisés restent. */
 export async function logout() {
-  const token = session?.access;
+  const token = session?.access, id = session?.user.id;
+  if (id) forget(id);
   store(null);
   if (token) await authFetch("logout?scope=local", { method: "POST" }, token).catch(() => {});
+}
+
+/** Revient à l'écran de connexion pour ajouter un compte, sans oublier celui en cours. */
+export function addAccount() {
+  useAuth.setState({ error: null });
+  store(null);
+}
+
+/** Passe sur un autre compte mémorisé. Renvoie un message d'erreur, ou `null` si le changement est fait. */
+export async function switchAccount(id: string): Promise<string | null> {
+  const target = readSaved().find((s) => s.user.id === id);
+  if (!target) return "Ce compte n'est plus mémorisé sur cet appareil.";
+  session = target;
+  // Session ancienne : on la renouvelle avant de s'en servir (si elle a été révoquée, le compte sort de la liste)
+  const fresh = target.exp - Date.now() < 60_000 ? await refreshSession() : target;
+  if (!fresh) return "La session de ce compte a expiré : reconnectez-le.";
+  useAuth.setState({ error: null });
+  store(fresh);
+  return null;
+}
+
+/** Oublie un compte mémorisé qui n'est pas celui en cours. */
+export function forgetAccount(id: string) {
+  if (session?.user.id !== id) forget(id);
 }
 
 /** Appel d'une fonction de la base (RPC) au nom du joueur connecté. */
@@ -155,5 +203,6 @@ export async function restAsUser<T>(query: string): Promise<T | null> {
 export async function deleteAccount() {
   await rpc("delete_me", {});
   try { localStorage.removeItem("market-empire-linked"); } catch { /* idem */ }
+  if (session) forget(session.user.id);
   store(null);
 }

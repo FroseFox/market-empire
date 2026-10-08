@@ -1,17 +1,37 @@
 "use client";
 // Compte du joueur (site publié) : bouton Discord, ou avatar + menu.
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, LogOut, Trash2 } from "lucide-react";
-import { deleteAccount, logout, useAuth } from "@/lib/auth";
+import { ChevronDown, LogOut, Trash2, UserPlus } from "lucide-react";
+import { MAX_ACCOUNTS, addAccount, deleteAccount, logout, switchAccount, useAuth, type Account } from "@/lib/auth";
+import { saveNow } from "@/lib/online";
 import { useGame } from "@/store/game";
 import { loginWithDiscord } from "@/lib/auth";
 import { DiscordIcon } from "@/components/DiscordButton";
 
+/** Avatar d'un compte, ou son initiale. */
+export function Face({ a, size }: { a: Account; size: number }) {
+  return a.avatar
+    // eslint-disable-next-line @next/next/no-img-element
+    ? <img src={a.avatar} alt="" width={size} height={size} className="shrink-0 rounded-full" style={{ width: size, height: size }} />
+    : <span className="grid shrink-0 place-items-center rounded-full bg-[#5865F2] font-semibold text-white" style={{ width: size, height: size, fontSize: size * 0.42 }}>{a.name[0]}</span>;
+}
+
 export default function AccountMenu() {
-  const { status, user } = useAuth();
+  const { status, user, saved } = useAuth();
   const notify = useGame((s) => s.notify);
   const [open, setOpen] = useState(false);
   const [confirm, setConfirm] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const others = saved.filter((a) => a.id !== user?.id);
+  // Changer de compte : la partie en cours est d'abord enregistrée en ligne, pour ne rien perdre
+  const leaveFor = async (go: () => Promise<string | null> | void) => {
+    if (busy) return;
+    setBusy(true);
+    if (!(await saveNow())) { notify("Partie non enregistrée : réessayez dans quelques secondes.", "error"); setBusy(false); return; }
+    const err = await go();
+    setBusy(false); setOpen(false);
+    if (err) notify(err, "error");
+  };
   const box = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -53,7 +73,23 @@ export default function AccountMenu() {
           <div className="px-3 py-2 text-[11px] text-muted leading-relaxed">
             Votre partie est sauvegardée en ligne : retrouvez-la sur n&apos;importe quel appareil.
           </div>
-          <button role="menuitem" onClick={() => { setOpen(false); logout(); notify("Déconnecté. La partie reste aussi sur cet appareil."); }}
+          <div className="border-t border-line pt-1.5 mt-0.5">
+            <div className="px-3 pb-1 pt-1 text-[10px] font-bold uppercase tracking-[0.08em] text-muted">{busy ? "Enregistrement de la partie…" : "Changer de compte"}</div>
+            {others.map((a) => (
+              <button key={a.id} role="menuitem" disabled={busy} onClick={() => leaveFor(async () => { const err = await switchAccount(a.id); if (!err) notify(`Compte : ${a.name}`); return err; })}
+                className="w-full flex items-center gap-2.5 rounded-[8px] px-3 py-1.5 text-[13px] hover:bg-slate-50 disabled:opacity-50">
+                <Face a={a} size={24} /><span className="min-w-0 flex-1 truncate text-left font-medium">{a.name}</span>
+              </button>
+            ))}
+            {saved.length < MAX_ACCOUNTS && (
+              <button role="menuitem" disabled={busy} onClick={() => leaveFor(() => addAccount())}
+                className="w-full flex items-center gap-2.5 rounded-[8px] px-3 py-2 text-[13px] hover:bg-slate-50 disabled:opacity-50">
+                <UserPlus size={15} className="text-muted" />Ajouter un compte
+              </button>
+            )}
+          </div>
+          <div className="border-t border-line mt-1.5 pt-1.5" />
+          <button role="menuitem" disabled={busy} onClick={() => { setOpen(false); logout(); notify(others.length ? "Compte déconnecté et oublié sur cet appareil." : "Déconnecté. La partie reste aussi sur cet appareil."); }}
             className="w-full flex items-center gap-2 rounded-[8px] px-3 py-2 text-[13px] hover:bg-slate-50">
             <LogOut size={15} className="text-muted" />Se déconnecter
           </button>

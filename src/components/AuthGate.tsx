@@ -4,9 +4,10 @@
 //   première connexion  → création du compte (nom de la ville)
 //   serveur injoignable → nouvel essai, ou partie hors ligne
 import { useState } from "react";
-import { Building2, FlaskConical, Globe2, LineChart, LogOut, RefreshCw, ShieldCheck } from "lucide-react";
+import { Building2, FlaskConical, Globe2, LineChart, LogOut, RefreshCw, ShieldCheck, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { loginWithDiscord, loginWithPassword, logout, useAuth } from "@/lib/auth";
+import { forgetAccount, loginWithDiscord, loginWithPassword, logout, switchAccount, useAuth } from "@/lib/auth";
+import { Face } from "@/components/AccountMenu";
 import { createAccount, playOffline, retryOnline, useOnline } from "@/lib/online";
 import { useGame } from "@/store/game";
 import { DiscordIcon } from "@/components/DiscordButton";
@@ -60,11 +61,40 @@ export function Splash({ text }: { text: string }) {
 
 const DISCORD_BTN = "inline-flex w-full items-center justify-center gap-2.5 rounded-[12px] bg-[#5865F2] px-4 py-3 text-[15px] font-semibold text-white transition-colors hover:bg-[#4752C4]";
 
+/** Comptes déjà connectés sur cet appareil : on y revient d'un clic, sans repasser par Discord. */
+function SavedAccounts() {
+  const saved = useAuth((s) => s.saved);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  if (!saved.length) return null;
+  const pick = async (id: string) => { if (busy) return; setBusy(id); setError(await switchAccount(id)); setBusy(null); };
+  return (
+    <div className="mb-6">
+      <h2 className="text-[26px] font-semibold leading-tight">Reprendre un compte</h2>
+      <ul className="mt-4 space-y-2">
+        {saved.map((a) => (
+          <li key={a.id} className="flex items-center gap-1 rounded-[12px] border border-line bg-card pr-1.5 transition-colors hover:border-slate-300">
+            <button type="button" onClick={() => pick(a.id)} disabled={!!busy} className="flex min-w-0 flex-1 items-center gap-3 p-3 text-left disabled:opacity-60">
+              <Face a={a} size={40} />
+              <span className="min-w-0 flex-1"><span className="block truncate text-[14px] font-semibold">{a.name}</span><span className="block text-[12px] text-muted">{busy === a.id ? "Ouverture…" : "Continuer avec ce compte"}</span></span>
+            </button>
+            <button type="button" onClick={() => forgetAccount(a.id)} title="Oublier ce compte sur cet appareil" aria-label={`Oublier le compte ${a.name}`} className="rounded-[8px] p-2 text-muted hover:bg-slate-100 hover:text-danger"><X size={15} /></button>
+          </li>
+        ))}
+      </ul>
+      {error && <p role="alert" className="mt-3 rounded-[10px] bg-danger-soft px-3 py-2 text-[13px] text-red-700">{error}</p>}
+      <div className="mt-6 flex items-center gap-3 text-[12px] font-medium text-muted"><span className="h-px flex-1 bg-line" />ou un autre compte<span className="h-px flex-1 bg-line" /></div>
+    </div>
+  );
+}
+
 function LoginScreen() {
   const error = useAuth((s) => s.error);
+  const known = useAuth((s) => s.saved.length > 0);
   return (
     <Frame>
-      <h2 className="text-[26px] font-semibold leading-tight">Connexion</h2>
+      <SavedAccounts />
+      {!known && <h2 className="text-[26px] font-semibold leading-tight">Connexion</h2>}
       <p className="mt-2 text-[14px] leading-relaxed text-muted">
         Market Empire se joue avec un compte Discord. À la première connexion, votre compte de jeu est créé automatiquement.
       </p>
