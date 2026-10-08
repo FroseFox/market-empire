@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronDown, LogOut, Pencil, Trash2, UserPlus } from "lucide-react";
 import { MAX_ACCOUNTS, addAccount, deleteAccount, logout, switchAccount, useAuth, type Account } from "@/lib/auth";
 import { saveNow, setPseudo, useOnline } from "@/lib/online";
+import { disablePush } from "@/lib/push";
 import { PSEUDO_MAX, pseudoProblem } from "@/lib/pseudo";
 import { refreshWorld } from "@/lib/world/players";
 import { useGame } from "@/store/game";
@@ -124,7 +125,7 @@ export default function AccountMenu() {
             )}
           </div>
           <div className="border-t border-line mt-1.5 pt-1.5" />
-          <button role="menuitem" disabled={busy} onClick={() => { setOpen(false); logout(); notify(others.length ? "Compte déconnecté et oublié sur cet appareil." : "Déconnecté. La partie reste aussi sur cet appareil."); }}
+          <button role="menuitem" disabled={busy} onClick={async () => { setOpen(false); await disablePush(); logout(); notify(others.length ? "Compte déconnecté et oublié sur cet appareil." : "Déconnecté. La partie reste aussi sur cet appareil."); }}
             className="w-full flex items-center gap-2 rounded-[8px] px-3 py-2 text-[13px] hover:bg-slate-50">
             <LogOut size={15} className="text-muted" />Se déconnecter
           </button>
