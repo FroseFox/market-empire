@@ -229,7 +229,7 @@ export default function WorldPage() {
               <table className="w-full text-[13px]">
                 <thead className="text-muted text-[12px]"><tr className="border-b border-line">
                   <th className="text-left font-medium py-2 w-12">#</th><th className="text-left font-medium">Ville</th><th className="text-left font-medium hidden md:table-cell">Pays</th><th className="text-left font-medium hidden sm:table-cell">Joueur</th>
-                  <th className="text-right font-medium">Patrimoine</th><th className="text-right font-medium">Population</th><th className="text-right font-medium">Bourse</th><th className="w-10"><span className="sr-only">Visiter</span></th>
+                  <th className="text-right font-medium pl-3">Patrimoine</th><th className="text-right font-medium pl-3">Population</th><th className="text-right font-medium pl-3">Bourse</th><th className="w-10"><span className="sr-only">Visiter</span></th>
                 </tr></thead>
                 <tbody>
                   {ranked.map((p, i) => (
@@ -246,9 +246,9 @@ export default function WorldPage() {
                           {p.name || "—"}
                         </span>
                       </td>
-                      <td className="text-right tabular font-semibold">{eur(p.netWorth)}</td>
-                      <td className="text-right tabular">{num(p.population)}</td>
-                      <td className="text-right"><Delta value={p.perf} /></td>
+                      <td className="text-right tabular font-semibold whitespace-nowrap pl-3">{eur(p.netWorth)}</td>
+                      <td className="text-right tabular whitespace-nowrap pl-3">{num(p.population)}</td>
+                      <td className="text-right whitespace-nowrap pl-3"><Delta value={p.perf} /></td>
                       <td className="text-right">
                         {!p.isMe && <button onClick={() => setVisiting(p)} aria-label={`Visiter ${p.cityName}`} title="Visiter la ville" className="rounded-[8px] p-1.5 text-muted hover:bg-slate-100 hover:text-primary"><Eye size={16} /></button>}
                       </td>
@@ -258,7 +258,7 @@ export default function WorldPage() {
               </table>
             </div>
           )}
-          <p className="text-[11px] text-muted mt-3">Le classement ne montre que le nom du compte et ce que chaque joueur publie : nom de ville, patrimoine, population et performance boursière. Mis à jour toutes les 5 minutes.</p>
+          <p className="text-[11px] text-muted mt-3">Le classement ne montre que le nom du compte et ce que chaque joueur publie : nom de ville, patrimoine, population et performance boursière. Mis à jour toutes les 2 minutes.</p>
           {!STATIC_MODE && auth.status !== "in" && <div className="mt-3"><DiscordButton small /></div>}
         </Card>
       )}

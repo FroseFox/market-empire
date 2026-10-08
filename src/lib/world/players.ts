@@ -10,8 +10,8 @@ import { getRuntime } from "@/lib/runtime";
 import { useGame } from "@/store/game";
 import * as E from "@/lib/game/engine";
 import { pack } from "@/lib/game/pack";
-import { BUILDING_BY_ID } from "@/lib/game/config";
-import { isBuildable, MAX_MAP_SIZE, type Plot } from "@/lib/game/layout";
+import { plotsFromCity, type Plot } from "@/lib/game/layout";
+export { plotsFromCity };
 import { pickCountry, PLAYABLE } from "./countries";
 
 export interface PublicPlayer {
@@ -38,22 +38,6 @@ export interface PublicPlayer {
   allianceGift?: number;
   /** Plan de la ville, quand il est déjà connu (page claude.ai) ; sinon il est lu à la visite. */
   city?: unknown;
-}
-
-/** Plan de ville publié → emplacements sûrs à dessiner (bâtiments connus, carreaux valides, sans doublon). */
-export function plotsFromCity(city: unknown): Plot[] {
-  if (!city || typeof city !== "object") return [];
-  const seen = new Set<string>(), out: Plot[] = [];
-  for (const [id, xy] of Object.entries(city as Record<string, unknown>)) {
-    if (!BUILDING_BY_ID[id] || !Array.isArray(xy)) continue;
-    for (let i = 0; i + 1 < xy.length && out.length < 900; i += 2) {
-      const x = Number(xy[i]), y = Number(xy[i + 1]), k = `${x},${y}`;
-      if (!isBuildable(x, y, MAX_MAP_SIZE) || seen.has(k)) continue;
-      seen.add(k);
-      out.push({ id, x, y });
-    }
-  }
-  return out;
 }
 
 /** Plan de la ville d'un joueur, pour la visiter. `null` = pas encore publié ou serveur injoignable. */

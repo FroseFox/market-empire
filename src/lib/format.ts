@@ -6,10 +6,13 @@ const nf4 = new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 2, maximumFr
 /** Montant au centime ; les tout petits prix (cryptos à moins d'1 €) gardent 4 décimales. */
 export const eur2 = (v: number) => `${(Math.abs(v) < 1 && v !== 0 ? nf4 : nf2).format(v)} €`;
 /** Quantité : entière pour les actions, jusqu'à 4 décimales pour les cryptos. */
-export const qtyFmt = (v: number) => new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 4 }).format(v);
+const nfQty = [4, 2, 0].map((d) => new Intl.NumberFormat("fr-FR", { maximumFractionDigits: d }));
+/** Quantité de titres : moins de décimales quand le nombre est grand, pour rester lisible. */
+export const qtyFmt = (v: number) => nfQty[Math.abs(v) >= 100_000 ? 2 : Math.abs(v) >= 1000 ? 1 : 0].format(v);
 export const num = (v: number) => nf0.format(Math.round(v));
 export const signedEur = (v: number) => `${v >= 0 ? "+" : "−"}${nf0.format(Math.abs(Math.round(v)))} €`;
-export const pct = (v: number, digits = 1) => `${v >= 0 ? "+" : "−"}${Math.abs(v * 100).toFixed(digits).replace(".", ",")} %`;
+/** Pourcentage signé. Une baisse trop petite pour s'afficher ne s'écrit pas « −0,0 % ». */
+export const pct = (v: number, digits = 1) => { const t = Math.abs(v * 100).toFixed(digits); return `${v >= 0 || Number(t) === 0 ? "+" : "−"}${t.replace(".", ",")} %`; };
 export const pctPlain = (v: number) => `${Math.round(v * 100)} %`;
 
 export function compactEur(v: number) {
