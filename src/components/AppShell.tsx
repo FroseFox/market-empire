@@ -12,6 +12,7 @@ import { startWorldSync } from "@/lib/world/players";
 import { initAuth, useAuth } from "@/lib/auth";
 import { startOnline } from "@/lib/online";
 import AccountMenu from "@/components/AccountMenu";
+import InstallApp from "@/components/InstallApp";
 import Guide from "@/components/Guide";
 import AbsenceReport from "@/components/AbsenceReport";
 import NotifBell from "@/components/NotifBell";
@@ -166,7 +167,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             </Link>
           ))}
         </nav>
-        <div className="mt-auto px-2 text-[11px] text-slate-500 leading-relaxed">
+        <div className="mt-auto"><InstallApp dark /></div>
+        <div className="px-2 text-[11px] text-slate-500 leading-relaxed">
           Construis · Investis · Domine<br />Prototype v0.1
         </div>
       </aside>
@@ -253,6 +255,7 @@ function MobileNav({ isActive, mode, quotesAt }: { isActive: (href: string) => b
                 </Link>
               ))}
             </div>
+            <InstallApp />
             <div className={`mt-3 flex items-center gap-2 rounded-[12px] px-3 py-2 text-[12px] ${mode === "simulé" ? "bg-warning-soft text-amber-700" : "bg-success-soft text-emerald-700"}`}>
               <span className={`h-2 w-2 rounded-full ${mode === "simulé" ? "bg-warning" : "bg-success"}`} />
               {mode === "simulé" ? "Cours simulés" : `Cours réels · mis à jour à ${new Date(quotesAt).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}`}
