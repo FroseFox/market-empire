@@ -5,7 +5,8 @@ import { ChevronRight, Layers, LineChart, Lock, Search, Wallet, X } from "lucide
 import { useDerived, useGame } from "@/store/game";
 import { ASSETS, ASSET_BY_SYMBOL, FAMILIES, KIND_LABEL, familyOf, flag, regionOf, type Asset, type AssetKind, type Family, type Region } from "@/lib/market/universe";
 import { simulatedHistory, type Range } from "@/lib/market/simulate";
-import { feeFactor, hasResearch, maxBuyAmount, sharesFor, tradeFee } from "@/lib/game/engine";
+import { cityLeverage, feeFactor, hasResearch, holdingStake, holdingValue, investCap, investRoom, liquidationPrice, maxBuyAmount, sharesFor, tradeFee } from "@/lib/game/engine";
+import { LEVERAGE } from "@/lib/game/config";
 import { RESEARCH_BY_ID } from "@/lib/game/research";
 import { neighbors } from "@/lib/market/relations";
 import { useNews } from "@/lib/news";
@@ -16,7 +17,6 @@ import { Button, Card, Delta, Empty, PageHeader, Segmented, LockTag } from "@/co
 import { Sparkline, WealthChart } from "@/components/charts";
 import { eur, eur2, pctPlain, qtyFmt, signedEur } from "@/lib/format";
 import PriceStatus from "@/components/PriceStatus";
-import LeverageBox from "@/components/Leverage";
 import { useMedia } from "@/lib/useMedia";
 import { clearFocus, peekFocus } from "@/lib/market/focus";
 
@@ -323,15 +323,24 @@ function AssetPanel({ symbol, onSelect }: { symbol: string; onSelect: (s: string
 
   const held = game.holdings[symbol];
   const price = q?.price ?? 0;
-  const positionValue = held ? held.qty * price : 0;
+  // Ce que la ligne vaut pour le joueur : ses titres, moins ce que la Banque de la ville a prêté
+  const positionValue = held ? holdingValue(held, price) : 0;
+  const stakeHeld = held ? holdingStake(held) : 0;
   const typed = Math.max(0, Number(amount.replace(/\s/g, "").replace(",", ".")) || 0);
   // Frais réduits par le pays, un bureau dans la place financière ou un grand projet
   const feeRate = feeFactor(game, symbol);
-  const maxBuy = maxBuyAmount(game.cash, feeRate);
+  // Une seule façon d'investir : le montant tapé est la mise, la Banque la multiplie par le levier de la ville
+  const lev = cityLeverage(game, symbol);
+  const room = investRoom(game);
+  const maxBuy = Math.min(maxBuyAmount(game.cash, feeRate, lev), room);
   const sellAll = !!held && (all || typed >= positionValue - 0.005);
-  const n = sharesFor(typed, price);
+  const n = sharesFor(typed * lev, price);
+  const nSell = held && positionValue > 0 ? Math.min(held.qty, sharesFor(typed * held.qty, positionValue)) : 0;
   const gross = n * price;
+  const stake = gross / lev;
   const fee = n > 0 ? tradeFee(gross, feeRate) : 0;
+  const overCap = stake > room + 0.01;
+  const liqHeld = held ? liquidationPrice(held) : 0;
   const unit = asset.kind === "stock" ? "action" : asset.kind === "crypto" ? "unité" : "part";
   const first = hist?.points[0]?.p;
   const rangeChange = first && price ? price / first - 1 : q?.change ?? 0;
@@ -371,16 +380,21 @@ function AssetPanel({ symbol, onSelect }: { symbol: string; onSelect: (s: string
 
       {held && (
         <div className="grid grid-cols-3 gap-2 mt-4 text-[12px]">
-          <Info label="Détenu" value={`${qtyFmt(held.qty)} ${unit}${held.qty >= 2 ? "s" : ""} · ${eur(positionValue)}`} />
+          <Info label="Votre ligne" value={`${eur(positionValue)} · ${qtyFmt(held.qty)} ${unit}${held.qty >= 2 ? "s" : ""}`} />
           <Info label="Prix de revient" value={eur2(held.avgCost)} />
-          <Info label="Plus-value" value={signedEur(positionValue - held.qty * held.avgCost)} tone={positionValue >= held.qty * held.avgCost ? "text-success" : "text-danger"} />
+          <Info label="Plus-value" value={signedEur(positionValue - stakeHeld)} tone={positionValue >= stakeHeld ? "text-success" : "text-danger"} />
         </div>
+      )}
+      {held && liqHeld > 0 && (
+        <p className={`mt-2 text-[11px] tabular ${price > 0 && (price - liqHeld) / price < 0.03 ? "font-semibold text-danger" : "text-muted"}`}>
+          Mise {eur(stakeHeld)} · prêté par la Banque {eur(held.debt ?? 0)} · vendue d&apos;office si le cours passe sous {eur2(liqHeld)}
+        </p>
       )}
       {held && portfolio > 0 && <p className="text-[11px] text-muted mt-2">{pctPlain(positionValue / portfolio)} de votre portefeuille</p>}
 
       <div className="mt-4 rounded-[12px] border border-line p-4">
         <div className="flex flex-wrap items-center gap-2 mb-3">
-          <label htmlFor="amount" className="text-[13px] font-medium">Montant</label>
+          <label htmlFor="amount" className="text-[13px] font-medium">Mise</label>
           <div className="relative">
             <input id="amount" inputMode="decimal" value={amount} onChange={(e) => { setAmount(e.target.value); setAll(false); }}
               className="w-32 rounded-[8px] border border-line py-1.5 pl-2.5 pr-7 text-[14px] tabular outline-none focus:border-primary" />
@@ -388,15 +402,25 @@ function AssetPanel({ symbol, onSelect }: { symbol: string; onSelect: (s: string
           </div>
           <div className="flex flex-wrap gap-1 ml-auto">
             {[1_000, 10_000].map((k) => <button key={k} onClick={() => pick(k)} className="text-[11px] px-2 py-1 rounded-[6px] bg-slate-100 text-muted hover:text-ink">{eur(k)}</button>)}
-            <button onClick={() => pick(maxBuy)} title="Tout ce que vos liquidités permettent d'acheter, frais compris" className="text-[11px] px-2 py-1 rounded-[6px] bg-slate-100 text-muted hover:text-ink">Max</button>
-            {held && <button onClick={() => pick(positionValue, true)} title="Montant de toute votre position, pour la vendre" className="text-[11px] px-2 py-1 rounded-[6px] bg-slate-100 text-muted hover:text-ink">Tout</button>}
+            <button onClick={() => pick(maxBuy)} title="Tout ce que vos liquidités et le plafond de la Banque permettent de miser, frais compris" className="text-[11px] px-2 py-1 rounded-[6px] bg-slate-100 text-muted hover:text-ink">Max</button>
+            {held && <button onClick={() => pick(positionValue, true)} title="Valeur de toute votre ligne, pour la vendre" className="text-[11px] px-2 py-1 rounded-[6px] bg-slate-100 text-muted hover:text-ink">Tout</button>}
           </div>
         </div>
         <div className="text-[12px] text-muted space-y-0.5 mb-3 tabular">
-          <div className="flex justify-between"><span>Soit environ</span><span className="text-ink font-medium">{qtyFmt(sellAll && all ? held!.qty : n)} {unit}{n >= 2 ? "s" : ""} à {eur2(price)}</span></div>
-          <div className="flex justify-between"><span>Frais ({(0.1 * feeRate).toLocaleString("fr-FR", { maximumFractionDigits: 3 })} %{feeRate < 1 ? ", réduits" : ""})</span><span>{eur2(fee)}</span></div>
-          <div className="flex justify-between"><span>Liquidités disponibles</span><span>{eur(game.cash)}</span></div>
+          <div className="flex justify-between gap-3"><span>Levier de votre ville</span><span className="whitespace-nowrap font-semibold text-primary">×{lev.toLocaleString("fr-FR")}</span></div>
+          <div className="flex justify-between gap-3"><span>Investi pour vous (mise × levier)</span><span className="whitespace-nowrap font-medium text-ink">{eur(gross)} · {qtyFmt(n)} {unit}{n >= 2 ? "s" : ""}</span></div>
+          <div className="flex justify-between gap-3"><span>Si le cours prend +1 %</span><span className="whitespace-nowrap font-medium text-success">{signedEur(gross * 0.01)}</span></div>
+          <div className="flex justify-between gap-3"><span>Si le cours perd 1 %</span><span className="whitespace-nowrap font-medium text-danger">{signedEur(-gross * 0.01)}</span></div>
+          <div className="flex justify-between gap-3"><span>Vendue d&apos;office si le cours perd</span><span className="whitespace-nowrap">{pctPlain((1 - LEVERAGE.liquidation) / lev)}</span></div>
+          <div className="flex justify-between gap-3"><span>Frais ({(0.1 * feeRate).toLocaleString("fr-FR", { maximumFractionDigits: 3 })} % du montant investi{feeRate < 1 ? ", réduits" : ""})</span><span className="whitespace-nowrap">{eur2(fee)}</span></div>
+          <div className="flex justify-between gap-3"><span>Intérêts par jour de ville</span><span className="whitespace-nowrap">{eur2((gross - stake) * LEVERAGE.dayRate)}</span></div>
+          <div className="flex justify-between gap-3"><span>Liquidités disponibles</span><span className="whitespace-nowrap">{eur(game.cash)}</span></div>
+          {Number.isFinite(room) && <div className="flex justify-between gap-3"><span>Mise encore permise par la Banque</span><span className={`whitespace-nowrap ${overCap ? "font-semibold text-danger" : ""}`}>{eur(room)} sur {eur(investCap(game))}</span></div>}
         </div>
+        <p className="mb-3 text-[11px] text-muted">
+          Gains et pertes sont multipliés par le levier ; vous ne pouvez jamais perdre plus que votre mise. Les cours restent ceux du vrai marché.{" "}
+          <Link href="/portefeuille" className="font-medium text-primary">Banque de la ville →</Link>
+        </p>
         {!unlocked && (
           <div className="mb-2 flex items-center gap-2.5 rounded-[10px] border border-amber-200 bg-amber-50 p-2.5 text-[12px] text-amber-900">
             <Lock size={16} strokeWidth={2.2} className="shrink-0" />
@@ -405,12 +429,10 @@ function AssetPanel({ symbol, onSelect }: { symbol: string; onSelect: (s: string
           </div>
         )}
         <div className="grid grid-cols-2 gap-2">
-          <Button disabled={busy || !unlocked || n <= 0 || gross + fee > game.cash} onClick={() => run(() => buy(symbol, typed))}>{unlocked ? "Acheter" : <span className="inline-flex items-center gap-1.5"><Lock size={14} />Verrouillé</span>}</Button>
-          <Button variant="secondary" disabled={busy || !held || (!sellAll && (n <= 0 || n > held.qty))} onClick={() => run(() => sell(symbol, typed, sellAll))}>{sellAll ? "Tout vendre" : "Vendre"}</Button>
+          <Button disabled={busy || !unlocked || n <= 0 || stake + fee > game.cash || overCap} title={overCap ? "Plafond de mise de la Banque atteint : agrandissez-la dans Portefeuille" : undefined} onClick={() => run(() => buy(symbol, typed))}>{unlocked ? "Acheter" : <span className="inline-flex items-center gap-1.5"><Lock size={14} />Verrouillé</span>}</Button>
+          <Button variant="secondary" disabled={busy || !held || (!sellAll && nSell <= 0)} title={held && !sellAll ? `Retire ${eur(Math.min(typed, positionValue))} de votre ligne` : undefined} onClick={() => run(() => sell(symbol, typed, sellAll))}>{sellAll ? "Tout vendre" : "Vendre"}</Button>
         </div>
       </div>
-
-      <LeverageBox key={symbol} symbol={symbol} />
 
       {links.length > 0 && (
         <div className="mt-5">

@@ -1,8 +1,8 @@
 // Alertes et objectifs. Règle de la charte : une alerte n'apparaît que si
 // le joueur peut agir dessus.
 import type { CityStats, GameState, Prices } from "./engine";
-import { activeBranches, branchLimit, cityRank, featureOpen, goalStatuses, portfolioValue, renovateCost } from "./engine";
-import { BRANCH_MIN_VALUE, CITY_RANKS, ORIENTATION_MIN_RANK, SERVICES, SERVICE_IDS } from "./config";
+import { activeBranches, branchLimit, capitalPerDay, cityRank, featureOpen, goalStatuses, holdingValue, investCap, investRoom, nextBank, portfolioValue, renovateCost } from "./engine";
+import { BRANCH_MIN_VALUE, CAPITAL, CITY_RANKS, ORIENTATION_MIN_RANK, SERVICES, SERVICE_IDS } from "./config";
 import { ASSET_BY_SYMBOL } from "../market/universe";
 
 export type AlertLevel = "info" | "warning" | "danger" | "success";
@@ -45,7 +45,7 @@ export function computeAlerts(state: GameState, city: CityStats, prices: Prices)
   const pv = portfolioValue(state.holdings, prices);
   if (pv > 5_000) {
     for (const [sym, h] of Object.entries(state.holdings)) {
-      const share = (h.qty * (prices[sym] ?? h.avgCost)) / pv;
+      const share = holdingValue(h, prices[sym] ?? h.avgCost) / pv;
       if (share >= 0.3 && Object.keys(state.holdings).length > 1) {
         out.push({ id: `conc-${sym}`, level: "info", title: `${sym} représente ${Math.round(share * 100)} % de votre portefeuille`, detail: "Risque de concentration.", href: "/portefeuille" });
       }
@@ -72,6 +72,10 @@ export function nextActions(state: GameState, city: CityStats, prices: Prices, m
   if (city.pollution.penalty >= 0.05) out.push({ id: "pollution", tone: "bad", title: "Réduisez la pollution", text: `Elle coûte ${Math.round(city.pollution.penalty * 100)} points de satisfaction : parcs et écoquartiers l'absorbent.`, href: "/ville" });
   if (city.wear >= 0.4 && renovateCost(state) <= state.cash) out.push({ id: "wear", tone: "bad", title: "Rénovez la ville", text: `Vétusté de ${Math.round(city.wear * 100)} % : l'entretien augmente chaque jour.`, href: "/ville" });
   if (city.freeHousing === 0 && city.housing > 0) out.push({ id: "housing", tone: "info", title: "Construisez des logements", text: city.openJobs > 0 ? `${fmt(city.openJobs)} emplois attendent des habitants.` : "Tous les logements sont occupés : la population ne grandit plus.", href: "/ville" });
+  // Lien bourse ↔ ville : on rappelle la règle (pas de capital sans placement), jamais quel actif choisir
+  if (cityRank(state.population) >= 1 && capitalPerDay(state.holdings, prices) <= 0) out.push({ id: "capital", tone: "info", title: "Produisez du capital", text: `Rien n'est placé en bourse : les bâtiments à partir de ${fmt(CAPITAL.fromCost)} € demandent du capital, que seuls vos placements produisent.`, href: "/marches" });
+  const bank = nextBank(state);
+  if (bank && cityRank(state.population) >= bank.minRank && bank.cost <= state.cash && investRoom(state) < investCap(state) * 0.1) out.push({ id: "bank", tone: "info", title: "Agrandissez la Banque de la ville", text: `Votre plafond de mise est presque atteint : le niveau suivant donne un levier ×${bank.lev.toLocaleString("fr-FR")}.`, href: "/portefeuille" });
   if (cityRank(state.population) >= ORIENTATION_MIN_RANK && !state.orientation) out.push({ id: "orientation", tone: "info", title: "Choisissez l'orientation de votre ville", text: "Industrielle, verte, d'affaires ou marchande : le premier choix est gratuit.", href: "/ville" });
   if (featureOpen(state, "firms") && (state.branches?.length ?? 0) < branchLimit(state)) {
     const taken = new Set((state.branches ?? []).map((b) => b.symbol));

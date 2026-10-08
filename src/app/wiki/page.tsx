@@ -4,7 +4,7 @@ import Link from "next/link";
 import { BookOpen } from "lucide-react";
 import { useGame } from "@/store/game";
 import {
-  ACTIVE_RATIO, BRANCH_COST, BRANCH_EFFECTS, BRANCH_MIN_VALUE, BUILDINGS, BUILDING_BY_ID, CATEGORY_LABELS, CITY_RANKS, CONTRACT_RATIO, COUNTRY_PRICES,
+  ACTIVE_RATIO, BANK, BRANCH_COST, CAPITAL, LEVERAGE, BRANCH_EFFECTS, BRANCH_MIN_VALUE, BUILDINGS, BUILDING_BY_ID, CATEGORY_LABELS, CITY_RANKS, CONTRACT_RATIO, COUNTRY_PRICES,
   DAY_LENGTH_MINUTES, DEMOLISH_REFUND, ENERGY_PER_RESIDENT, EXPORT_RATIO, FOOD_PER_RESIDENT, GOALS, HUB_DESK_COST, HUB_FEE_FACTOR, MAINTENANCE_RATE,
   FEATURES, ORIENTATIONS, ORIENTATION_CHANGE_COST, ORIENTATION_MIN_RANK,
   MAX_CATCHUP_DAYS, MAX_CONTRACTS, NEED_PER_RANK, POLLUTION_MAX, PROJECTS, RENOVATE_RATE, RESOURCE_PRICES, SERVICES, SERVICE_IDS, SPECIALTY_BONUS,
@@ -46,7 +46,7 @@ export default function WikiPage() {
             <div className="flex items-start gap-3">
               <div>
                 <p>Vous commencez avec <b>{eur(STARTING_CASH)}</b> et une petite ville de <b>{num(STARTING_POPULATION)} habitants</b>. Le but : bâtir un empire économique en investissant sur les vrais marchés et en développant votre ville.</p>
-                <p className="mt-2">La boucle du jeu : <b>argent → investissement → ville → population → économie</b>. La bourse est risquée et peut rapporter gros ; la ville rapporte moins, mais tous les jours.</p>
+                <p className="mt-2">La boucle du jeu : <b>argent → investissement → ville → population → économie</b>. La bourse est risquée et peut rapporter gros ; la ville rapporte moins, mais tous les jours. Les deux sont liées : la ville fixe le levier de vos achats, et vos placements produisent le capital qui fait grandir la ville.</p>
                 <p className="mt-2">Le jeu ne vous dira jamais d&apos;acheter ou de vendre, et il n&apos;invente aucun événement boursier : les cours et les actualités sont réels, c&apos;est vous qui décidez.</p>
                 <p className="mt-2">Votre guide s&apos;appelle <b>Tic</b>. Il vous accompagne au début, vous accueille au retour d&apos;une absence et fête vos réussites.</p>
                 <div className="mt-3 flex flex-wrap gap-3">
@@ -76,7 +76,7 @@ export default function WikiPage() {
               <li><b>Regardez la page Économie</b> : votre argent, ce que la ville rapporte par jour, la valeur de votre portefeuille.</li>
               <li><b>Réglez les soucis de la ville</b> : sous la barre « Satisfaction », chaque ligne rouge est un problème à corriger (voir <a href="#soucis" className="font-medium text-primary">Que faire si…</a>).</li>
               <li><b>Faites grandir la ville</b> : des logements pour accueillir des habitants, puis des emplois pour qu&apos;ils travaillent, puis l&apos;énergie et la nourriture qu&apos;ils consomment.</li>
-              <li><b>Placez ce qui reste</b> en bourse ou dans une recherche. Gardez toujours un peu d&apos;argent : la ville peut coûter certains jours.</li>
+              <li><b>Gardez une part en bourse</b> : vos placements produisent le capital ◆ que les gros bâtiments demandent (voir <a href="#bourse" className="font-medium text-primary">Bourse</a>). Gardez aussi un peu d&apos;argent : la ville peut coûter certains jours.</li>
               <li><b>Visez le prochain palier</b> : les Objectifs versent des subventions, et chaque rang de ville ouvre de nouvelles fonctions.</li>
             </ol>
             <p className="mt-3">Il n&apos;y a pas de fin ni de défaite : votre <b>patrimoine</b> (argent + portefeuille + valeur de la ville) vous classe face aux autres joueurs dans Monde.</p>
@@ -143,11 +143,17 @@ export default function WikiPage() {
 
           <Section id="bourse" title="Bourse">
             <ul className="list-disc space-y-1.5 pl-5">
-              <li>Les ordres se passent <b>en euros</b> : vous tapez un montant, le jeu calcule le nombre de titres (fractions permises).</li>
-              <li>Frais de courtage : <b>{pct(TRADE_FEE_RATE, 2)}</b> du montant, {eur(TRADE_FEE_MIN)} au minimum, à l&apos;achat comme à la vente.</li>
+              <li>Les ordres se passent <b>en euros</b> : vous tapez votre mise, le jeu calcule le nombre de titres (fractions permises).</li>
+              <li><b>Une seule façon d&apos;investir</b> : chaque achat est multiplié par le <b>levier de votre ville</b>. Vous mettez la mise, la Banque de la ville prête le reste. Les cours restent ceux du vrai marché ; vos gains sont multipliés, vos pertes aussi.</li>
+              <li>Vous ne pouvez jamais perdre plus que votre mise : une ligne est <b>vendue d&apos;office</b> quand il n&apos;en reste que {pct(LEVERAGE.liquidation, 0).replace("+", "")}. Les cryptomonnaies sont limitées à un levier ×{LEVERAGE.maxByKind.crypto}.</li>
+              <li>La somme prêtée coûte des <b>intérêts</b> : {pct(LEVERAGE.dayRate, 2).replace("+", "")} par jour de ville, pris sur vos liquidités.</li>
+              <li><b>Capital ◆</b> : vos placements en produisent chaque jour de ville, {pct(CAPITAL.dayRate, 0).replace("+", "")} de ce qu&apos;ils valent. Tout bâtiment à partir de {compactEur(CAPITAL.fromCost)} en demande {pct(CAPITAL.share, 0).replace("+", "")} de son prix, en plus des liquidités. Sans bourse, la ville ne grandit donc plus ; n&apos;importe quel actif en produit, le jeu ne vous dit jamais lequel acheter.</li>
+              <li>Frais de courtage : <b>{pct(TRADE_FEE_RATE, 2)}</b> du montant investi (mise × levier), {eur(TRADE_FEE_MIN)} au minimum, à l&apos;achat comme à la vente.</li>
               <li>Les marchés s&apos;ouvrent par la <a href="#recherche" className="text-primary font-medium">Recherche</a> : actions américaines au départ, puis Europe, Asie, cryptos, ETF, matières premières.</li>
               <li>Trois façons de réduire les frais : un pays à spécialité Finance, un bureau dans une place financière (frais × {HUB_FEE_FACTOR.toLocaleString("fr-FR")} sur les actifs qu&apos;elle couvre), le grand projet « Bourse de la ville ».</li>
             </ul>
+            <p className="mt-3">La <b>Banque de la ville</b> (page Portefeuille) s&apos;agrandit avec les liquidités de la ville. Son niveau fixe le levier et la mise totale que vous pouvez placer :</p>
+            <Table head={["Niveau", "Levier", "Mise maximale", "Prix", "À partir du rang"]} rows={BANK.map((b, i) => [String(i + 1), `×${b.lev.toLocaleString("fr-FR")}`, Number.isFinite(b.cap) ? compactEur(b.cap) : "Illimitée", b.cost ? compactEur(b.cost) : "Offert", CITY_RANKS[b.minRank].name])} />
             <Table head={["Place financière", "Actifs couverts", "Bureau"]} rows={HUBS.map((h) => [h.name, h.covers, `${compactEur(HUB_DESK_COST)} (offert si votre ville est dans ce pays)`])} />
           </Section>
 

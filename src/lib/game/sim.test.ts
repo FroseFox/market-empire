@@ -3,9 +3,9 @@ import { simulate } from "./sim";
 import { CITY_RANKS, START_GRANT } from "./config";
 import { computeCity } from "./engine";
 
-// Garde-fou d'équilibrage : un joueur prudent qui ne fait QUE la ville (sans la bourse) doit avancer
-// à un rythme compatible avec une partie de 2 semaines à 1 mois (1 jour de ville = 1 heure réelle,
-// soit 24 jours de ville par jour réel au maximum).
+// Garde-fou d'équilibrage : un joueur prudent, qui garde un quart de sa fortune placé en bourse sans spéculer
+// (cours constants), doit avancer à un rythme compatible avec une partie de 2 semaines à 1 mois
+// (1 jour de ville = 1 heure réelle, soit 24 jours de ville par jour réel au maximum).
 describe("rythme de progression de la ville (robot)", () => {
   const { days, final } = simulate(900);
   const reached = (rank: number) => days.find((d) => d.rank >= rank)?.day ?? Infinity;
@@ -26,6 +26,12 @@ describe("rythme de progression de la ville (robot)", () => {
   it("la dotation de démarrage disparaît une fois la ville grande", () => {
     expect(final.population).toBeGreaterThan(START_GRANT.untilPop);
     expect(computeCity(final).income.grant).toBe(0);
+  });
+  it("la bourse n'est pas optionnelle : sans placements, pas de capital, et la ville reste un bourg", () => {
+    const alone = simulate(900, true, false);
+    expect(alone.final.capital ?? 0).toBe(0);
+    expect(computeCity(alone.final).rank).toBe(1);
+    expect(alone.final.population).toBeLessThan(final.population / 100);
   });
   it("la ville ne s'effondre jamais : pas de faillite ni d'exode", () => {
     expect(Math.min(...days.map((d) => d.cash))).toBeGreaterThanOrEqual(0);
