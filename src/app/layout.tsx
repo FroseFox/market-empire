@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
 import AppShell from "@/components/AppShell";
@@ -9,7 +9,12 @@ const montserrat = localFont({ src: "./fonts/montserrat-latin-wght-normal.woff2"
 export const metadata: Metadata = {
   title: "Market Empire",
   description: "Construis, investis, domine — un jeu de stratégie économique basé sur les vrais marchés.",
+  applicationName: "Market Empire",
+  // Jeu installé sur iPhone ou iPad : plein écran, avec son nom sous l'icône
+  appleWebApp: { capable: true, title: "Market Empire", statusBarStyle: "default" },
 };
+// Couleur de la barre du navigateur et de la fenêtre de l'appli installée
+export const viewport: Viewport = { themeColor: "#0f172a" };
 
 // GitHub Pages ne permet pas d'en-têtes HTTP personnalisés : la politique de sécurité
 // passe par une balise <meta>. Le site ne charge que ses propres fichiers

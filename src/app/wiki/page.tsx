@@ -410,6 +410,7 @@ export default function WikiPage() {
               <><b>Connexion</b> : sur le site, le jeu se joue avec un compte Discord. Le jeu ne reçoit que votre pseudo et votre avatar, jamais votre mot de passe. À la première connexion, vous donnez un nom à votre ville et le compte de jeu est créé.</>,
               <><b>Sauvegarde automatique</b> : la partie est enregistrée en ligne toute seule, au plus une fois toutes les {MIN_GAP / 60_000} minutes, et une dernière fois quand vous quittez la page. Rien à faire.</>,
               <><b>Plusieurs appareils</b> : connectez-vous avec le même compte Discord, votre partie suit. Si vous avez joué ailleurs entre-temps, c’est la partie enregistrée le plus récemment qui est reprise.</>,
+              <><b>Installer l’appli</b> : sur téléphone comme sur ordinateur, le jeu peut s’installer comme une appli, avec son icône et en plein écran. Utilisez le bouton « Installer l’appli » (menu de gauche sur ordinateur, bouton « Plus » sur téléphone). Sur iPhone : bouton Partager de Safari, puis « Sur l’écran d’accueil ». L’appli se met à jour toute seule et demande une connexion internet.</>,
               <><b>Se déconnecter</b> : dans le menu du compte, en haut à droite. La partie reste aussi sur l’appareil.</>,
               <><b>Recommencer la partie</b> : dans la Ville, bouton « Options », tout en bas. Tout est effacé, il faut confirmer.</>,
               <><b>Supprimer mon compte</b> : dans le menu du compte. Le compte et la sauvegarde en ligne sont effacés pour de bon.</>,
