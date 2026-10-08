@@ -20,7 +20,7 @@ import { openingMove } from "@/lib/syncRule";
 
 const LINK_KEY = "market-empire-linked";
 const SYNC_KEY = "market-empire-synced";
-const MIN_GAP = 5 * 60_000;
+export const MIN_GAP = 5 * 60_000;
 const DEBOUNCE = 30_000;
 
 /** Où en est l'ouverture de la partie en ligne, une fois connecté avec Discord :
