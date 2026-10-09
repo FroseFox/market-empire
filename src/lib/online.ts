@@ -436,9 +436,10 @@ async function connect(uid: string, name: string) {
       finish(uid, name);
       return;
     }
-    // Aucune sauvegarde en ligne : nouveau compte. Si l'appareil servait à un autre compte,
-    // on repart d'une partie neuve (on ne donne pas la partie de quelqu'un d'autre).
-    if (previous && previous !== uid) useGame.getState().reset();
+    // Aucune sauvegarde en ligne : nouveau compte, donc toujours une partie neuve. La partie de l'appareil ne compte pas :
+    // elle existe dès la première ouverture du site, et ses jours rattrapés offraient des centaines de milliers d'euros
+    // à qui s'inscrivait plus tard (c'est aussi, parfois, la partie de quelqu'un d'autre).
+    useGame.getState().reset();
     setPlayerName(name);
     useOnline.setState({ phase: "new" });
   } catch {
@@ -468,7 +469,9 @@ export async function setPseudo(name: string): Promise<string | null> {
 export async function createAccount(cityName: string): Promise<string | null> {
   const user = useAuth.getState().user;
   if (!user || active !== user.id) return "Connexion perdue, reconnectez-vous.";
-  const r = E.renameCity(useGame.getState().game, cityName);
+  // La partie commence maintenant, au jour 1 avec l'argent de départ : le temps passé sur cet écran ne rapporte rien
+  const g = useGame.getState().game;
+  const r = E.renameCity({ ...E.newGame(Date.now(), g.playerName), country: g.country }, cityName);
   if (!r.ok) return r.error;
   useGame.setState({ game: r.state, savedAt: Date.now() });
   dirty = true;
