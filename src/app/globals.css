@@ -111,6 +111,10 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .wiki-bob { animation: wiki-bob 3.4s ease-in-out infinite; }
 @keyframes wiki-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 .wiki-bar { transform-origin: left center; transition: width 320ms cubic-bezier(.2, .7, .2, 1), background-color 200ms; }
+/* Recherche du wiki : mots trouvés surlignés dans la page, et passage ouvert depuis un résultat qui ressort un instant */
+::highlight(wiki-hit) { background-color: #fde68a; color: inherit; }
+@keyframes wiki-found { 0% { background-color: rgb(37 99 235 / .16); box-shadow: 0 0 0 4px rgb(37 99 235 / .16); } 100% { background-color: transparent; box-shadow: 0 0 0 4px transparent; } }
+.wiki-found { animation: wiki-found 2s ease-out; border-radius: 6px; }
 .wiki-lift { transition: transform 200ms ease, box-shadow 200ms ease, border-color 200ms ease; }
 .wiki-lift:hover { transform: translateY(-3px); box-shadow: 0 10px 24px rgb(15 23 42 / 0.10); border-color: #cbd5e1; }
 .wiki-range { -webkit-appearance: none; appearance: none; height: 6px; border-radius: 999px; background: #e2e8f0; outline: none; }

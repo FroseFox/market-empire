@@ -29,6 +29,7 @@ import Robot from "@/components/Robot";
 import { Accordion, Callout, Facts, H3, Points, Reveal, Section, Steps, Table, Tag, TINTS, type Tint } from "@/components/wiki/ui";
 import { BuildingGallery, CapitalDemo, LeverageDemo, LoopDiagram, RankTrack, ShareDemo, TourismDemo } from "@/components/wiki/Visuals";
 import { compactEur, eur, num } from "@/lib/format";
+import { matcher, searchWiki, type WikiBlock, type WikiHit } from "@/lib/wikiSearch";
 
 // ─── Sommaire ─────────────────────────────────────────────────
 
@@ -74,7 +75,43 @@ const META: Record<string, Item> = Object.fromEntries(ITEMS.map((i) => [i.id, i]
 
 const pct = (v: number, d = 0) => `${(v * 100).toLocaleString("fr-FR", { maximumFractionDigits: d })} %`;
 const fr = (v: number) => v.toLocaleString("fr-FR");
-const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+
+/** Texte d'un passage, avec une espace entre ses blocs : sans elle, une étape « 1 / titre / texte » ou une fiche
+ *  de bâtiment se lisait d'un seul mot (« Aéroport régionalÉquipements3,00 M€ »). Les mots en gras, eux, restent collés. */
+function textOf(el: Element): string {
+  let out = "";
+  el.childNodes.forEach((n) => {
+    if (n.nodeType === Node.TEXT_NODE) out += n.nodeValue ?? "";
+    else if (n instanceof HTMLElement) out += getComputedStyle(n).display === "inline" ? textOf(n) : ` ${textOf(n)} `;
+  });
+  return out;
+}
+
+/** Découpe le wiki affiché en passages (titres, intertitres, paragraphes, lignes de tableau) pour la recherche.
+ *  Lu dans la page elle-même : les chiffres cherchés sont ceux que le joueur voit. */
+function readWiki(): { blocks: WikiBlock[]; els: HTMLElement[] } {
+  const blocks: WikiBlock[] = [], els: HTMLElement[] = [];
+  const add = (el: HTMLElement, b: Omit<WikiBlock, "key" | "text">, raw: string) => {
+    const text = raw.replace(/\s+/g, " ").trim();
+    if (!text) return;
+    blocks.push({ ...b, key: els.length, text });
+    els.push(el);
+  };
+  document.querySelectorAll<HTMLElement>("[data-wiki-section]").forEach((sec) => {
+    const section = sec.dataset.wikiSection!, head = sec.querySelector<HTMLElement>("header");
+    const title = sec.querySelector<HTMLElement>("h2"), sectionTitle = title?.textContent ?? "";
+    if (title) add(title, { section, sectionTitle, heading: "", kind: "title" }, sectionTitle);
+    let heading = "";
+    sec.querySelectorAll<HTMLElement>("h3, p, li, tbody tr, dl > div, summary").forEach((el) => {
+      if (el.tagName === "H3") { heading = el.textContent ?? ""; add(el, { section, sectionTitle, heading, kind: "heading" }, heading); return; }
+      if (el.parentElement?.closest("p, li, tr, summary")) return; // déjà compté avec le passage qui le contient
+      // Cellules et chiffres clés : séparés par un point médian, comme une ligne qu'on lirait à voix haute
+      const cells = el.tagName === "TR" || el.tagName === "DIV";
+      add(el, { section, sectionTitle, heading: head?.contains(el) ? "" : heading, kind: "text" }, cells ? Array.from(el.children, textOf).join(" · ") : textOf(el));
+    });
+  });
+  return { blocks, els };
+}
 
 /** Fait défiler jusqu'à une rubrique (sans toucher à l'adresse : la version autonome du jeu s'en sert pour ses pages). */
 function scrollToSection(id: string) {
@@ -161,24 +198,60 @@ export default function WikiPage() {
   const rank = cityRank(population);
   const [q, setQ] = useState("");
   const [hits, setHits] = useState<Set<string> | null>(null);
+  const [results, setResults] = useState<WikiHit[] | null>(null);
+  const [all, setAll] = useState(false);
+  const index = useRef<{ blocks: WikiBlock[]; els: HTMLElement[] } | null>(null);
   const [active, setActive] = useState("demarrer");
   const chips = useRef<HTMLDivElement>(null);
   const daysPerRealDay = (24 * 60) / DAY_LENGTH_MINUTES;
 
-  // Recherche : on garde les rubriques dont le texte contient tous les mots tapés
+  // Recherche : des passages précis, classés par pertinence ; seules les rubriques qui en contiennent restent affichées
   const search = (text: string) => {
     setQ(text);
-    const words = norm(text).split(/\s+/).filter(Boolean);
-    if (!words.length) { setHits(null); return; }
-    const found = new Set<string>();
-    document.querySelectorAll<HTMLElement>("[data-wiki-section]").forEach((el) => {
-      const hay = norm(el.textContent ?? "");
-      if (words.every((w) => hay.includes(w))) found.add(el.dataset.wikiSection!);
-    });
-    setHits(found);
+    setAll(false);
+    if (!text.trim()) { setHits(null); setResults(null); return; }
+    // Le wiki n'est relu qu'une fois (et de nouveau si la page a été redessinée entre-temps)
+    if (!index.current || index.current.els.some((el) => !el.isConnected)) index.current = readWiki();
+    const found = searchWiki(text, index.current.blocks);
+    setResults(found);
+    setHits(new Set(found.map((f) => f.block.section)));
   };
+  /** Va au passage trouvé (en dépliant sa question s'il est replié) et le fait ressortir un instant. */
+  const open = (hit: WikiHit) => {
+    const el = index.current?.els[hit.block.key];
+    if (!el?.isConnected || hit.block.kind === "title") { scrollToSection(hit.block.section); return; }
+    el.closest("details")?.setAttribute("open", "");
+    el.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "center" });
+    el.classList.remove("wiki-found");
+    void el.offsetWidth; // relance l'animation si on reclique sur le même résultat
+    el.classList.add("wiki-found");
+  };
+  // Les mots trouvés sont surlignés dans la page (sans toucher au contenu : le navigateur peint par-dessus)
+  useEffect(() => {
+    const paint = typeof CSS !== "undefined" && "highlights" in CSS ? CSS.highlights : null;
+    if (!paint) return;
+    paint.delete("wiki-hit");
+    if (!results?.length) return;
+    const is = matcher(q), ranges: Range[] = [];
+    for (const r of results) {
+      const el = index.current?.els[r.block.key];
+      if (!el?.isConnected) continue;
+      const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+        for (const m of (n.nodeValue ?? "").matchAll(/[\p{L}\p{N}]+/gu)) {
+          if (!is(m[0])) continue;
+          const range = new Range();
+          range.setStart(n, m.index);
+          range.setEnd(n, m.index + m[0].length);
+          ranges.push(range);
+        }
+      }
+    }
+    paint.set("wiki-hit", new Highlight(...ranges));
+    return () => { paint.delete("wiki-hit"); };
+  }, [results, q]);
   const go = (id: string) => {
-    if (hits && !hits.has(id)) { setQ(""); setHits(null); requestAnimationFrame(() => scrollToSection(id)); }
+    if (hits && !hits.has(id)) { setQ(""); setHits(null); setResults(null); requestAnimationFrame(() => scrollToSection(id)); }
     else scrollToSection(id);
   };
 
@@ -211,11 +284,32 @@ export default function WikiPage() {
             <p className="mt-1.5 max-w-[560px] text-[14px] leading-relaxed text-muted">Comment jouer, à quoi sert chaque page, et toutes les règles avec leurs chiffres exacts. Des schémas et des simulations vous montrent comment ça marche.</p>
             <label className="relative mt-4 block max-w-[520px]">
               <Search size={17} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
-              <input value={q} onChange={(e) => search(e.target.value)} placeholder="Chercher : levier, pollution, parts…" aria-label="Chercher dans le wiki"
+              <input value={q} onChange={(e) => search(e.target.value)} placeholder="Chercher : levier, impôts, comment gagner…" aria-label="Chercher dans le wiki"
                 className="w-full rounded-[14px] border border-line bg-white py-3 pl-10 pr-10 text-[14px] shadow-sm outline-none transition-shadow focus:border-primary focus:shadow-[0_0_0_4px_rgb(37_99_235_/_0.12)]" />
               {q && <button type="button" onClick={() => search("")} aria-label="Effacer la recherche" className="absolute right-2.5 top-1/2 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-full text-muted hover:bg-slate-100"><X size={15} /></button>}
             </label>
-            {hits && <p role="status" className="mt-2 text-[12px] text-muted">{hits.size ? `${hits.size} rubrique${hits.size > 1 ? "s" : ""} en parle${hits.size > 1 ? "nt" : ""}.` : "Aucune rubrique ne contient ces mots."}</p>}
+            {results && <p role="status" className="mt-2 text-[12px] text-muted">{results.length ? `${results.length} passage${results.length > 1 ? "s" : ""} dans ${hits?.size ?? 0} rubrique${(hits?.size ?? 0) > 1 ? "s" : ""}.` : "Aucun passage ne répond à cette recherche."}</p>}
+            {!!results?.length && (
+              <ul className="mt-2 max-w-[520px] divide-y divide-line overflow-hidden rounded-[14px] border border-line bg-white shadow-sm">
+                {results.slice(0, all ? 40 : 5).map((r) => {
+                  const m = META[r.block.section];
+                  return (
+                    <li key={r.block.key}>
+                      <button type="button" onClick={() => open(r)} className="flex w-full items-start gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-slate-50 active:bg-slate-100">
+                        <span className={`mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-[9px] ${TINTS[m.tint]}`}><m.icon size={15} strokeWidth={1.9} /></span>
+                        <span className="min-w-0">
+                          <span className="block truncate text-[11px] font-semibold text-muted">{m.label}{r.block.heading && r.block.kind !== "heading" ? ` › ${r.block.heading}` : ""}</span>
+                          <span className="block text-[13px] leading-snug">{r.snippet.map((part, i) => part.hit ? <mark key={i} className="rounded-[3px] bg-amber-200/70 px-0.5 text-inherit">{part.text}</mark> : <span key={i}>{part.text}</span>)}</span>
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+                {!all && results.length > 5 && (
+                  <li><button type="button" onClick={() => setAll(true)} className="w-full px-3 py-2 text-center text-[12px] font-semibold text-primary hover:bg-slate-50">Voir les {Math.min(results.length, 40) - 5} autres passages</button></li>
+                )}
+              </ul>
+            )}
           </div>
           <div className="wiki-bob hidden shrink-0 md:block"><Robot size={164} mood="happy" /></div>
         </div>
