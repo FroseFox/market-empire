@@ -41,6 +41,12 @@ body { font-family: var(--font-sans); font-size: 14px; }
 @media (max-width: 640px) {
   input, select, textarea { font-size: 16px !important; }
 }
+/* Appli installée : pas de zoom de page (pincement, double tap). Un joueur qui zoomait sans le vouloir se retrouvait
+   avec une partie de l'écran cachée, sans savoir revenir. Dans le navigateur, le zoom reste : certains en ont besoin
+   pour lire. La ville et la carte du monde gardent leur propre zoom (elles gèrent elles-mêmes les doigts). */
+@media (display-mode: standalone), (display-mode: fullscreen), (display-mode: minimal-ui) {
+  html { touch-action: pan-x pan-y; }
+}
 /* Pas de surbrillance grise au toucher sur mobile */
 button, a { -webkit-tap-highlight-color: transparent; }
 
