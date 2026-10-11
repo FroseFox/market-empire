@@ -26,7 +26,9 @@ function choose(g: E.GameState): BuildingType | undefined {
   const land = E.nextTerritory(g), grow = !!land && c.rank >= land.minRank && land.cost <= g.cash;
   room = [true, grow || E.hasRoom(g, 1), grow || E.hasRoom(g, 2), grow || E.hasRoom(g, 3)];
   // Déficits et équipements : réglés dès qu'on en a les moyens. Si les importations pèsent lourd, on économise pour ça.
-  const fix = (c.energy.balance < 0 && best(g, (b) => b.energyProd ?? 0)) || (c.food.balance < 0 && best(g, (b) => b.foodProd ?? 0))
+  // Une pénurie se règle avec ce qu'il peut payer tout de suite (une petite centrale plutôt qu'attendre la grande)
+  const now = (score: (b: BuildingType) => number) => { const keep = reach; reach = 0; const b = best(g, score); reach = keep; return b ?? best(g, score); };
+  const fix = (c.energy.balance < 0 && now((b) => b.energyProd ?? 0)) || (c.food.balance < 0 && now((b) => b.foodProd ?? 0))
     || SERVICE_IDS.map((id) => c.services[id].needed && c.services[id].coverage < 1 && best(g, (b) => (b.service === id ? b.serves ?? 0 : 0))).find(Boolean);
   if (fix) return fix;
   // Pollution : des espaces verts dès qu'elle pèse sur la satisfaction
@@ -40,7 +42,7 @@ function choose(g: E.GameState): BuildingType | undefined {
   return undefined;
 }
 
-export interface SimDay { day: number; population: number; net: number; cash: number; rank: number; buildings: number; satisfaction: number }
+export interface SimDay { day: number; population: number; net: number; cash: number; rank: number; buildings: number; satisfaction: number; built: number; shortage: boolean; wait: string }
 
 /** Part de sa fortune (liquidités + mises) que le robot garde placée en bourse. */
 const INVESTED = 0.25;
@@ -57,12 +59,17 @@ function place(g: E.GameState, d: number): E.GameState {
 }
 
 /** Joue `days` jours de ville. `claim` = encaisser les subventions d'objectifs, `invest` = placer en bourse.
- *  `waits` = nombre de jours où un bâtiment a attendu faute de capital. */
-export function simulate(days: number, claim = true, invest = true): { days: SimDay[]; final: E.GameState; waits: number } {
+ *  `every` = le robot ne joue qu'un jour sur `every` (un vrai joueur passe quelques fois par jour, pas toutes les heures).
+ *  `waits` = nombre de jours où un bâtiment a attendu faute de capital ; `stuck` = nombre de passages où il manquait
+ *  de l'énergie ou de la nourriture sans avoir de quoi construire ce qui la produit. */
+export function simulate(days: number, claim = true, invest = true, every = 1): { days: SimDay[]; final: E.GameState; waits: number; stuck: number } {
   let g = E.newGame(0);
-  let waits = 0;
+  let waits = 0, stuck = 0;
   const out: SimDay[] = [];
   for (let d = 0; d < days; d++) {
+    const before = g.plots.length;
+    let wait = "";
+    if (d % every === 0) {
     if (claim) for (const s of E.goalStatuses(g)) if (s.done && !s.claimed) { const r = E.claimGoal(g, s.goal.id, d); if (r.ok) g = r.state; }
     // Rénovation dès que la vétusté commence à coûter, si elle ne vide pas la caisse
     if ((g.wear ?? 0) >= 0.3 && E.renovateCost(g) <= g.cash * 0.6) { const r = E.renovate(g, d); if (r.ok) g = r.state; }
@@ -70,16 +77,18 @@ export function simulate(days: number, claim = true, invest = true): { days: Sim
     for (let i = 0; i < 40; i++) {
       const b = choose(g);
       if (!b) break;
-      if (b.cost > g.cash) break; // il économise
-      if (E.capitalCost(b) > (g.capital ?? 0)) { waits++; break; } // il attend que ses placements produisent le capital
+      if (b.cost > g.cash) { const c = E.computeCity(g); if (c.energy.balance < 0 || c.food.balance < 0) stuck++; wait = `argent:${b.id}`; break; } // il économise
+      if (E.capitalCost(b) > (g.capital ?? 0)) { waits++; wait = `capital:${b.id}`; break; } // il attend que ses placements produisent le capital
       let r = E.build(g, b.id, d);
       // Plus de place : il achète du terrain s'il le peut, sinon il attend
-      if (!r.ok) { const land = E.expandTerritory(g, d); if (!land.ok) break; g = land.state; r = E.build(g, b.id, d); if (!r.ok) break; }
+      if (!r.ok) { const land = E.expandTerritory(g, d); if (!land.ok) { wait = `terrain:${b.id}`; break; } g = land.state; r = E.build(g, b.id, d); if (!r.ok) break; }
       g = r.state;
     }
+    }
+    const built = g.plots.length - before;
     g = E.tickDay(g, PRICES, d);
     const c = E.computeCity(g);
-    out.push({ day: g.day, population: g.population, net: c.net, cash: g.cash, rank: c.rank, buildings: g.plots.length, satisfaction: c.satisfaction });
+    out.push({ day: g.day, population: g.population, net: c.net, cash: g.cash, rank: c.rank, buildings: g.plots.length, satisfaction: c.satisfaction, built, shortage: c.energy.balance < 0 || c.food.balance < 0, wait });
   }
-  return { days: out, final: g, waits };
+  return { days: out, final: g, waits, stuck };
 }

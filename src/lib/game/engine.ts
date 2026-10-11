@@ -2,7 +2,7 @@
 // et réutilisable tel quel côté serveur (fonction planifiée) plus tard.
 import {
   ACTIVE_RATIO, BUILDING_BY_ID, DAY_LENGTH_MINUTES, DEMOLISH_REFUND, ENERGY_PER_RESIDENT,
-  EXPORT_RATIO, FOOD_PER_RESIDENT, MAINTENANCE_RATE, MAX_CATCHUP_DAYS, RESOURCE_PRICES,
+  EXPORT_RATIO, FOOD_PER_RESIDENT, MAINTENANCE_RATE, MAX_CATCHUP_DAYS, RESOURCE_PRICES, SHORTAGE,
   BRANCH_COST, BRANCH_EFFECTS, BRANCH_MIN_VALUE, CONTRACT_RATIO, FINANCE_FEE_FACTOR, HUB_DESK_COST, HUB_FEE_FACTOR,
   NEED_PER_RANK, POLLUTION_FACTOR, POLLUTION_MAX, PRESTIGE_PER_GOAL, PRESTIGE_PER_RANK, PROJECTS, PROJECT_BY_ID,
   FEATURES, ORIENTATION_BY_ID, ORIENTATION_CHANGE_COST, ORIENTATION_MIN_RANK, type FeatureId, type OrientationId,
@@ -331,8 +331,10 @@ export function computeCity(state: CityInput): CityStats {
   const factor = (label: string, value: number) => { if (Math.abs(value) >= 0.0005) factors.push({ label, value }); };
   factor("Chômage", -unemploymentRate * 1.2);
   if (housing > 0 && freeHousing / housing < 0.02) factor("Logements saturés", -0.05);
-  if (energyBalance < 0) factor("Manque d'énergie", -0.08);
-  if (foodBalance < 0) factor("Manque de nourriture", -0.08);
+  // Pénuries : la pénalité suit la part des besoins qui manque, jusqu'à son maximum
+  const shortage = (balance: number, use: number) => (balance < 0 && use > 0 ? -SHORTAGE.max * Math.min(1, -balance / use / SHORTAGE.fullAt) : 0);
+  factor("Manque d'énergie", shortage(energyBalance, energyUse));
+  factor("Manque de nourriture", shortage(foodBalance, foodUse));
   factor("Pollution", -pollutionPenalty);
   factor("Vétusté", -wear * WEAR_SATISFACTION);
   if (orientation?.satisfaction) factor(orientation.name, orientation.satisfaction);
@@ -380,7 +382,7 @@ export function computeCity(state: CityInput): CityStats {
   const importsValue = te.imports + tf.imports;
 
   const maintenance = cityValue * MAINTENANCE_RATE * (1 + wear * WEAR_MAINTENANCE) * (evFx?.maintenance ?? 1);
-  const grant = START_GRANT.perDay * Math.max(0, 1 - pop / START_GRANT.untilPop);
+  const grant = START_GRANT.perDay * clamp((START_GRANT.untilPop - pop) / (START_GRANT.untilPop - START_GRANT.fullUntil), 0, 1);
   // Bourse des villes : on touche sa part du flux des villes dont on est actionnaire, on verse la leur à ses propres actionnaires
   const operating = taxes + buildingsIncome + exportsValue + grant - maintenance - importsValue;
   // Rachat hostile : l'actionnaire qui contrôle une ville touche en plus un tribut sur son flux net
@@ -555,7 +557,7 @@ export const dailyInterest = (holdings: Record<string, Holding>, state: { resear
 /** Capital que les placements produisent par jour de ville, à ces cours. */
 export const capitalPerDay = (holdings: Record<string, Holding>, prices: Prices) => round2(portfolioValue(holdings, prices) * CAPITAL.dayRate);
 /** Capital demandé par un bâtiment en plus de son prix (0 pour les petits). */
-export const capitalCost = (b: Pick<BuildingType, "cost">) => (b.cost >= CAPITAL.fromCost ? Math.round(b.cost * CAPITAL.share) : 0);
+export const capitalCost = (b: Pick<BuildingType, "cost" | "category">) => (b.cost >= CAPITAL.fromCost && !CAPITAL.exempt.includes(b.category) ? Math.round(b.cost * CAPITAL.share) : 0);
 
 /** Vend d'office les lignes qui ont presque tout perdu. À appeler quand les cours changent. */
 export function settleLeverage(state: GameState, prices: Prices, at: number): { state: GameState; closed: string[] } {

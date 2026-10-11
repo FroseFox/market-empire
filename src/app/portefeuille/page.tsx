@@ -67,7 +67,7 @@ function BankCard({ staked, perDay }: { staked: number; perDay: number }) {
       </div>
       <p className="mt-3 text-[12px] text-muted">
         Vos placements produisent du <b className="font-semibold text-violet-700">capital ◆</b> : {pctPlain(CAPITAL.dayRate)} de leur valeur par jour de ville.
-        Les bâtiments à partir de {compactEur(CAPITAL.fromCost)} en demandent {pctPlain(CAPITAL.share)} de leur prix, en plus des liquidités : sans bourse, la ville ne grandit plus.
+        Les bâtiments à partir de {compactEur(CAPITAL.fromCost)} en demandent {pctPlain(CAPITAL.share)} de leur prix, en plus des liquidités (sauf énergie, agriculture et équipements publics) : sans bourse, la ville ne grandit plus.
       </p>
       {next && (
         <div className="mt-3 flex flex-wrap items-center gap-3 rounded-[10px] border border-line p-3">

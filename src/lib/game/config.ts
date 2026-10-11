@@ -20,15 +20,20 @@ export const ACTIVE_RATIO = 0.6;
 /** Impôt local par habitant et par jour (avant modificateurs).
  *  Rythme calé avec le robot de lib/game/sim.ts : à 1,1 € (valeur du doc), une ville seule mettait plus de 550 jours
  *  pour atteindre 1 500 habitants. Les impôts et les revenus des entreprises ont été relevés (× 2 environ)
- *  pour qu'une partie tienne en 2 semaines à 1 mois. */
-export const TAX_PER_RESIDENT = 2.5;
+ *  pour qu'une partie tienne en 2 semaines à 1 mois, puis encore un peu (2,5 → 3 €) au rééquilibrage d'octobre 2026. */
+export const TAX_PER_RESIDENT = 3;
 
 /** Dotation de démarrage : l'État soutient les petites communes. Versée chaque jour, elle diminue à mesure que la
  *  population grandit et disparaît à `untilPop` habitants. Elle accélère seulement le début de partie (où l'on
  *  posait un bâtiment par jour réel) sans raccourcir la suite : passé ce seuil, le rythme est inchangé. */
 /* Réglage mesuré avec le robot de lib/game/sim.ts : sans dotation, Petite ville demandait 11 jours réels et la ville ne
- * comptait que 29 bâtiments après deux semaines ; avec, 3 jours et 48 bâtiments. Capitale économique reste à 3-4 semaines. */
-export const START_GRANT = { perDay: 10_000, untilPop: 6_000 };
+ * comptait que 29 bâtiments après deux semaines ; avec, 3 jours et 48 bâtiments.
+ * Rééquilibrage d'octobre 2026 : elle fondait dès le premier habitant gagné (10 000 € × (1 − population / 6 000)), si bien
+ * que grandir de 250 à 5 000 habitants faisait perdre 7 900 € par jour, un quart de ce que ces habitants rapportaient.
+ * Elle reste maintenant entière jusqu'à `fullUntil` (rang Ville) puis s'éteint jusqu'à `untilPop` (rang Grande ville).
+ * Avec les autres réglages du même jour (consommations, pénuries, rendements), le robot atteint Ville en 6 jours réels
+ * au lieu de 10, et Ville-monde en 3 semaines au lieu de 4. */
+export const START_GRANT = { perDay: 10_000, fullUntil: 5_000, untilPop: 15_000 };
 
 /** Entretien quotidien d'un bâtiment, en fraction de son coût. */
 export const MAINTENANCE_RATE = 0.001;
@@ -77,13 +82,23 @@ export const CAPITAL = {
   share: 0.1,
   /** …à partir de ce prix (les petits bâtiments du début n'en demandent pas). */
   fromCost: 100_000,
+  /** Catégories qui n'en demandent jamais : ce qui règle une pénurie ou un besoin des habitants se paie en argent seul.
+   *  Sinon une ville pouvait manquer d'énergie avec la caisse pleine, faute de capital pour la centrale. */
+  exempt: ["energy", "agriculture", "public"] as Category[],
   /** Parties d'avant le capital : elles reçoivent ce nombre de jours de production d'avance. */
   legacyDays: 10,
 };
 
-/** Consommation par habitant et par jour. */
-export const ENERGY_PER_RESIDENT = 0.2;
-export const FOOD_PER_RESIDENT = 0.35;
+/** Consommation par habitant et par jour.
+ *  Réglage mesuré avec le robot de lib/game/sim.ts : à 0,2 et 0,35, la ville de départ n'avait presque aucune marge
+ *  (le premier quartier posé créait une pénurie de nourriture) et une exploitation à 40 000 € ne nourrissait même pas
+ *  trois petits quartiers. Le robot passait plus d'un jour sur deux en pénurie pendant les trois premiers jours réels. */
+export const ENERGY_PER_RESIDENT = 0.12;
+export const FOOD_PER_RESIDENT = 0.22;
+
+/** Pénurie d'énergie ou de nourriture : la satisfaction baisse selon la part des besoins qui manque (le manque est importé).
+ *  Avant, la pénalité tombait d'un coup dès la première unité manquante : un quartier de plus, et la ville perdait 8 points. */
+export const SHORTAGE = { max: 0.08, fullAt: 0.25 };
 
 /** Prix des ressources (€/unité). Import au prix plein, export à 70 %.
  *  NB : le doc prévoit 10 €/unité pour l'énergie ; à ce prix une petite centrale
@@ -228,51 +243,51 @@ export const TOURISM = { base: 0.4, perSatisfaction: 0.8, perPollution: 2, min: 
 export const BUILDINGS: BuildingType[] = [
   // 🏠 Logements
   { id: "house_s", name: "Petit quartier", category: "housing", cost: 20_000, housing: 100, description: "+100 habitants" },
-  { id: "house_m", name: "Quartier résidentiel", category: "housing", cost: 75_000, housing: 500, unlockPop: 500, description: "+500 habitants" },
+  { id: "house_m", name: "Quartier résidentiel", category: "housing", cost: 60_000, housing: 500, unlockPop: 500, description: "+500 habitants" },
   { id: "house_l", size: 2, name: "Grand quartier", category: "housing", cost: 300_000, housing: 2_500, unlockPop: 2_000, description: "+2 500 habitants" },
   { id: "house_eco", size: 2, name: "Écoquartier", category: "housing", cost: 500_000, housing: 3_000, energyProd: 150, unlockPop: 4_000, pollution: -20, description: "+3 000 habitants, toits solaires" },
-  { id: "house_xl", size: 2, name: "Centre résidentiel", category: "housing", cost: 1_500_000, housing: 15_000, unlockPop: 10_000, description: "+15 000 habitants" },
-  { id: "house_tower", size: 2, name: "Tour d'habitation", category: "housing", cost: 5_000_000, housing: 55_000, energyUse: 400, unlockPop: 40_000, description: "+55 000 habitants sur un seul carreau" },
+  { id: "house_xl", size: 2, name: "Centre résidentiel", category: "housing", cost: 1_500_000, housing: 12_000, unlockPop: 10_000, description: "+12 000 habitants" },
+  { id: "house_tower", size: 2, name: "Tour d'habitation", category: "housing", cost: 5_000_000, housing: 40_000, energyUse: 400, unlockPop: 40_000, description: "+40 000 habitants sur un seul carreau" },
 
   // 🏪 Commerce & services
-  { id: "shop", name: "Commerce", category: "commerce", cost: 15_000, jobs: 40, revenue: 240, energyUse: 5, description: "Boutiques de quartier" },
-  { id: "market", name: "Marché couvert", category: "commerce", cost: 60_000, jobs: 120, revenue: 1_040, energyUse: 15, unlockPop: 800, description: "Halle et commerçants" },
-  { id: "museum", name: "Musée", category: "commerce", cost: 220_000, jobs: 80, revenue: 3_800, energyUse: 20, unlockPop: 2_000, tourist: true, joy: 0.01, description: "Tourisme : revenus selon l'attrait de la ville, +1 point de satisfaction" },
-  { id: "hotel", name: "Hôtel", category: "commerce", cost: 180_000, jobs: 150, revenue: 3_000, energyUse: 40, unlockPop: 2_500, tourist: true, description: "Tourisme : peu d'emplois, revenus selon l'attrait de la ville" },
-  { id: "mall", size: 2, name: "Centre commercial", category: "commerce", cost: 350_000, jobs: 600, revenue: 6_400, energyUse: 90, unlockPop: 4_000, pollution: 8, description: "Grande surface et galerie" },
+  { id: "shop", name: "Commerce", category: "commerce", cost: 15_000, jobs: 40, revenue: 300, energyUse: 5, description: "Boutiques de quartier" },
+  { id: "market", name: "Marché couvert", category: "commerce", cost: 60_000, jobs: 120, revenue: 1_300, energyUse: 15, unlockPop: 800, description: "Halle et commerçants" },
+  { id: "museum", name: "Musée", category: "commerce", cost: 220_000, jobs: 80, revenue: 4_400, energyUse: 20, unlockPop: 2_000, tourist: true, joy: 0.01, description: "Tourisme : revenus selon l'attrait de la ville, +1 point de satisfaction" },
+  { id: "hotel", name: "Hôtel", category: "commerce", cost: 180_000, jobs: 150, revenue: 3_600, energyUse: 40, unlockPop: 2_500, tourist: true, description: "Tourisme : peu d'emplois, revenus selon l'attrait de la ville" },
+  { id: "mall", size: 2, name: "Centre commercial", category: "commerce", cost: 350_000, jobs: 600, revenue: 7_000, energyUse: 90, unlockPop: 4_000, pollution: 8, description: "Grande surface et galerie" },
   { id: "stadium", size: 3, name: "Stade", category: "commerce", cost: 900_000, jobs: 900, revenue: 20_000, energyUse: 150, unlockPop: 8_000, pollution: 10, tourist: true, joy: 0.02, description: "Tourisme : grands événements, +2 points de satisfaction" },
-  { id: "themepark", size: 3, name: "Parc d'attractions", category: "commerce", cost: 2_500_000, jobs: 3_600, revenue: 66_000, energyUse: 400, unlockPop: 20_000, pollution: 30, tourist: true, joy: 0.02, description: "Tourisme : la grande attraction de la région, +2 points de satisfaction" },
-  { id: "services", name: "Entreprise de services", category: "services", cost: 100_000, jobs: 150, revenue: 1_200, energyUse: 15, unlockPop: 600, description: "Bureaux, conseil, santé" },
-  { id: "bank", name: "Banque", category: "services", cost: 400_000, jobs: 300, revenue: 6_000, energyUse: 40, unlockPop: 5_000, description: "Siège bancaire régional" },
+  { id: "themepark", size: 3, name: "Parc d'attractions", category: "commerce", cost: 2_500_000, jobs: 3_600, revenue: 56_000, energyUse: 400, unlockPop: 20_000, pollution: 30, tourist: true, joy: 0.02, description: "Tourisme : la grande attraction de la région, +2 points de satisfaction" },
+  { id: "services", name: "Entreprise de services", category: "services", cost: 100_000, jobs: 150, revenue: 2_200, energyUse: 15, unlockPop: 600, description: "Bureaux, conseil, santé" },
+  { id: "bank", name: "Banque", category: "services", cost: 400_000, jobs: 300, revenue: 8_000, energyUse: 40, unlockPop: 5_000, description: "Siège bancaire régional" },
   { id: "bizdistrict", size: 2, name: "Quartier d'affaires", category: "services", cost: 1_500_000, jobs: 2_400, revenue: 24_000, energyUse: 200, unlockPop: 10_000, capitalBoost: 0.1, description: "Vos placements en bourse produisent +10 % de capital" },
-  { id: "tech", size: 2, name: "Campus technologique", category: "services", cost: 1_200_000, jobs: 2_800, revenue: 30_000, energyUse: 300, unlockPop: 12_000, description: "Emplois qualifiés, très énergivore" },
+  { id: "tech", size: 2, name: "Campus technologique", category: "services", cost: 1_200_000, jobs: 2_800, revenue: 27_000, energyUse: 300, unlockPop: 12_000, description: "Emplois qualifiés, très énergivore" },
 
   // 🏭 Industrie
-  { id: "factory_s", name: "Petite usine", category: "industry", cost: 50_000, jobs: 100, revenue: 700, energyUse: 30, pollution: 10, description: "Consomme de l'énergie" },
-  { id: "warehouse", size: 2, name: "Entrepôt logistique", category: "industry", cost: 120_000, jobs: 250, revenue: 1_400, energyUse: 20, unlockPop: 1_000, pollution: 5, description: "Beaucoup d'emplois, peu d'énergie" },
-  { id: "factory_m", size: 2, name: "Usine moyenne", category: "industry", cost: 250_000, jobs: 500, revenue: 4_000, energyUse: 150, unlockPop: 1_500, pollution: 40, description: "Grosse consommatrice d'énergie" },
-  { id: "factory_l", size: 3, name: "Complexe industriel", category: "industry", cost: 1_000_000, jobs: 5_400, revenue: 30_000, energyUse: 600, unlockPop: 6_000, pollution: 150, description: "Pilier d'une grande ville" },
+  { id: "factory_s", name: "Petite usine", category: "industry", cost: 50_000, jobs: 100, revenue: 1_000, energyUse: 30, pollution: 10, description: "Consomme de l'énergie" },
+  { id: "warehouse", size: 2, name: "Entrepôt logistique", category: "industry", cost: 120_000, jobs: 250, revenue: 2_400, energyUse: 20, unlockPop: 1_000, pollution: 5, description: "Beaucoup d'emplois, peu d'énergie" },
+  { id: "factory_m", size: 2, name: "Usine moyenne", category: "industry", cost: 250_000, jobs: 500, revenue: 5_000, energyUse: 150, unlockPop: 1_500, pollution: 40, description: "Grosse consommatrice d'énergie" },
+  { id: "factory_l", size: 3, name: "Complexe industriel", category: "industry", cost: 1_000_000, jobs: 5_400, revenue: 24_000, energyUse: 600, unlockPop: 6_000, pollution: 150, description: "Pilier d'une grande ville" },
 
   { id: "recycling", name: "Centre de recyclage", category: "industry", cost: 320_000, jobs: 90, revenue: 600, energyUse: 40, unlockPop: 3_500, pollution: -90, description: "Absorbe la pollution des usines, sans prendre la place d'un parc" },
   { id: "port", size: 2, name: "Port de commerce", category: "industry", cost: 600_000, jobs: 350, revenue: 2_500, energyUse: 60, unlockPop: 4_000, pollution: 25, exportBonus: 0.05, description: "Vos surplus d'énergie et de nourriture s'exportent 5 points plus cher" },
   { id: "foodplant", size: 2, name: "Usine agroalimentaire", category: "industry", cost: 300_000, jobs: 350, revenue: 2_400, energyUse: 80, foodProd: 1_000, unlockPop: 3_000, pollution: 20, description: "Revenus et +1 000 nourriture/j" },
 
   // 🌾 Agriculture
-  { id: "farm_s", name: "Petite exploitation", category: "agriculture", cost: 40_000, jobs: 60, revenue: 200, foodProd: 100, energyUse: 5, pollution: -3, description: "+100 nourriture/j" },
+  { id: "farm_s", name: "Petite exploitation", category: "agriculture", cost: 40_000, jobs: 60, revenue: 200, foodProd: 160, energyUse: 5, pollution: -3, description: "+160 nourriture/j" },
   { id: "greenhouse", name: "Serres", category: "agriculture", cost: 150_000, jobs: 80, revenue: 400, foodProd: 900, energyUse: 60, unlockPop: 1_000, description: "+900 nourriture/j, consomme de l'énergie" },
-  { id: "farm_m", size: 2, name: "Exploitation moyenne", category: "agriculture", cost: 200_000, jobs: 200, revenue: 800, foodProd: 700, energyUse: 20, unlockPop: 1_500, pollution: -8, description: "+700 nourriture/j" },
-  { id: "ranch", size: 2, name: "Élevage", category: "agriculture", cost: 250_000, jobs: 150, revenue: 1_000, foodProd: 1_200, energyUse: 15, unlockPop: 2_500, pollution: -5, description: "+1 200 nourriture/j" },
+  { id: "farm_m", size: 2, name: "Exploitation moyenne", category: "agriculture", cost: 200_000, jobs: 200, revenue: 800, foodProd: 1_000, energyUse: 20, unlockPop: 1_500, pollution: -8, description: "+1 000 nourriture/j" },
+  { id: "ranch", size: 2, name: "Élevage", category: "agriculture", cost: 250_000, jobs: 150, revenue: 1_000, foodProd: 1_600, energyUse: 15, unlockPop: 2_500, pollution: -5, description: "+1 600 nourriture/j" },
   { id: "farm_l", size: 3, name: "Grande exploitation", category: "agriculture", cost: 1_000_000, jobs: 1_800, revenue: 3_000, foodProd: 12_000, energyUse: 100, unlockPop: 8_000, pollution: -25, description: "+12 000 nourriture/j" },
 
   // ⚡ Énergie
-  { id: "power_s", name: "Petite centrale", category: "energy", cost: 50_000, jobs: 20, energyProd: 100, description: "+100 énergie/j" },
-  { id: "solar", size: 2, name: "Parc solaire", category: "energy", cost: 120_000, jobs: 5, energyProd: 220, unlockPop: 800, description: "+220 énergie/j, presque sans personnel" },
-  { id: "power_m", size: 2, name: "Centrale moyenne", category: "energy", cost: 300_000, jobs: 80, energyProd: 750, unlockPop: 1_500, pollution: 60, description: "+750 énergie/j" },
-  { id: "wind", size: 2, name: "Parc éolien", category: "energy", cost: 400_000, jobs: 15, energyProd: 900, unlockPop: 3_000, description: "+900 énergie/j, presque sans personnel" },
-  { id: "power_l", size: 2, name: "Grande centrale", category: "energy", cost: 1_500_000, jobs: 600, energyProd: 5_000, unlockPop: 8_000, pollution: 120, description: "+5 000 énergie/j" },
+  { id: "power_s", name: "Petite centrale", category: "energy", cost: 50_000, jobs: 20, energyProd: 160, description: "+160 énergie/j" },
+  { id: "solar", size: 2, name: "Parc solaire", category: "energy", cost: 120_000, jobs: 5, energyProd: 400, unlockPop: 800, description: "+400 énergie/j, presque sans personnel" },
+  { id: "power_m", size: 2, name: "Centrale moyenne", category: "energy", cost: 300_000, jobs: 80, energyProd: 1_100, unlockPop: 1_500, pollution: 60, description: "+1 100 énergie/j" },
+  { id: "wind", size: 2, name: "Parc éolien", category: "energy", cost: 400_000, jobs: 15, energyProd: 1_500, unlockPop: 3_000, description: "+1 500 énergie/j, presque sans personnel" },
+  { id: "power_l", size: 2, name: "Grande centrale", category: "energy", cost: 1_500_000, jobs: 600, energyProd: 6_500, unlockPop: 8_000, pollution: 120, description: "+6 500 énergie/j" },
 
   // 🌳 Équipements publics (pas de revenu direct : ils soutiennent la satisfaction)
-  { id: "park", name: "Parc", category: "public", cost: 25_000, jobs: 5, service: "park", serves: 1_500, unlockPop: 500, pollution: -25, description: "Espaces verts pour 1 500 habitants" },
+  { id: "park", name: "Parc", category: "public", cost: 25_000, jobs: 5, service: "park", serves: 1_500, pollution: -25, description: "Espaces verts pour 1 500 habitants" },
   { id: "school", name: "École", category: "public", cost: 120_000, jobs: 60, energyUse: 10, service: "school", serves: 4_000, unlockPop: 1_500, description: "Scolarise 4 000 habitants" },
   { id: "fire", name: "Caserne de pompiers", category: "public", cost: 90_000, jobs: 40, energyUse: 10, service: "safety", serves: 6_000, unlockPop: 2_500, description: "Protège 6 000 habitants" },
   { id: "park_l", size: 2, name: "Grand parc", category: "public", cost: 140_000, jobs: 20, service: "park", serves: 20_000, unlockPop: 5_000, pollution: -150, description: "Espaces verts pour 20 000 habitants" },

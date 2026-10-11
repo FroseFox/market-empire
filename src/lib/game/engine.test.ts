@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { build, buy, moveBuilding, catchUp, computeCity, DAY_MS, demolish, doResearch, newGame, normalize, sell, tickDay } from "./engine";
 import * as E from "./engine";
 import { isRoad } from "./layout";
-import { START_GRANT, STARTING_CASH } from "./config";
+import { FOOD_PER_RESIDENT, SHORTAGE, START_GRANT, STARTING_CASH } from "./config";
 
 const T0 = Date.UTC(2026, 8, 27, 12);
 
@@ -14,18 +14,35 @@ describe("ville de départ (doc Équilibrage §2)", () => {
     expect(c.housing).toBe(250);
     expect(c.jobs).toBe(150);
   });
-  it("≈ 1 100 €/jour de revenus locaux (rythme relevé par rapport au doc, voir config)", () => {
-    expect(c.income.total - c.income.grant).toBeGreaterThan(950);
-    expect(c.income.total - c.income.grant).toBeLessThan(1250);
+  it("≈ 1 500 €/jour de revenus locaux (rythme relevé par rapport au doc, voir config)", () => {
+    expect(c.income.total - c.income.grant).toBeGreaterThan(1300);
+    expect(c.income.total - c.income.grant).toBeLessThan(1700);
   });
   it("dotation de démarrage : forte au départ, comptée dans les revenus", () => {
-    expect(c.income.grant).toBeCloseTo(START_GRANT.perDay * (1 - c.housing / START_GRANT.untilPop), 0);
-    expect(c.income.grant).toBeGreaterThan(9000);
+    expect(c.income.grant).toBe(START_GRANT.perDay);
+    // Entière jusqu'à « Ville », elle ne recule pas quand la ville grandit ; elle s'éteint ensuite jusqu'à « Grande ville »
+    const at = (population: number) => computeCity({ buildings: { house_xl: 2 }, population }).income.grant;
+    expect(at(START_GRANT.fullUntil)).toBe(START_GRANT.perDay);
+    expect(at((START_GRANT.fullUntil + START_GRANT.untilPop) / 2)).toBeCloseTo(START_GRANT.perDay / 2, 6);
+    expect(at(START_GRANT.untilPop)).toBe(0);
     expect(c.income.total).toBeCloseTo(c.income.taxes + c.income.buildings + c.income.exports + c.income.grant, 6);
   });
   it("énergie et nourriture suffisantes", () => {
     expect(c.energy.balance).toBeGreaterThanOrEqual(0);
     expect(c.food.balance).toBeGreaterThanOrEqual(0);
+  });
+  it("les premiers quartiers ne créent pas de pénurie : la ville de départ a de la marge", () => {
+    const grown = computeCity({ buildings: { ...g.buildings, house_s: 3, shop: 4 }, population: 550 });
+    expect(grown.energy.balance).toBeGreaterThanOrEqual(0);
+    expect(grown.food.balance).toBeGreaterThanOrEqual(0);
+  });
+  it("une pénurie pèse selon ce qui manque, pas d'un coup", () => {
+    const lack = (population: number) => computeCity({ buildings: { house_m: 4, farm_s: 1, power_l: 1 }, population }).factors.find((f) => f.label === "Manque de nourriture")?.value ?? 0;
+    const full = Math.floor(160 / FOOD_PER_RESIDENT);
+    expect(lack(full)).toBe(0);
+    expect(lack(full + 40)).toBeGreaterThan(-0.02);   // quelques habitants de trop : à peine sensible
+    expect(lack(full + 40)).toBeLessThan(0);
+    expect(lack(2000)).toBeCloseTo(-SHORTAGE.max, 6);  // un gros manque : la pénalité entière
   });
   it("flux net positif", () => expect(c.net).toBeGreaterThan(0));
   it("patrimoine initial = 100 000 € (la ville offerte ne compte pas)", () => {
@@ -248,7 +265,7 @@ describe("rénovation, prévisions, audit", () => {
     g = ok(doResearch(g, "city_upgrade", T0));
     const cash = g.cash, worth = g.cash + computeCity(g).assetValue;
     g = ok(E.upgrade(g, { x: 13, y: 13 }, T0));
-    expect(g.cash).toBe(cash - 55_000);
+    expect(g.cash).toBe(cash - 40_000);
     expect(g.plots.find((p) => p.x === 13 && p.y === 13)?.id).toBe("house_m");
     expect(g.buildings.house_s).toBeUndefined();
     expect(g.cash + computeCity(g).assetValue).toBeCloseTo(worth, 2); // patrimoine inchangé
@@ -271,7 +288,7 @@ describe("rénovation, prévisions, audit", () => {
     const c = computeCity(newGame(T0));
     const a = E.buildingAudit("shop", c);
     expect(a.staffing).toBe(1);
-    expect(a.net).toBeCloseTo(240 - 5 * 2 * 0.7 - 15, 6);
+    expect(a.net).toBeCloseTo(300 - 5 * 2 * 0.7 - 15, 6);
   });
 });
 
