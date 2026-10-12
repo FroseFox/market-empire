@@ -11,8 +11,9 @@ describe("saisons de la mairie", () => {
     expect(easter(2038)).toEqual({ month: 4, day: 25 });
   });
   it("suit le calendrier", () => {
-    expect(seasonOf(at(2026, 10, 12))).toBe(null);
-    expect(seasonOf(at(2026, 10, 15))).toBe("halloween");
+    expect(seasonOf(at(2026, 9, 30))).toBe(null);
+    expect(seasonOf(at(2026, 10, 1))).toBe("halloween");
+    expect(seasonOf(at(2026, 10, 12))).toBe("halloween");
     expect(seasonOf(at(2026, 10, 31))).toBe("halloween");
     expect(seasonOf(at(2026, 11, 2))).toBe("halloween");
     expect(seasonOf(at(2026, 11, 3))).toBe(null);
