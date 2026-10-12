@@ -13,7 +13,7 @@ import {
   ACTIVE_RATIO, ALLIANCE, BANK, BLOCKADE, BRANCH_COST, BRANCH_EFFECTS, BRANCH_MIN_VALUE, BUILDINGS, CAPITAL, CATEGORY_LABELS, CITIES_PER_COUNTRY, CITY_EFFECT_CAPS, CITY_RANKS,
   CONTRACT_RATIO, COUNTRY_PRICES, DAY_LENGTH_MINUTES, DEMOLISH_REFUND, ENERGY_PER_RESIDENT, EXPORT_RATIO, FEATURES, FOOD_PER_RESIDENT, GOALS, HUB_DESK_COST, HUB_FEE_FACTOR,
   LEVERAGE, MAINTENANCE_RATE, MAX_CATCHUP_DAYS, MAX_CONTRACTS, NEED_PER_RANK, ORIENTATIONS, ORIENTATION_CHANGE_COST, ORIENTATION_MIN_RANK, POLLUTION_MAX, PROJECTS,
-  RENOVATE_RATE, RESOURCE_PRICES, SERVICES, SERVICE_IDS, SHARES, SPECIALTY_BONUS, STARTING_CASH, STARTING_POPULATION, START_GRANT, TAX_PER_RESIDENT, TERRITORY, TOURISM,
+  RENOVATE_RATE, RESOURCE_PRICES, SERVICES, SERVICE_IDS, SHARES, SHORTAGE, SPECIALTY_BONUS, STARTING_CASH, STARTING_POPULATION, START_GRANT, TAX_PER_RESIDENT, TERRITORY, TOURISM,
   TRADE_FEE_MIN, TRADE_FEE_RATE, WEAR_PER_DAY, type BranchFamily,
 } from "@/lib/game/config";
 import { cityRank } from "@/lib/game/engine";
@@ -466,14 +466,14 @@ export default function WikiPage() {
             <Accordion items={[
               { q: "Chômage", tone: "bad", why: "Plus d’habitants qui cherchent un emploi que de postes.", fix: "Construire des commerces, des services ou des usines." },
               { q: "Logements saturés", why: "Presque plus un logement libre : personne ne peut s’installer.", fix: "Construire des logements." },
-              { q: "Manque d’énergie", tone: "bad", why: "La ville consomme plus qu’elle ne produit ; le manque est importé au prix fort.", fix: "Construire une centrale, un parc solaire ou éolien." },
+              { q: "Manque d’énergie", tone: "bad", why: "La ville consomme plus qu’elle ne produit ; le manque est importé au prix fort. Un petit manque pèse peu sur la satisfaction, un gros beaucoup.", fix: "Construire une centrale, un parc solaire ou éolien." },
               { q: "Manque de nourriture", tone: "bad", why: "La ville mange plus qu’elle ne produit ; le manque est importé au prix fort.", fix: "Construire une exploitation, des serres ou un élevage." },
               { q: "Pollution", why: "Usines et centrales émettent plus que la ville n’absorbe.", fix: "Construire des parcs, un écoquartier, un centre de recyclage ou des exploitations agricoles." },
               { q: "Vétusté", why: "Les bâtiments vieillissent à partir du rang « Bourg ».", fix: "Lancer une rénovation dans la Ville. Les Ateliers municipaux ralentissent l’usure." },
               { q: `${SERVICE_IDS.map((id) => SERVICES[id].label).join(", ")}`, why: "La ville est assez grande pour attendre cet équipement public.", fix: `Construire l’équipement correspondant (catégorie ${CATEGORY_LABELS.public}).` },
               { q: "La population ne grandit plus", why: "Il n’y a plus de logement libre, ou trop peu d’emplois et de satisfaction.", fix: "D’abord des logements, puis des emplois." },
               { q: "Le revenu de la ville est négatif", tone: "bad", why: "L’entretien et les importations dépassent les impôts et les revenus.", fix: "Pourvoir les emplois vides (il faut des habitants), produire votre énergie et votre nourriture." },
-              { q: "Je ne peux pas construire un gros bâtiment", why: `À partir de ${compactEur(CAPITAL.fromCost)}, un bâtiment demande du capital ◆ en plus de l’argent.`, fix: <>Garder des placements en bourse : ce sont eux qui produisent le capital (voir <Jump to="capital">Le capital ◆</Jump>).</> },
+              { q: "Je ne peux pas construire un gros bâtiment", why: `À partir de ${compactEur(CAPITAL.fromCost)}, un bâtiment demande du capital ◆ en plus de l’argent (sauf énergie, agriculture et équipements publics).`, fix: <>Garder des placements en bourse : ce sont eux qui produisent le capital (voir <Jump to="capital">Le capital ◆</Jump>).</> },
               { q: "Plus de place sur la carte", why: "Tous les carreaux constructibles de votre territoire sont occupés.", fix: <>Acheter l’agrandissement suivant dans la Ville, bouton Objectifs (voir <Jump to="progression">Rangs et objectifs</Jump>). S’il demande un rang plus haut, améliorer ou remplacer des bâtiments en attendant.</> },
               { q: "Un site d’entreprise est en sommeil", why: "Vous avez vendu une partie des actions de cette entreprise : vous êtes passé sous la participation de départ.", fix: "Racheter des actions jusqu’à retrouver la participation de départ." },
             ]} />
@@ -554,7 +554,7 @@ export default function WikiPage() {
           </Sec>
 
           <Sec id="capital" brief="La monnaie que seuls vos placements produisent, et que les gros bâtiments demandent.">
-            <p>Le capital ◆ est le lien entre la bourse et la ville. Chaque jour de ville, vos placements en produisent <b>{pct(CAPITAL.dayRate)} de ce qu’ils valent</b>. Tout bâtiment à partir de <b>{compactEur(CAPITAL.fromCost)}</b> en demande <b>{pct(CAPITAL.share)} de son prix</b>, en plus des liquidités.</p>
+            <p>Le capital ◆ est le lien entre la bourse et la ville. Chaque jour de ville, vos placements en produisent <b>{pct(CAPITAL.dayRate)} de ce qu’ils valent</b>. Tout bâtiment à partir de <b>{compactEur(CAPITAL.fromCost)}</b> en demande <b>{pct(CAPITAL.share)} de son prix</b>, en plus des liquidités. Seules exceptions : les centrales, les exploitations agricoles et les équipements publics se paient en argent seul, pour qu’une pénurie se règle toujours tout de suite.</p>
             <CapitalDemo />
             <Points items={[
               "Sans bourse, la ville ne grandit donc plus au-delà des petits bâtiments.",
@@ -581,7 +581,7 @@ export default function WikiPage() {
                 <Points items={[
                   <><b>Impôts</b> : {fr(TAX_PER_RESIDENT)} € par habitant et par jour, réduits quand la satisfaction baisse ou que le chômage monte.</>,
                   <><b>Bâtiments</b> : chacun rapporte son revenu au prorata des postes pourvus. {pct(ACTIVE_RATIO)} des habitants cherchent un emploi.</>,
-                  <><b>Dotation de l’État</b> : {eur(START_GRANT.perDay)} par jour au départ. Elle diminue quand la ville grandit et disparaît à {num(START_GRANT.untilPop)} habitants.</>,
+                  <><b>Dotation de l’État</b> : {eur(START_GRANT.perDay)} par jour, entière jusqu’à {num(START_GRANT.fullUntil)} habitants. Elle diminue ensuite et disparaît à {num(START_GRANT.untilPop)} habitants.</>,
                   <><b>Exportations</b> : le surplus d’énergie et de nourriture se vend à {pct(EXPORT_RATIO)} du prix plein.</>,
                   <><b>Tourisme, dividendes, contrats</b> : selon vos bâtiments et ce que vous faites dans Monde.</>,
                 ]} />
@@ -652,7 +652,7 @@ export default function WikiPage() {
             <Facts items={[
               { label: "Pollution", value: `jusqu’à −${pct(POLLUTION_MAX)}`, sub: "usines et centrales émettent ; parcs, écoquartiers, exploitations absorbent", tint: "rose" },
               { label: "Logements saturés", value: "−5 %", sub: "presque plus un logement libre", tint: "amber" },
-              { label: "Manque d’énergie", value: "−8 %", sub: "même pénalité pour la nourriture", tint: "amber" },
+              { label: "Manque d’énergie", value: `jusqu’à −${pct(SHORTAGE.max)}`, sub: `selon la part qui manque (entière à ${pct(SHORTAGE.fullAt)} des besoins) ; pareil pour la nourriture`, tint: "amber" },
               { label: "Chômage", value: "variable", sub: "plus il y a de chômeurs, plus la pénalité est forte", tint: "amber" },
             ]} />
             <H3>La vétusté</H3>

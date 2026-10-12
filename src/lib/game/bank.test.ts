@@ -109,6 +109,9 @@ describe("capital : la bourse fait grandir la ville", () => {
     expect(E.capitalCost(BUILDING_BY_ID.house_s)).toBe(0);
     expect(E.capitalCost(BUILDING_BY_ID.house_m)).toBe(0);
     expect(E.capitalCost(BUILDING_BY_ID.services)).toBe(10_000);
+    // Ce qui règle une pénurie ou un besoin des habitants se paie en argent seul, quel que soit son prix
+    for (const id of ["power_l", "farm_l", "hospital"]) expect(E.capitalCost(BUILDING_BY_ID[id])).toBe(0);
+    expect(E.build({ ...game(0, 2_000_000), population: 9_000 }, "power_l", T0).ok).toBe(true);
     const rich = { ...game(0, 1_000_000), population: 5_000 };
     expect(E.build(rich, "house_s", T0).ok).toBe(true);
     const refused = E.build(rich, "services", T0);
