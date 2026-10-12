@@ -199,7 +199,11 @@ export async function rpc<T>(name: string, args: Record<string, unknown>, opts: 
     body: JSON.stringify(args),
     keepalive: opts.keepalive,
   });
-  if (!r.ok) throw new Error(`${name} : ${r.status}`);
+  if (!r.ok) {
+    // Le message du serveur suit le code : « save_game : 400 refus:jours » (voir isRefusal dans lib/online.ts)
+    const msg = await r.json().then((b: { message?: unknown }) => (typeof b?.message === "string" ? ` ${b.message}` : ""), () => "");
+    throw new Error(`${name} : ${r.status}${msg}`);
+  }
   const text = await r.text();
   return (text ? JSON.parse(text) : null) as T;
 }

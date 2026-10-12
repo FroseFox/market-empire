@@ -21,6 +21,7 @@ import { startSoundEvents } from "@/lib/soundEvents";
 import SoundButton from "@/components/SoundButton";
 import AuthGate, { Splash } from "@/components/AuthGate";
 import { DAY_MS } from "@/lib/game/engine";
+import { now as gameNow } from "@/lib/clock";
 import { capitalFmt, compactEur, eur } from "@/lib/format";
 
 const NAV: { href: string; label: string; icon: typeof BarChart3; soon?: boolean }[] = [
@@ -100,8 +101,8 @@ function useHeartbeat(enabled: boolean) {
 function NextDay() {
   const lastTick = useGame((s) => s.game.lastTick);
   const day = useGame((s) => s.game.day);
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => { const id = setInterval(() => setNow(Date.now()), 15_000); return () => clearInterval(id); }, []);
+  const [now, setNow] = useState(() => gameNow());
+  useEffect(() => { const id = setInterval(() => setNow(gameNow()), 15_000); return () => clearInterval(id); }, []);
   const mins = Math.max(0, Math.ceil((lastTick + DAY_MS - now) / 60_000));
   return (
     <>
