@@ -8,6 +8,7 @@ import { BUILDING_BY_ID } from "@/lib/game/config";
 import { canPlace, footprint, isBuildable, isRoad, mapBounds, MAP_SIZE, MAX_MAP_SIZE, occupancy, sideOf, type Plot } from "@/lib/game/layout";
 import { CAT_COLOR, MARKER_COLOR, markerTip, nightFactor, type CityMarker, type CityMode, type CitySign, type Light, type MarkerKind } from "@/components/IsoCity";
 import { SEASON_LABEL, seasonOf, type Season } from "@/lib/game/season";
+import { EventFx } from "./eventFx";
 import { buildingModel, propModel, streetDecor, treeModel, type Motion, type TreeLook, type V3 } from "./models";
 
 export interface CityTip { left: number; top: number; title: string; text: string; warn?: boolean }
@@ -17,6 +18,8 @@ export interface CityLive {
   markers: CityMarker[]; signs: Record<string, CitySign>; layers: boolean; light: Light;
   /** Graphismes légers : sans ombres ni animations, image moins fine. */
   lite?: boolean;
+  /** Événement de la semaine en cours (festival, tempête…) : il s'anime au-dessus de la ville. */
+  event?: string | null;
 }
 interface Callbacks { tip: (t: CityTip | null) => void; click: (x: number, y: number) => void; lost: () => void; /** La vue rame depuis plusieurs secondes. */ slow?: () => void }
 
@@ -128,6 +131,9 @@ export class CityEngine {
   private flakeMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9 });
   /** Neige qui tombe (Noël) : position de départ de chaque flocon, autour du centre de l'écran. */
   private flakes: { ox: number; oz: number; y0: number; sp: number; ph: number }[] = []; private flakeMesh: THREE.InstancedMesh | null = null;
+  /** Animation de l'événement de la semaine, et l'éclairage « de base » (jour/nuit) qu'elle module. */
+  private ev: EventFx | null = null; private evT = 0;
+  private baseLight = { hemi: 1.5, sun: 2.9, hemiC: new THREE.Color(0xdfeaff), sunC: new THREE.Color(0xffe9c4) };
   /** Décor de saison de la mairie (selon la date du joueur), vérifié toutes les minutes. */
   private season: Season | null = seasonOf();
   // Vue
@@ -222,6 +228,7 @@ export class CityEngine {
     this.builtBlocks = new Set(plots.map((p) => `${Math.floor(p.x / 4)},${Math.floor(p.y / 4)}`));
 
     this.rebuild();
+    if (this.ev) this.setFx(this.ev.id);
     const first = !this.framed || this.lastInitial !== f.initialZoom;
     this.layout();
     if (first) { this.framed = true; this.lastInitial = f.initialZoom; this.view = { zoom: this.startZoom(), ox: 0, oz: 0 }; this.applyView(); }
@@ -520,9 +527,11 @@ export class CityEngine {
 
   private applyLive() {
     const l = this.live;
+    if ((l.event ?? null) !== (this.ev?.id ?? null)) this.setFx(l.event ?? null);
     if (!!l.lite !== this.lite) {
       this.lite = !!l.lite;
       this.sun.castShadow = !this.lite;
+      if (this.ev) this.setFx(this.ev.id);
       this.overlayKey = ""; // les pastilles sont refaites : elles ne se balancent plus en léger
       this.layout();
       this.run();
@@ -792,12 +801,37 @@ export class CityEngine {
   // ─── Image ───
   private applyNight() {
     const n = this.night;
-    this.hemi.intensity = 1.5 - 0.5 * n; this.hemi.color.set(0xdfeaff).lerp(this.col.set(0x5670c0), n);
-    this.sun.intensity = 2.9 - 1.6 * n; this.sun.color.set(0xffe9c4).lerp(this.col.set(0x9db4ff), n);
+    const b = this.baseLight;
+    b.hemi = 1.5 - 0.5 * n; b.hemiC.set(0xdfeaff).lerp(this.col.set(0x5670c0), n);
+    b.sun = 2.9 - 1.6 * n; b.sunC.set(0xffe9c4).lerp(this.col.set(0x9db4ff), n);
+    this.applyLight();
     this.litMat.emissiveIntensity = 1.5 * n; this.bulbMat.emissiveIntensity = 2 * n; this.glowMat.opacity = 0.5 * n;
     if (this.glow) this.glow.visible = n > 0.01;
     for (const m of this.festive.values()) m.emissiveIntensity = 0.4 + 1.8 * n;
     this.nightDrawn = n;
+  }
+
+  /** Éclairage final : celui du jour ou de la nuit, assombri, teinté ou zébré d'éclairs par l'événement en cours. */
+  private applyLight() {
+    const b = this.baseLight, l = this.ev?.light;
+    const dim = l?.dim ?? 1, flash = l?.flash ?? 0;
+    this.hemi.intensity = b.hemi * dim + flash * 2.2; this.sun.intensity = b.sun * dim + flash * 1.2;
+    this.hemi.color.copy(b.hemiC); this.sun.color.copy(b.sunC);
+    if (l?.tint) { this.col.set(l.tint); this.hemi.color.lerp(this.col, l.tintAmount * 0.6); this.sun.color.lerp(this.col, l.tintAmount); }
+    if (flash) { this.col.set(0xeef2ff); this.hemi.color.lerp(this.col, flash * 0.8); }
+  }
+
+  /** Met en place l'animation de l'événement de la semaine (ou l'enlève). */
+  private setFx(id: string | null) {
+    if (this.ev) { this.scene.remove(this.ev.group); this.ev.dispose(); this.ev = null; }
+    this.scene.fog = null;
+    if (id && !this.frameOpts.compact) {
+      this.ev = new EventFx(id, this.plots, { x0: this.x0, x1: this.x1, y0: this.y0, y1: this.y1 }, this.calm);
+      this.scene.add(this.ev.group);
+      const f = this.ev.light.fog;
+      if (f) this.scene.fog = new THREE.Fog(f.color, f.near, f.far);
+    }
+    this.applyLight();
   }
 
   private frame(t: number) {
@@ -863,6 +897,11 @@ export class CityEngine {
         this.place(this.bodyMesh!, i, x, 0.016, y, s); this.headMesh!.setMatrixAt(i, this.m4);
       });
       this.bodyMesh.instanceMatrix.needsUpdate = true; this.headMesh.instanceMatrix.needsUpdate = true;
+    }
+    if (this.ev) {
+      const dt = this.evT ? (t - this.evT) / 1000 : 0; this.evT = t;
+      this.ev.update(tt / 1000, dt, { tx: this.tx, tz: this.tz, span: Math.max(this.W, this.H) * this.u * 0.8 + 3 });
+      this.applyLight();
     }
     if (this.flakeMesh) {
       const span = Math.max(this.W, this.H) * this.u * 0.8 + 3, sec = tt / 1000;
@@ -988,6 +1027,7 @@ export class CityEngine {
     this.glowMat.map?.dispose();
     for (const m of [this.gMat, this.bMat, this.litMat, this.ghostMat, this.fadeMat, this.bulbMat, this.glowMat, this.smokeMat, this.tintMat, this.hoverMat, this.selMat, this.ringMat, this.layerMat, this.outMat, this.flakeMat, ...this.festive.values()]) m.dispose();
     this.bulbGeo.dispose();
+    if (this.ev) { this.scene.remove(this.ev.group); this.ev.dispose(); this.ev = null; }
     this.renderer.dispose(); this.renderer.forceContextLoss();
   }
 }
