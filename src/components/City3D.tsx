@@ -18,10 +18,12 @@ interface Props {
   selectedTone?: "primary" | "danger"; padTop?: number; padBottom?: number; zoomClass?: string; hint?: boolean;
   initialZoom?: number; mode?: CityMode | null; selected?: { x: number; y: number } | null;
   onTileClick?: (x: number, y: number) => void;
+  /** Événement de la semaine en cours (son animation se joue au-dessus de la ville). */
+  event?: string | null;
 }
 
 export default function City3D(props: Props) {
-  const { plots, height = 440, compact = false, mode = null, selected = null, onTileClick, initialZoom = 1, markers, signs, mapSize = MAP_SIZE, selectedTone = "primary", padTop = 0, padBottom = 0, zoomClass = "right-3 top-3", hint = true } = props;
+  const { plots, height = 440, compact = false, mode = null, selected = null, onTileClick, initialZoom = 1, markers, signs, mapSize = MAP_SIZE, selectedTone = "primary", padTop = 0, padBottom = 0, zoomClass = "right-3 top-3", hint = true, event = null } = props;
   const wrap = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const overlay = useRef<HTMLDivElement>(null);
@@ -64,8 +66,8 @@ export default function City3D(props: Props) {
   // Sélection, mode, indicateurs, calque, éclairage
   useEffect(() => {
     if (!ready) return;
-    engine.current?.setLive({ mode, selected, tone: selectedTone, markers: markers ?? [], signs: signs ?? {}, layers, light, lite });
-  }, [ready, mode, selected, selectedTone, markers, signs, layers, light, lite, plots]);
+    engine.current?.setLive({ mode, selected, tone: selectedTone, markers: markers ?? [], signs: signs ?? {}, layers, light, lite, event });
+  }, [ready, mode, selected, selectedTone, markers, signs, layers, light, lite, plots, event]);
 
   if (failed) return <IsoCity {...props} />;
 

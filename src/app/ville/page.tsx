@@ -182,7 +182,7 @@ export default function CityPage() {
 
   return (
     <div className="city-stage">
-      <IsoCity plots={game.plots} height="fill" initialZoom={phone ? 1.3 : 1} mode={mode} selected={selected} onTileClick={onTileClick}
+      <IsoCity plots={game.plots} height="fill" event={city.event?.id ?? null} initialZoom={phone ? 1.3 : 1} mode={mode} selected={selected} onTileClick={onTileClick}
         markers={markers} signs={signs} mapSize={mapSize(game)} selectedTone={tool === "demolish" ? "danger" : "primary"}
         padTop={small ? 64 : 72} padBottom={small ? 76 : 84} zoomClass="left-3 top-[76px]" hint={false} />
 
