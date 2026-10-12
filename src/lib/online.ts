@@ -17,6 +17,7 @@ import { restAsUser, rpc, useAuth } from "@/lib/auth";
 import { STATIC_MODE } from "@/lib/market/client";
 import { countryPreference } from "@/lib/world/countries";
 import { openingMove } from "@/lib/syncRule";
+import { now, setServerTime } from "@/lib/clock";
 import { PSEUDO_ERRORS, pseudoProblem, tidyPseudo } from "@/lib/pseudo";
 
 const LINK_KEY = "market-empire-linked";
@@ -112,7 +113,7 @@ async function refresh() {
   const uid = active;
   if (!uid || writing || useOnline.getState().phase !== "ready" || Date.now() - lastCheck < 30_000) return;
   lastCheck = Date.now();
-  const at = await serverAt().catch(() => undefined);
+  const [at] = await Promise.all([serverAt().catch(() => undefined), syncClock()]);
   if (active !== uid || writing || typeof at !== "number" || at === syncedAt(uid)) return;
   writing = true;
   try {
@@ -121,6 +122,17 @@ async function refresh() {
     useGame.getState().notify("Partie mise à jour depuis votre autre appareil");
   } catch { setCloud("error"); }
   writing = false;
+}
+
+/** Le serveur a refusé la sauvegarde : elle n'est pas possible depuis la dernière qu'il a acceptée
+ *  (plus de jours de ville que d'heures passées, argent ou habitants apparus trop vite, mode test sur un compte ordinaire). */
+export const isRefusal = (e: unknown) => e instanceof Error && / refus:/.test(e.message);
+
+/** Cale l'heure du jeu sur celle du serveur (quelques octets). Sans effet si le serveur ne répond pas. */
+async function syncClock() {
+  const sent = Date.now();
+  const server = await rpc<number>("server_now", {}).catch(() => null);
+  if (typeof server === "number") setServerTime(server, sent, Date.now());
 }
 
 async function flush(keepalive = false) {
@@ -155,9 +167,18 @@ async function flush(keepalive = false) {
       if (active === uid) setSynced(uid, typeof stored === "number" ? stored : sentAt);
       if (!keepalive) { void publishCity(data.pl); void publishOffer(); void publishIncome(); void syncShares(); void syncAlliance(); void import("@/lib/push").then((m) => m.syncReminder()).catch(() => {}); }
     }
-  } catch {
-    dirty = true;
-    setCloud("error");
+  } catch (e) {
+    if (isRefusal(e) && active === uid) {
+      // Partie impossible : on reprend celle du serveur, la dernière qu'il a acceptée
+      try {
+        await pull(uid);
+        adoptCountry();
+        useGame.getState().notify("Sauvegarde refusée par le serveur : votre dernière partie en ligne a été reprise", "error");
+      } catch { dirty = true; setCloud("error"); }
+    } else {
+      dirty = true;
+      setCloud("error");
+    }
   }
   writing = false;
 }
@@ -408,6 +429,9 @@ async function connect(uid: string, name: string) {
     const joined = await rpc<{ country: string | null }[]>("join_world_v2", prefs).catch(() => rpc<{ country: string | null }[]>("join_world", prefs));
     if (active !== uid) return; // déconnecté entre-temps
     useOnline.setState({ country: joined?.[0]?.country ?? null });
+    // L'heure du serveur avant tout calcul de jours : changer l'heure du téléphone ne fait pas passer le temps
+    await syncClock();
+    if (active !== uid) return;
 
     // D'abord la date seule (quelques octets) : la sauvegarde n'est téléchargée que s'il le faut
     const meta = await restAsUser<{ saved_at: number }[]>("saves?select=saved_at&limit=1");
@@ -471,7 +495,7 @@ export async function createAccount(cityName: string): Promise<string | null> {
   if (!user || active !== user.id) return "Connexion perdue, reconnectez-vous.";
   // La partie commence maintenant, au jour 1 avec l'argent de départ : le temps passé sur cet écran ne rapporte rien
   const g = useGame.getState().game;
-  const r = E.renameCity({ ...E.newGame(Date.now(), g.playerName), country: g.country }, cityName);
+  const r = E.renameCity({ ...E.newGame(now(), g.playerName), country: g.country }, cityName);
   if (!r.ok) return r.error;
   useGame.setState({ game: r.state, savedAt: Date.now() });
   dirty = true;

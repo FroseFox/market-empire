@@ -8,6 +8,7 @@ import * as E from "@/lib/game/engine";
 import { fetchQuotes } from "@/lib/market/client";
 import type { OrientationId } from "@/lib/game/config";
 import { pack, unpack } from "@/lib/game/pack";
+import { now } from "@/lib/clock";
 
 export interface QuoteView { price: number; change: number; source: string }
 
@@ -79,7 +80,7 @@ async function fetchPrice(symbol: string): Promise<number | null> {
 export const useGame = create<Store>()(
   persist(
     (set, get) => ({
-      game: E.newGame(Date.now()),
+      game: E.newGame(now()),
       savedAt: 0,
       cloud: "local",
       quotes: {},
@@ -101,13 +102,13 @@ export const useGame = create<Store>()(
 
       // Levier : vente d'office des lignes qui ont presque tout perdu
       settle: () => {
-        const r = E.settleLeverage(get().game, get().prices(), Date.now());
+        const r = E.settleLeverage(get().game, get().prices(), now());
         if (!r.closed.length) return;
         set({ game: r.state });
         get().notify(r.closed.length === 1 ? `Ligne vendue d'office : ${r.closed[0]}` : `${r.closed.length} lignes vendues d'office`, "error");
       },
       upgradeBank: () => {
-        const r = E.upgradeBank(get().game, Date.now());
+        const r = E.upgradeBank(get().game, now());
         if (!r.ok) { get().notify(r.error, "error"); return false; }
         set({ game: r.state });
         get().notify(`Banque agrandie : levier ×${E.cityLeverage(r.state).toLocaleString("fr-FR")}`);
@@ -115,7 +116,7 @@ export const useGame = create<Store>()(
       },
 
       sync: () => {
-        const { state, days } = E.catchUp(get().game, Date.now(), get().prices());
+        const { state, days } = E.catchUp(get().game, now(), get().prices());
         // Retour après plusieurs jours : on garde de quoi raconter ce qui s'est passé
         if (days > 0) { set({ game: state, ...(days >= 3 ? { absence: E.absenceReport(get().game, state) } : {}) }); get().settle(); }
         return days;
@@ -127,7 +128,7 @@ export const useGame = create<Store>()(
         if (!price) { get().notify("Prix indisponible, réessayez.", "error"); return false; }
         const qty = E.sharesFor(amount * E.cityLeverage(get().game, symbol), price);
         if (qty <= 0) { get().notify("Montant trop faible pour ce cours.", "error"); return false; }
-        const r = E.buy(get().game, symbol, qty, price, Date.now());
+        const r = E.buy(get().game, symbol, qty, price, now());
         if (!r.ok) { get().notify(r.error, "error"); return false; }
         set({ game: r.state });
         get().setQuotes([{ symbol, price, change: get().quotes[symbol]?.change ?? 0, source: get().quotes[symbol]?.source ?? "" }], get().dataMode);
@@ -142,21 +143,21 @@ export const useGame = create<Store>()(
         // Tout vendre, ou un montant qui couvre toute la ligne : on vend exactement ce qui est détenu (pas de reliquat)
         const qty = all || amount >= value - 0.005 ? held : E.sharesFor(amount * held, value);
         if (qty <= 0) { get().notify(held > 0 ? "Montant trop faible pour ce cours." : "Vous ne détenez pas cet actif.", "error"); return false; }
-        const r = E.sell(get().game, symbol, qty, price, Date.now());
+        const r = E.sell(get().game, symbol, qty, price, now());
         if (!r.ok) { get().notify(r.error, "error"); return false; }
         set({ game: r.state });
         get().notify(`Vente de ${qty.toLocaleString("fr-FR", { maximumFractionDigits: 4 })} ${symbol} à ${price.toLocaleString("fr-FR")} €`);
         return true;
       },
       build: (id, tile) => {
-        const r = E.build(get().game, id, Date.now(), tile);
+        const r = E.build(get().game, id, now(), tile);
         if (!r.ok) { get().notify(r.error, "error"); return false; }
         set({ game: r.state, undo: { game: get().game, label: "Construction" } });
         get().notify("Construction terminée");
         return true;
       },
       demolish: (id, tile) => {
-        const r = E.demolish(get().game, id, Date.now(), tile);
+        const r = E.demolish(get().game, id, now(), tile);
         if (!r.ok) { get().notify(r.error, "error"); return false; }
         set({ game: r.state, undo: { game: get().game, label: "Démolition" } });
         return true;
@@ -169,7 +170,7 @@ export const useGame = create<Store>()(
         return true;
       },
       research: (id) => {
-        const r = E.doResearch(get().game, id, Date.now());
+        const r = E.doResearch(get().game, id, now());
         if (!r.ok) { get().notify(r.error, "error"); return false; }
         set({ game: r.state });
         get().notify("Recherche débloquée");
@@ -183,21 +184,21 @@ export const useGame = create<Store>()(
         return true;
       },
       claimGoal: (id) => {
-        const r = E.claimGoal(get().game, id, Date.now());
+        const r = E.claimGoal(get().game, id, now());
         if (!r.ok) { get().notify(r.error, "error"); return false; }
         set({ game: r.state });
         get().notify("Subvention encaissée");
         return true;
       },
       upgrade: (tile) => {
-        const r = E.upgrade(get().game, tile, Date.now());
+        const r = E.upgrade(get().game, tile, now());
         if (!r.ok) { get().notify(r.error, "error"); return false; }
         set({ game: r.state, undo: { game: get().game, label: "Amélioration" } });
         get().notify("Bâtiment amélioré");
         return true;
       },
       openBranch: (symbol) => {
-        const r = E.openBranch(get().game, symbol, get().quotes[symbol]?.price ?? 0, Date.now());
+        const r = E.openBranch(get().game, symbol, get().quotes[symbol]?.price ?? 0, now());
         if (!r.ok) { get().notify(r.error, "error"); return false; }
         set({ game: r.state });
         get().notify("Entreprise implantée dans votre ville");
@@ -208,21 +209,21 @@ export const useGame = create<Store>()(
         if (r.ok) set({ game: r.state });
       },
       openDesk: (hub) => {
-        const r = E.openDesk(get().game, hub, Date.now());
+        const r = E.openDesk(get().game, hub, now());
         if (!r.ok) { get().notify(r.error, "error"); return false; }
         set({ game: r.state });
         get().notify(`Bureau ouvert à ${hub}`);
         return true;
       },
       renovate: () => {
-        const r = E.renovate(get().game, Date.now());
+        const r = E.renovate(get().game, now());
         if (!r.ok) { get().notify(r.error, "error"); return false; }
         set({ game: r.state });
         get().notify("Ville rénovée");
         return true;
       },
       buildProject: (id) => {
-        const r = E.buildProject(get().game, id, Date.now());
+        const r = E.buildProject(get().game, id, now());
         if (!r.ok) { get().notify(r.error, "error"); return false; }
         set({ game: r.state });
         get().notify("Grand projet achevé");
@@ -232,7 +233,7 @@ export const useGame = create<Store>()(
         const before = get().game;
         let g = before, done = 0, error = "";
         for (let i = 0; i < count; i++) {
-          const r = E.build(g, id, Date.now());
+          const r = E.build(g, id, now());
           if (!r.ok) { error = r.error; break; }
           g = r.state; done++;
         }
@@ -247,14 +248,14 @@ export const useGame = create<Store>()(
         get().notify(`Annulé : ${u.label.toLowerCase()}`);
       },
       expandTerritory: () => {
-        const r = E.expandTerritory(get().game, Date.now());
+        const r = E.expandTerritory(get().game, now());
         if (!r.ok) { get().notify(r.error, "error"); return false; }
         set({ game: r.state });
         get().notify("Territoire agrandi");
         return true;
       },
       chooseOrientation: (id) => {
-        const r = E.chooseOrientation(get().game, id, Date.now());
+        const r = E.chooseOrientation(get().game, id, now());
         if (!r.ok) { get().notify(r.error, "error"); return false; }
         set({ game: r.state });
         return true;
@@ -267,7 +268,7 @@ export const useGame = create<Store>()(
         const g = get().game;
         if (process.env.NODE_ENV === "production" && !g.sandbox) return;
         let next = g;
-        for (let i = 0; i < Math.min(days, 200); i++) next = E.tickDay(next, get().prices(), Date.now());
+        for (let i = 0; i < Math.min(days, 200); i++) next = E.tickDay(next, get().prices(), now());
         set({ game: { ...next, lastTick: g.lastTick } });
         get().settle();
       },
@@ -287,11 +288,11 @@ export const useGame = create<Store>()(
       forceEvent: () => {
         const g = get().game;
         if (!g.sandbox) return null;
-        const r = E.rollEvent(g, E.computeCity(g), Math.floor(Math.random() * 1e9), Date.now(), true);
+        const r = E.rollEvent(g, E.computeCity(g), Math.floor(Math.random() * 1e9), now(), true);
         if (r.def) set({ game: r.state });
         return r.def?.name ?? null;
       },
-      reset: () => set({ game: E.newGame(Date.now()) }),
+      reset: () => set({ game: E.newGame(now()) }),
       notify: (text, kind = "ok") => {
         set({ toast: { text, kind } });
         setTimeout(() => { if (get().toast?.text === text) set({ toast: null }); }, 3200);
@@ -308,7 +309,7 @@ export const useGame = create<Store>()(
       version: 2,
       migrate: (persisted) => {
         const p = persisted as { game?: E.GameState; quotes?: Record<string, QuoteView> };
-        return { ...p, game: p.game ? E.normalize(p.game) : E.newGame(Date.now()) } as Store;
+        return { ...p, game: p.game ? E.normalize(p.game) : E.newGame(now()) } as Store;
       },
       partialize: (s) => ({ game: s.game, quotes: s.quotes, savedAt: s.savedAt }),
       // Toujours réparer la partie chargée (nouveaux champs ajoutés depuis la sauvegarde)
