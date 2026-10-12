@@ -159,6 +159,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   const isActive = (href: string) => (href === "/" ? path === "/" : path.startsWith(href));
 
+  // Informations légales : lisibles sans compte, hors du cadre du jeu
+  if (path.startsWith("/legal")) return <>{children}</>;
   // Site publié : pas de jeu sans compte Discord (la page Claude, elle, a sa propre identité)
   if (!STATIC_MODE && !hydrated) return <Splash text="Chargement de votre empire…" />;
   const shell = (
@@ -178,7 +180,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </nav>
         <div className="mt-auto"><ShowGuide dark /><InstallApp dark /></div>
         <div className="px-2 text-[11px] text-slate-500 leading-relaxed">
-          Construis · Investis · Domine<br />Prototype v0.1
+          Construis · Investis · Domine<br />Prototype v0.1<br />
+          <Link href="/legal" className="hover:text-slate-300 hover:underline">Informations légales</Link>
         </div>
       </aside>
 

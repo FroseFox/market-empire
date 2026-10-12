@@ -15,6 +15,8 @@ import { DiscordIcon, GoogleIcon, ProviderTag } from "@/components/DiscordButton
 import { Logo } from "@/components/AppShell";
 import { Button } from "@/components/ui";
 import { eur } from "@/lib/format";
+import Link from "next/link";
+import { acceptTerms, termsAccepted } from "@/lib/legal";
 
 const PITCH: { icon: LucideIcon; title: string; text: string }[] = [
   { icon: LineChart, title: "Investissez sur les vrais marchés", text: "Actions, ETF, matières premières et cryptos, aux cours réels. Aucun argent réel en jeu." },
@@ -47,6 +49,7 @@ function Frame({ children }: { children: React.ReactNode }) {
       <main className="flex flex-col items-center justify-center px-5 py-10">
         <div className="mb-8 lg:hidden"><Logo /></div>
         <div className="w-full max-w-[400px]">{children}</div>
+        <Link href="/legal" className="mt-10 text-[11px] text-muted hover:text-ink hover:underline">Mentions légales · CGU · Confidentialité · Cookies</Link>
       </main>
     </div>
   );
@@ -112,10 +115,14 @@ function LoginScreen() {
         </button>
       )}
       <ul className="mt-6 space-y-2 text-[12px] leading-relaxed text-muted">
-        <li className="flex gap-2"><ShieldCheck size={15} className="mt-0.5 shrink-0 text-success" />Le jeu ne reçoit que votre nom et votre image de profil. Jamais votre mot de passe.</li>
+        <li className="flex gap-2"><ShieldCheck size={15} className="mt-0.5 shrink-0 text-success" />Le jeu ne reçoit jamais votre mot de passe et n&apos;affiche jamais votre adresse e-mail.</li>
         <li className="flex gap-2"><ShieldCheck size={15} className="mt-0.5 shrink-0 text-success" />Les autres joueurs ne voient que le pseudo que vous choisissez, jamais votre nom de compte.</li>
         <li className="flex gap-2"><ShieldCheck size={15} className="mt-0.5 shrink-0 text-success" />Votre partie est sauvegardée en ligne : vous la retrouvez sur tous vos appareils.</li>
       </ul>
+      <p className="mt-5 text-[11px] leading-relaxed text-muted">
+        En vous connectant, vous acceptez les <Link href="/legal#cgu" className="underline hover:text-ink">conditions d&apos;utilisation</Link> et
+        reconnaissez avoir lu la <Link href="/legal#confidentialite" className="underline hover:text-ink">politique de confidentialité</Link>.
+      </p>
       <TestLogin />
     </Frame>
   );
@@ -190,10 +197,13 @@ function CreateAccount() {
   const pseudoIssue = pseudo.trim() ? pseudoProblem(pseudo) : null;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [agreed, setAgreed] = useState(false);
   const started = game.day > 1 || game.transactions.length > 0;
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!agreed) return;
     setBusy(true);
+    acceptTerms();
     const refused = await setPseudo(pseudo);
     setError(refused ?? await createAccount(city));
     setBusy(false);
@@ -216,11 +226,42 @@ function CreateAccount() {
             ? `La partie déjà commencée sur cet appareil (jour ${game.day}) sera rattachée à votre compte.`
             : `Vous commencez avec ${eur(game.cash)} et un village de ${game.population} habitants.`}
         </p>
+        <TermsCheckbox checked={agreed} onChange={setAgreed} />
         {error && <p role="alert" className="mt-3 rounded-[10px] bg-danger-soft px-3 py-2 text-[13px] text-red-700">{error}</p>}
-        <Button type="submit" disabled={busy || city.trim().length < 2 || !!pseudoProblem(pseudo)} className="mt-5 w-full !rounded-[12px] !py-3 !text-[15px]">
+        <Button type="submit" disabled={busy || !agreed || city.trim().length < 2 || !!pseudoProblem(pseudo)} className="mt-5 w-full !rounded-[12px] !py-3 !text-[15px]">
           {busy ? "Création…" : "Créer mon compte et jouer"}
         </Button>
       </form>
+    </Frame>
+  );
+}
+
+/** Case d'acceptation des CGU (non cochée par défaut, comme l'exige le RGPD). */
+function TermsCheckbox({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <label className="mt-4 flex cursor-pointer items-start gap-2.5 text-[12px] leading-relaxed text-muted">
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--color-primary)]" />
+      <span>
+        J&apos;accepte les <Link href="/legal#cgu" target="_blank" className="underline hover:text-ink">conditions d&apos;utilisation</Link> et
+        j&apos;ai lu la <Link href="/legal#confidentialite" target="_blank" className="underline hover:text-ink">politique de confidentialité</Link>.
+        Market Empire est un jeu : aucun argent réel, aucun conseil en investissement.
+      </span>
+    </label>
+  );
+}
+
+/** Joueurs déjà inscrits : acceptation des conditions (nouvelles ou mises à jour) avant de reprendre. */
+function AcceptTerms({ onDone }: { onDone: () => void }) {
+  const [agreed, setAgreed] = useState(false);
+  return (
+    <Frame>
+      <h2 className="text-[26px] font-semibold leading-tight">Conditions d&apos;utilisation</h2>
+      <p className="mt-2 mb-5 text-[14px] leading-relaxed text-muted">
+        Market Empire a désormais des conditions d&apos;utilisation et une politique de confidentialité. Merci d&apos;en prendre connaissance pour continuer à jouer.
+      </p>
+      <Who />
+      <TermsCheckbox checked={agreed} onChange={setAgreed} />
+      <Button onClick={() => { acceptTerms(); onDone(); }} disabled={!agreed} className="mt-5 w-full !rounded-[12px] !py-3 !text-[15px]">Continuer</Button>
     </Frame>
   );
 }
@@ -246,10 +287,12 @@ function ServerError() {
 export default function AuthGate({ children }: { children: React.ReactNode }) {
   const status = useAuth((s) => s.status);
   const phase = useOnline((s) => s.phase);
+  const [accepted, setAccepted] = useState(termsAccepted);
   if (status === "loading") return <Splash text="Chargement…" />;
   if (status === "out") return <LoginScreen />;
   if (phase === "new") return <CreateAccount />;
   if (phase === "error") return <ServerError />;
   if (phase !== "ready") return <Splash text="Chargement de votre partie…" />;
+  if (!accepted && !termsAccepted()) return <AcceptTerms onDone={() => setAccepted(true)} />;
   return <>{children}</>;
 }
