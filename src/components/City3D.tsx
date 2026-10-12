@@ -3,7 +3,7 @@
 // La bibliothèque 3D n'est chargée qu'ici, au moment où une ville s'affiche. Si la 3D ne peut pas démarrer
 // (WebGL absent ou perdu), l'ancienne vue dessinée (IsoCity) prend le relais : le jeu reste jouable partout.
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { Layers, Moon, Sparkles, Sun } from "lucide-react";
+import { Layers, Moon, RotateCcw, RotateCw, Sparkles, Sun } from "lucide-react";
 import { useGame } from "@/store/game";
 import { CATEGORY_LABELS } from "@/lib/game/config";
 import { MAP_SIZE, type Plot } from "@/lib/game/layout";
@@ -79,6 +79,7 @@ export default function City3D(props: Props) {
     if (!c) return;
     const k: Record<string, () => void> = {
       "+": () => c.zoomAt(1.35), "=": () => c.zoomAt(1.35), "-": () => c.zoomAt(1 / 1.35), "0": () => c.reset(),
+      q: () => c.rotate(-1), Q: () => c.rotate(-1), a: () => c.rotate(-1), e: () => c.rotate(1), E: () => c.rotate(1),
       ArrowLeft: () => c.panBy(80, 0), ArrowRight: () => c.panBy(-80, 0), ArrowUp: () => c.panBy(0, 80), ArrowDown: () => c.panBy(0, -80),
     };
     if (k[e.key]) { e.preventDefault(); k[e.key](); }
@@ -92,7 +93,8 @@ export default function City3D(props: Props) {
       <canvas ref={canvas} role="img" className={compact ? "block" : `block ${mode ? "cursor-crosshair" : interactive ? "cursor-pointer" : "cursor-grab"} active:cursor-grabbing touch-none`} aria-label={`Vue de la ville en 3D : ${plots.length} bâtiments`} />
       <div ref={overlay} className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true" />
       {!compact && (
-        <div className={`absolute z-10 flex flex-col overflow-hidden rounded-[10px] border border-line bg-card shadow-sm ${zoomClass}`}>
+        <div className={`absolute z-10 flex items-start gap-2 ${zoomClass}`}>
+        <div className="flex flex-col overflow-hidden rounded-[10px] border border-line bg-card shadow-sm">
           {ZOOM_BUTTONS.map((b) => (
             <button key={b.kind} type="button" aria-label={b.label} title={b.label}
               onClick={() => onZoom(b.kind)}
@@ -109,6 +111,14 @@ export default function City3D(props: Props) {
             aria-label={lite ? "Remettre les ombres et les animations" : "Passer en graphismes légers"}
             title={lite ? "Graphismes légers : sans ombres ni animations. Cliquer pour tout remettre." : "Graphismes complets. Cliquer pour alléger si la ville rame."}
             className={`h-9 w-9 grid place-items-center ${lite ? "text-muted hover:bg-slate-50" : "text-primary hover:bg-slate-50"}`}><Sparkles size={16} className={lite ? "opacity-50" : ""} /></button>
+        </div>
+        {/* Tourner la vue d'un quart de tour : pour voir ce qu'une tour cache derrière elle */}
+        <div className="flex overflow-hidden rounded-[10px] border border-line bg-card shadow-sm">
+          <button type="button" onClick={() => engine.current?.rotate(-1)} aria-label="Tourner la vue vers la gauche" title="Tourner la vue (touche Q)"
+            className="h-9 w-9 grid place-items-center border-r border-line text-ink hover:bg-slate-50"><RotateCcw size={16} /></button>
+          <button type="button" onClick={() => engine.current?.rotate(1)} aria-label="Tourner la vue vers la droite" title="Tourner la vue (touche E)"
+            className="h-9 w-9 grid place-items-center text-ink hover:bg-slate-50"><RotateCw size={16} /></button>
+        </div>
         </div>
       )}
       {!compact && layers && (
@@ -129,7 +139,7 @@ export default function City3D(props: Props) {
       )}
       {!compact && hint && (
         <div className="pointer-events-none absolute left-3 bottom-3 rounded-full bg-card/85 backdrop-blur border border-line px-2.5 py-1 text-[11px] text-muted hidden sm:block">
-          Molette ou pincement : zoom · Glisser : se déplacer · Double-clic : zoomer
+          Molette ou pincement : zoom · Glisser : se déplacer · Q / E ou ↺ ↻ : tourner
         </div>
       )}
     </div>
