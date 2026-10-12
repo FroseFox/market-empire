@@ -32,6 +32,13 @@ jobs:
       - name: Installer les dépendances
         run: npm ci
 
+      # Garde-fou : si un test ou la vérification du code échoue, rien n'est mis en ligne
+      - name: Vérifier le code
+        run: npm run lint
+
+      - name: Lancer les tests
+        run: npm test
+
       - name: Construire le site
         run: npm run build
         env:

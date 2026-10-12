@@ -1,0 +1,74 @@
+# Sauvegarde quotidienne de la base Supabase (le plan gratuit n'en fait aucune).
+# La copie est chiffrée avant d'être rangée dans GitHub : le dépôt est public, les données des joueurs ne doivent
+# jamais y être lisibles. Elle est gardée 30 jours, dans l'onglet Actions (« Sauvegarde de la base »).
+#
+# Deux secrets à créer une fois dans GitHub (Settings › Secrets and variables › Actions) :
+#   SUPABASE_DB_URL : l'adresse de connexion « Session pooler » de Supabase (Connect › Session pooler), mot de passe compris
+#   BACKUP_PASSPHRASE : une longue phrase secrète, à garder aussi ailleurs : sans elle, la copie est illisible
+# Tant qu'ils manquent, la sauvegarde ne fait rien et le dit.
+#
+# Restaurer : télécharger l'archive, puis
+#   gpg --decrypt market-empire-AAAA-MM-JJ.sql.gz.gpg | gunzip > sauvegarde.sql
+name: Sauvegarde de la base
+
+on:
+  schedule:
+    - cron: "17 3 * * *" # chaque nuit vers 5 h (heure de Paris)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+    steps:
+      - name: Vérifier la configuration
+        id: config
+        run: |
+          if [ -z "$SUPABASE_DB_URL" ] || [ -z "$BACKUP_PASSPHRASE" ]; then
+            echo "::warning::Sauvegarde non configurée : ajoutez les secrets SUPABASE_DB_URL et BACKUP_PASSPHRASE."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # La base est en PostgreSQL 17 : il faut l'outil de copie de la même version
+      - name: Installer pg_dump 17
+        if: steps.config.outputs.ready == 'true'
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-17
+
+      # Les tables du jeu (structure et données) et les comptes des joueurs (données seulement)
+      - name: Copier la base
+        if: steps.config.outputs.ready == 'true'
+        run: |
+          set -o pipefail
+          FILE="market-empire-$(date -u +%F).sql.gz"
+          {
+            /usr/lib/postgresql/17/bin/pg_dump "$SUPABASE_DB_URL" --schema=public --no-owner --no-privileges
+            /usr/lib/postgresql/17/bin/pg_dump "$SUPABASE_DB_URL" --data-only --table=auth.users --table=auth.identities --no-owner --no-privileges
+          } | gzip -9 > "$FILE"
+          test "$(stat -c %s "$FILE")" -gt 1000
+          echo "FILE=$FILE" >> "$GITHUB_ENV"
+
+      - name: Chiffrer la copie
+        if: steps.config.outputs.ready == 'true'
+        run: |
+          gpg --batch --yes --pinentry-mode loopback --passphrase "$BACKUP_PASSPHRASE" --symmetric --cipher-algo AES256 "$FILE"
+          rm "$FILE"
+
+      - uses: actions/upload-artifact@v4
+        if: steps.config.outputs.ready == 'true'
+        with:
+          name: sauvegarde-${{ github.run_id }}
+          path: market-empire-*.sql.gz.gpg
+          retention-days: 30
+          if-no-files-found: error
