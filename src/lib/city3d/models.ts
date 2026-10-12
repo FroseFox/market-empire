@@ -1,9 +1,10 @@
 // Modèles 3D des bâtiments de la ville, construits par code (aucune image, aucun fichier de modèle).
 // Chaque type de bâtiment de config.ts a ici sa maquette : des volumes aux bords arrondis, fusionnés en une seule
 // géométrie colorée par sommet, pour qu'un type entier s'affiche en un seul appel (InstancedMesh).
-// Repère d'un carreau : origine au centre, x et z de −0,5 à 0,5, y vers le haut. La caméra regarde les faces +x et +z.
+// Repère d'un carreau : origine au centre, x et z de −0,5 à 0,5, y vers le haut. Les modèles sont dessinés vus de face
+// (faces +x et +z) ; la caméra tourne par quarts de tour, donc `backs()` reporte les fenêtres sur les faces −x et −z.
 import * as THREE from "three";
-import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { mergeGeometries, mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
 export type V3 = [number, number, number];
 /** Hélice animée (éolienne) : centre du moyeu et longueur des pales. */
@@ -90,13 +91,15 @@ class Kit {
   private rotors: Rotor[] = [];
   private motions: Motion[] = [];
   private bulbs: Light[] = [];
+  /** Fenêtres posées sur les faces avant (+z) ou droite (+x), à reporter à l'arrière. */
+  private panes: { w: number; h: number; x: number; y: number; z: number; ry: number; lit: boolean }[] = [];
   /** Ampoule décorative (allumée par la ville, plus forte la nuit). */
   light(x: number, y: number, z: number, c: number, r = 0.008) { this.bulbs.push({ at: [x, y, z], c, r }); }
 
   /** Pièce animée : `build` la dessine autour de son pivot (0, 0, 0), qui sera posé en `def.at`. */
   motion(def: Omit<Motion, "geo">, build: (m: Kit) => void) {
     const m = new Kit(); build(m);
-    const geo = mergeGeometries(m.parts, false)!;
+    const geo = mergeVertices(mergeGeometries(m.parts, false)!);
     for (const p of m.parts) p.dispose();
     this.motions.push({ ...def, geo });
   }
@@ -146,6 +149,40 @@ class Kit {
   /** Vitre plane : face +z (ry = 0) ou +x (ry = π/2). */
   win(w: number, h: number, x: number, y: number, z: number, ry = 0, lit = false) {
     this.add(new THREE.PlaneGeometry(w, h), P.win, x, y, z, ry, lit);
+    if (ry === 0 || ry === Math.PI / 2) this.panes.push({ w, h, x, y, z, ry, lit });
+  }
+  /** Arrière des bâtiments : chaque fenêtre d'une face avant (+z) ou droite (+x) est reportée, à la même hauteur,
+   *  sur la face opposée du volume qui la porte. Rien n'est ajouté si ce volume est trop mince (panneau, enseigne),
+   *  si la face opposée est collée à un autre volume, ou si une fenêtre s'y trouve déjà. */
+  backs() {
+    if (!this.panes.length) return;
+    const boxes = this.parts.map((g) => { g.computeBoundingBox(); return g.boundingBox!; })
+      .filter((b) => b.max.y - b.min.y > 0.06 && b.max.x - b.min.x > 0.06 && b.max.z - b.min.z > 0.06);
+    const done: { x: number; y: number; z: number; ry: number }[] = [];
+    const add: typeof this.panes = [];
+    this.panes.forEach((p, i) => {
+      const alongZ = p.ry === 0;
+      // Volume porteur : sa face avant touche la fenêtre, et il couvre la fenêtre en largeur et en hauteur
+      let host: THREE.Box3 | null = null, gap = Infinity;
+      for (const b of boxes) {
+        const face = alongZ ? b.max.z : b.max.x, d = (alongZ ? p.z : p.x) - face;
+        if (d < -0.002 || d > 0.012) continue;
+        const u = alongZ ? p.x : p.z, lo = alongZ ? b.min.x : b.min.z, hi = alongZ ? b.max.x : b.max.z;
+        if (u < lo || u > hi || p.y < b.min.y || p.y > b.max.y) continue;
+        if (d < gap) { gap = d; host = b; }
+      }
+      if (!host) return;
+      const back = (alongZ ? host.min.z : host.min.x) - Math.max(gap, 0.004);
+      const x = alongZ ? p.x : back, z = alongZ ? back : p.z, ry = alongZ ? Math.PI : -Math.PI / 2;
+      // Juste derrière la future fenêtre : un autre volume la cacherait
+      const tx = alongZ ? x : x - 0.02, tz = alongZ ? z - 0.02 : z;
+      if (boxes.some((b) => b !== host && tx > b.min.x && tx < b.max.x && p.y > b.min.y && p.y < b.max.y && tz > b.min.z && tz < b.max.z)) return;
+      if (done.some((o) => o.ry === ry && Math.abs(o.x - x) < 0.01 && Math.abs(o.z - z) < 0.01 && Math.abs(o.y - p.y) < 0.01)) return;
+      done.push({ x, y: p.y, z, ry });
+      add.push({ ...p, x, z, ry, lit: i % 3 === 1 ? !p.lit : p.lit });
+    });
+    for (const p of add) this.add(new THREE.PlaneGeometry(p.w, p.h), P.win, p.x, p.y, p.z, p.ry, p.lit);
+    this.panes = [];
   }
   /** Rangées de fenêtres sur les deux façades visibles d'un bloc w × d centré en (cx, cz). */
   wins(w: number, d: number, y0: number, h: number, rows: number, cols: number, cx = 0, cz = 0, colsX = cols) {
@@ -185,6 +222,10 @@ class Kit {
     g.win(0.065, 0.065, -0.07, 0.11, 0.124, 0, true);
     g.win(0.065, 0.065, 0.154, 0.11, 0.02, Math.PI / 2, false);
     g.box(0.04, 0.1, 0.04, P.concrete, 0.08, 0.22, -0.05, 0.008);
+    // Arrière : porte de jardin ; une seconde fenêtre sur le pignon (reportée aussi sur l'autre pignon)
+    g.box(0.045, 0.09, 0.012, P.door, -0.07, 0, -0.12, 0);
+    g.win(0.065, 0.065, 0.154, 0.11, -0.06, Math.PI / 2, true);
+    g.backs();
     this.absorb(g, x, y, z, ry, s);
   }
   /** Reprend les volumes d'un autre atelier, déplacés, tournés et mis à l'échelle. */
@@ -268,13 +309,15 @@ class Kit {
     this.cyl(0.011, 0.08, P.steelL, x - w * 0.32, B, z - 0.01, 0.011, 6); this.cyl(0.011, 0.08, P.steelL, x + w * 0.32, B, z - 0.01, 0.011, 6);
   }
   done(): Model {
-    const solid = mergeGeometries(this.parts, false)!;
-    const lit = this.lits.length ? mergeGeometries(this.lits, false) : null;
+    this.backs();
+    // Géométries indexées : les sommets partagés ne sont plus dupliqués (moins de mémoire, moins de calcul par image)
+    const solid = mergeVertices(mergeGeometries(this.parts, false)!);
+    const lit = this.lits.length ? mergeVertices(mergeGeometries(this.lits, false)!) : null;
     // Modèle à l'arrêt : les pièces animées posées à leur place de départ
     let still = solid;
     if (this.motions.length) {
-      const rest = this.motions.map((mv) => { const g = mv.geo.clone(); if (mv.ry) g.rotateY(mv.ry); g.translate(mv.at[0], mv.at[1], mv.at[2]); return g; });
-      still = mergeGeometries([...this.parts, ...rest], false)!;
+      const rest = this.motions.map((mv) => { const g = mv.geo.toNonIndexed(); if (mv.ry) g.rotateY(mv.ry); g.translate(mv.at[0], mv.at[1], mv.at[2]); return g; });
+      still = mergeVertices(mergeGeometries([...this.parts, ...rest], false)!);
       for (const g of rest) g.dispose();
     }
     still.computeBoundingBox();
