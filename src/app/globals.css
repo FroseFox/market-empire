@@ -47,6 +47,12 @@ body { font-family: var(--font-sans); font-size: 14px; }
 @media (display-mode: standalone), (display-mode: fullscreen), (display-mode: minimal-ui) {
   html { touch-action: pan-x pan-y; }
 }
+/* Page Ville : c'est un écran d'appli, pas une page web. Ni zoom de page, ni défilement de la page, ni rebond :
+   seule la carte se zoome et se déplace (elle gère elle-même les doigts), et seules les listes défilent. */
+html:has(.city-stage), html:has(.city-stage) body { overscroll-behavior: none; touch-action: none; }
+html:has(.city-stage) [class*="overflow-x-auto"] { touch-action: pan-x; overscroll-behavior: contain; }
+html:has(.city-stage) [class*="overflow-y-auto"], html:has(.city-stage) [class*="overflow-auto"] { touch-action: pan-y; overscroll-behavior: contain; }
+html:has(.city-stage) [class*="overflow-x-auto"][class*="overflow-y-auto"] { touch-action: pan-x pan-y; }
 /* Pas de surbrillance grise au toucher sur mobile */
 button, a { -webkit-tap-highlight-color: transparent; }
 

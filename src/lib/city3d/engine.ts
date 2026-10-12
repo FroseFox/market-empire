@@ -83,6 +83,7 @@ interface Puff { at: V3; off: number }
 /** Pièces animées d'un type de bâtiment : une instance par bâtiment posé. */
 interface Part { mesh: THREE.InstancedMesh; def: Motion; items: { key: string; x: number; z: number; w: number; h: number; off: number }[] }
 interface Spin { at: V3; size: number; off: number }
+/** Voiture ou passant qui suit une rue. `speed` en carreaux par seconde. */
 interface Mover { axis: "x" | "y"; k: number; speed: number; off: number; dir: number; side: number }
 
 export class CityEngine {
@@ -456,12 +457,12 @@ export class CityEngine {
     const compact = this.frameOpts.compact;
     if (lines.length && !compact) {
       const nc = Math.min(10, 2 + Math.floor(this.plots.length / 2)), nw = Math.min(26, Math.floor(this.plots.length * 0.8));
-      this.cars = Array.from({ length: nc }, (_, i) => ({ ...lines[i % lines.length], speed: 0.0006 + hash(i, 3) * 0.0005, off: hash(i, 7), dir: i % 2 ? 1 : -1, side: 0 }));
+      this.cars = Array.from({ length: nc }, (_, i) => ({ ...lines[i % lines.length], speed: 0.7 + hash(i, 3) * 0.4, off: hash(i, 7), dir: i % 2 ? 1 : -1, side: 0 }));
       this.carMesh = new THREE.InstancedMesh(propModel("car"), this.gMat, nc); this.carMesh.castShadow = true; this.carMesh.frustumCulled = false;
       for (let i = 0; i < nc; i++) this.carMesh.setColorAt(i, this.col.set(CAR_COLORS[i % CAR_COLORS.length]));
       this.world.add(this.carMesh);
       if (nw) {
-        this.walkers = Array.from({ length: nw }, (_, i) => ({ ...lines[(i * 3 + 1) % lines.length], speed: 0.00006 + hash(i, 13) * 0.00006, off: hash(i, 19), dir: i % 2 ? 1 : -1, side: hash(i, 23) < 0.5 ? 0.05 : 0.95 }));
+        this.walkers = Array.from({ length: nw }, (_, i) => ({ ...lines[(i * 3 + 1) % lines.length], speed: 0.1 + hash(i, 13) * 0.06, off: hash(i, 19), dir: i % 2 ? 1 : -1, side: hash(i, 23) < 0.5 ? 0.05 : 0.95 }));
         this.bodyMesh = new THREE.InstancedMesh(propModel("walker"), this.gMat, nw); this.headMesh = new THREE.InstancedMesh(propModel("head"), this.gMat, nw);
         this.bodyMesh.frustumCulled = this.headMesh.frustumCulled = false; this.bodyMesh.castShadow = true;
         for (let i = 0; i < nw; i++) this.bodyMesh.setColorAt(i, this.col.set(COATS[i % COATS.length]));
@@ -879,7 +880,9 @@ export class CityEngine {
     }
     const along = (m: Mover, lane: number): [number, number] => {
       const len = m.axis === "x" ? this.y1 - this.y0 + 1 : this.x1 - this.x0 + 1;
-      let u = (tt * m.speed + m.off) % 1; if (m.dir < 0) u = 1 - u;
+      // Vitesse en carreaux par seconde : la même quelle que soit la taille de la ville (avant, elle était
+      // proportionnelle à la longueur de la rue, et les voitures fonçaient sur les grands territoires)
+      let u = ((tt / 1000) * m.speed / len + m.off) % 1; if (m.dir < 0) u = 1 - u;
       const pos = (m.axis === "x" ? this.y0 : this.x0) + u * len;
       return m.axis === "x" ? [m.k + lane, pos] : [pos, m.k + lane];
     };
