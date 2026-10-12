@@ -1,7 +1,8 @@
 "use client";
 // Compte du joueur (site publié) : bouton Discord, ou avatar + menu.
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, LogOut, Pencil, Trash2, UserPlus } from "lucide-react";
+import { ChevronDown, Download, FileText, LogOut, Pencil, Trash2, UserPlus } from "lucide-react";
+import Link from "next/link";
 import { MAX_ACCOUNTS, addAccount, deleteAccount, logout, switchAccount, useAuth, type Account } from "@/lib/auth";
 import { saveNow, setPseudo, useOnline } from "@/lib/online";
 import { disablePush } from "@/lib/push";
@@ -49,6 +50,23 @@ export default function AccountMenu() {
     const err = await go();
     setBusy(false); setOpen(false);
     if (err) notify(err, "error");
+  };
+  // Droit d'accès et de portabilité (RGPD, art. 15 et 20) : profil + sauvegarde, au format JSON
+  const exportData = async () => {
+    if (!user) return;
+    await saveNow().catch(() => false);
+    const data = {
+      exportedAt: new Date().toISOString(),
+      account: { id: user.id, name: user.name, avatar: user.avatar ?? null, provider: user.via },
+      pseudo: shown,
+      game: useGame.getState().game,
+    };
+    const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }));
+    const a = document.createElement("a");
+    a.href = url; a.download = `market-empire-mes-donnees-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setOpen(false);
   };
   const box = useRef<HTMLDivElement>(null);
 
@@ -125,6 +143,12 @@ export default function AccountMenu() {
             )}
           </div>
           <div className="border-t border-line mt-1.5 pt-1.5" />
+          <button role="menuitem" onClick={exportData} className="w-full flex items-center gap-2 rounded-[8px] px-3 py-2 text-[13px] hover:bg-slate-50">
+            <Download size={15} className="text-muted" />Télécharger mes données
+          </button>
+          <Link role="menuitem" href="/legal" onClick={() => setOpen(false)} className="w-full flex items-center gap-2 rounded-[8px] px-3 py-2 text-[13px] hover:bg-slate-50">
+            <FileText size={15} className="text-muted" />Informations légales
+          </Link>
           <button role="menuitem" disabled={busy} onClick={async () => { setOpen(false); await disablePush(); logout(); notify(others.length ? "Compte déconnecté et oublié sur cet appareil." : "Déconnecté. La partie reste aussi sur cet appareil."); }}
             className="w-full flex items-center gap-2 rounded-[8px] px-3 py-2 text-[13px] hover:bg-slate-50">
             <LogOut size={15} className="text-muted" />Se déconnecter
