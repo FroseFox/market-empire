@@ -321,6 +321,140 @@ function farm(k: Kit, size: 0 | 1 | 2) {
 }
 
 /** Fabrique de chaque type de bâtiment (mêmes identifiants que config.ts). */
+// ─── Grande mairie (îlot de 3 × 3) et ses décors de saison ───
+// Le modèle est dessiné dans un carreau unité puis étiré à 3 × 3 (et ×2,2 en hauteur) : un carreau réel vaut 1/3 ici,
+// d'où les petites cotes. La façade et la place regardent la caméra (+z).
+type Season = "halloween" | "noel" | "paques" | "ete";
+const PASTEL = [0xf6a5c0, 0xfde68a, 0xa5d8f3, 0xc4b5fd, 0xa7f3d0];
+
+function hall(k: Kit, season: Season | null) {
+  k.lot(P.pave);
+  // Pelouses et allée de la place
+  for (const x of [-0.3, 0.3]) k.box(0.26, 0.008, 0.2, P.lawn, x, B, 0.3, 0.01);
+  k.box(0.2, 0.006, 0.22, P.path, 0, B, 0.3, 0.004);
+  // Corps principal, ailes, corniche et toits
+  k.box(0.6, 0.2, 0.3, P.snow, 0, B, -0.18, 0.015);
+  for (const x of [-0.36, 0.36]) { k.box(0.16, 0.15, 0.36, P.cream, x, B, -0.15, 0.015); k.hip(0.17, 0.37, 0.06, P.primary, x, B + 0.15, -0.15); }
+  k.box(0.64, 0.022, 0.33, P.stone, 0, B + 0.2, -0.18, 0.006);
+  k.hip(0.56, 0.28, 0.07, P.primary, 0, B + 0.222, -0.18);
+  // Péristyle : marches, colonnes, fronton
+  k.box(0.34, 0.012, 0.09, P.stone, 0, B, 0.0, 0.004); k.box(0.3, 0.012, 0.07, P.stone, 0, B + 0.012, -0.005, 0.004);
+  for (let i = 0; i < 6; i++) k.cyl(0.011, 0.165, P.snow, -0.125 + i * 0.05, B + 0.024, -0.01, 0.01, 10);
+  k.box(0.32, 0.02, 0.06, P.stone, 0, B + 0.188, -0.015, 0.004);
+  k.gable(0.06, 0.32, 0.045, P.stone, 0, B + 0.207, -0.015, Math.PI / 2);
+  k.box(0.05, 0.085, 0.004, P.door, 0, B + 0.024, -0.031, 0);
+  // Beffroi et horloge
+  k.box(0.09, 0.17, 0.09, P.snow, 0, B + 0.22, -0.22, 0.01); k.box(0.1, 0.014, 0.1, P.stone, 0, B + 0.39, -0.22, 0.004);
+  k.hip(0.1, 0.1, 0.07, P.primary, 0, B + 0.404, -0.22); k.cyl(0.003, 0.05, P.gold, 0, B + 0.47, -0.22, 0.003, 6); k.ball(0.007, P.gold, 0, B + 0.52, -0.22);
+  k.disc(0.026, P.snow, 0, B + 0.33, -0.173); k.box(0.002, 0.018, 0.002, P.black, 0, B + 0.336, -0.169, 0); k.box(0.013, 0.002, 0.002, P.black, 0.005, B + 0.33, -0.169, 0);
+  k.disc(0.026, P.snow, 0.047, B + 0.33, -0.22, Math.PI / 2);
+  // Fenêtres (façade et côté droit)
+  for (const x of [-0.25, -0.19, 0.19, 0.25]) for (const y of [B + 0.05, B + 0.12]) k.win(0.026, 0.04, x, y, -0.028, 0, (x * 10 + y * 7) % 2 > 1);
+  for (const x of [-0.4, -0.32, 0.32, 0.4]) for (const y of [B + 0.04, B + 0.095]) k.win(0.024, 0.036, x, y, 0.032, 0, x > 0);
+  for (const z of [-0.27, -0.19, -0.11, -0.03]) for (const y of [B + 0.04, B + 0.095]) k.win(0.024, 0.036, 0.442, y, z, Math.PI / 2, z > -0.15);
+  // Mâts de drapeaux devant la façade
+  const flags = season === "ete" ? [P.fire, P.gold, P.primary] : [P.primary, P.snow, P.fire];
+  flags.forEach((c, i) => { const x = -0.26 + i * 0.03; k.cyl(0.003, 0.16, P.snow, x, B, 0.1, 0.003, 6); k.box(0.035, 0.022, 0.002, c, x + 0.019, B + 0.135, 0.1, 0); });
+  flags.forEach((c, i) => { const x = 0.2 + i * 0.03; k.cyl(0.003, 0.16, P.snow, x, B, 0.1, 0.003, 6); k.box(0.035, 0.022, 0.002, c, x + 0.019, B + 0.135, 0.1, 0); });
+  // Centre de la place : la fontaine, ou le grand sapin à Noël
+  if (season === "noel") xmasTree(k, 0, 0.3);
+  else {
+    k.cyl(0.07, 0.022, P.stone, 0, B, 0.3, 0.07, 20); k.cyl(0.06, 0.024, P.water, 0, B + 0.002, 0.3, 0.06, 20);
+    k.cyl(0.01, 0.06, P.stone, 0, B, 0.3, 0.008, 8); k.cyl(0.028, 0.008, P.stone, 0, B + 0.055, 0.3, 0.028, 14); k.ball(0.012, P.waterL, 0, B + 0.07, 0.3, 1.4);
+  }
+  // Arbres, réverbères, bancs, massifs
+  for (const [x, z] of [[-0.41, 0.41], [0.41, 0.41], [-0.41, 0.2], [0.41, 0.2]] as const) k.tree(x, z, 0.36);
+  for (const [x, z] of [[-0.12, 0.2], [0.12, 0.2], [-0.12, 0.42], [0.12, 0.42]] as const) { k.cyl(0.003, 0.075, P.steel, x, B, z, 0.003, 6); k.ball(0.008, P.gold, x, B + 0.08, z, 1, 0); }
+  for (const x of [-0.22, 0.22]) k.box(0.05, 0.008, 0.016, P.wood, x, B + 0.012, 0.42, 0.002);
+  const bed = season === "paques" ? [0xf6a5c0, P.gold] : [P.fire, P.gold];
+  for (const [x, c] of [[-0.3, bed[0]], [0.3, bed[1]]] as const) {
+    k.box(0.12, 0.01, 0.03, P.soil, x, B, 0.13, 0.003);
+    for (let i = 0; i < 5; i++) k.ball(0.007, i % 2 ? P.snow : c, x - 0.048 + i * 0.024, B + 0.014, 0.13, 1, 0);
+  }
+  if (season) DECOR[season](k);
+}
+
+/** Petite guirlande de fanions entre deux points, à la hauteur y. */
+function bunting(k: Kit, x0: number, z0: number, x1: number, z1: number, y: number, colors: number[]) {
+  const n = Math.max(3, Math.round(Math.hypot(x1 - x0, z1 - z0) / 0.03));
+  for (let i = 0; i <= n; i++) {
+    const t = i / n, sag = Math.sin(t * Math.PI) * 0.015;
+    k.box(0.012, 0.014, 0.002, colors[i % colors.length], x0 + (x1 - x0) * t, y - sag, z0 + (z1 - z0) * t, 0, Math.atan2(x1 - x0, z1 - z0) + Math.PI / 2);
+  }
+}
+
+function xmasTree(k: Kit, x: number, z: number) {
+  k.cyl(0.05, 0.016, P.stone, x, B, z, 0.05, 16);
+  k.cyl(0.008, 0.03, P.wood, x, B + 0.016, z, 0.008, 6);
+  const tiers: [number, number, number][] = [[0.055, 0.07, 0.03], [0.044, 0.065, 0.07], [0.032, 0.06, 0.11], [0.02, 0.05, 0.15]];
+  for (const [r, h, y] of tiers) k.cone(r, h, P.pine, x, B + y, z, 10);
+  k.ball(0.011, P.gold, x, B + 0.205, z, 1, 0);
+  const balls = [P.fire, P.gold, P.primary, P.snow, P.pink];
+  for (let i = 0; i < 14; i++) {
+    const a = i * 2.4, t = (i % 7) / 7, y = B + 0.045 + t * 0.13, r = 0.05 - t * 0.04;
+    k.ball(0.0055, balls[i % balls.length], x + Math.cos(a) * r, y, z + Math.sin(a) * r, 1, 0);
+  }
+  // Cadeaux au pied du sapin
+  for (const [dx, dz, c, w] of [[-0.05, 0.04, P.fire, 0.022], [0.045, 0.045, P.primary, 0.02], [0.0, 0.06, P.gold, 0.018]] as const) {
+    k.box(w, w * 0.8, w, c, x + dx, B + 0.016, z + dz, 0.002); k.box(w + 0.002, 0.004, 0.004, P.snow, x + dx, B + 0.016 + w * 0.8, z + dz, 0);
+  }
+}
+
+const DECOR: Record<Season, (k: Kit) => void> = {
+  halloween(k) {
+    // Citrouilles sur les marches et autour de la place, une grosse sur la fontaine
+    const pumpkin = (x: number, z: number, r: number, y = B) => { k.ball(r, P.orange, x, y + r * 0.7, z, 0.72); k.cyl(r * 0.18, r * 0.5, P.green, x, y + r * 1.25, z, r * 0.12, 5); };
+    for (const [x, z] of [[-0.15, 0.04], [0.15, 0.04], [-0.17, 0.03], [0.17, 0.03], [-0.3, 0.17], [0.3, 0.17], [-0.06, 0.42], [0.06, 0.42], [-0.44, 0.06], [0.44, 0.06]] as const) pumpkin(x, z, 0.014);
+    pumpkin(0, 0.3, 0.03, B + 0.06);
+    // Guirlandes orange et violettes le long de la façade
+    bunting(k, -0.42, 0.06, 0.42, 0.06, B + 0.16, [P.orange, P.violet, P.black]);
+    // Fantômes qui flottent au-dessus de la place
+    for (const [x, z, p] of [[-0.2, 0.28, 3.2], [0.22, 0.32, 4]] as const) {
+      k.motion({ kind: "bob", at: [x, B + 0.2, z], amount: 0.03, period: p }, (m) => {
+        m.ball(0.022, P.snow, 0, 0, 0, 1.2); m.cone(0.024, 0.03, P.snow, 0, -0.04, 0, 8);
+        m.ball(0.004, P.black, -0.007, 0.006, 0.02, 1, 0); m.ball(0.004, P.black, 0.007, 0.006, 0.02, 1, 0);
+      });
+    }
+    // Chauves-souris sur le toit
+    for (const x of [-0.1, 0.12]) { k.box(0.03, 0.004, 0.01, P.black, x, B + 0.31, -0.12, 0); k.ball(0.006, P.black, x, B + 0.312, -0.12, 1, 0); }
+  },
+  noel(k) {
+    // Toits enneigés (un manteau blanc posé sur chaque toit) et corniche
+    k.hip(0.57, 0.29, 0.072, P.snow, 0, B + 0.224, -0.18); k.box(0.64, 0.006, 0.33, P.snow, 0, B + 0.221, -0.18, 0.002);
+    for (const x of [-0.36, 0.36]) k.hip(0.175, 0.375, 0.062, P.snow, x, B + 0.151, -0.15);
+    k.hip(0.104, 0.104, 0.072, P.snow, 0, B + 0.405, -0.22);
+    // Guirlande lumineuse sur la façade et couronne sur la porte
+    bunting(k, -0.42, 0.045, 0.42, 0.045, B + 0.15, [P.fire, P.gold, P.green, P.primary]);
+    k.cyl(0.016, 0.004, P.pine, 0, B + 0.12, -0.026, 0.016, 12); k.ball(0.004, P.fire, 0, B + 0.106, -0.024, 1, 0);
+    // Petits sapins de part et d'autre de l'entrée
+    for (const x of [-0.2, 0.2]) { k.cone(0.02, 0.05, P.pine, x, B, 0.02, 8); k.ball(0.004, P.gold, x, B + 0.052, 0.02, 1, 0); }
+  },
+  paques(k) {
+    // Œufs géants peints sur les pelouses, petits œufs cachés
+    const egg = (x: number, z: number, r: number, c: number, band: number) => {
+      k.ball(r, c, x, B + r * 1.3, z, 1.35, 2);
+      k.cyl(r * 1.01, r * 0.35, band, x, B + r * 1.15, z, r * 1.01, 16);
+    };
+    egg(-0.3, 0.3, 0.035, 0xf6a5c0, 0xfde68a); egg(0.3, 0.3, 0.035, 0xa5d8f3, 0xc4b5fd); egg(0.24, 0.36, 0.022, 0xa7f3d0, 0xf6a5c0);
+    for (let i = 0; i < 12; i++) k.ball(0.007, PASTEL[i % PASTEL.length], -0.4 + (i % 6) * 0.16 + (i > 5 ? 0.06 : 0), B + 0.012, i > 5 ? 0.44 : 0.22, 1.35, 1);
+    // Lapin assis près de la fontaine
+    const bx = -0.1, bz = 0.34;
+    k.ball(0.018, P.snow, bx, B + 0.018, bz, 1.1); k.ball(0.012, P.snow, bx, B + 0.045, bz + 0.008);
+    k.box(0.005, 0.022, 0.003, P.snow, bx - 0.005, B + 0.065, bz + 0.006, 0.002); k.box(0.005, 0.022, 0.003, P.snow, bx + 0.005, B + 0.065, bz + 0.006, 0.002);
+    bunting(k, -0.42, 0.06, 0.42, 0.06, B + 0.16, PASTEL);
+  },
+  ete(k) {
+    // Parasols et buvette sur la place, guirlande de fanions
+    for (const [x, z, c] of [[-0.32, 0.3, P.fire], [0.32, 0.3, P.primary], [-0.24, 0.4, P.gold]] as const) {
+      k.cyl(0.003, 0.07, P.snow, x, B, z, 0.003, 6); k.cone(0.04, 0.02, c, x, B + 0.065, z, 10);
+      k.box(0.03, 0.002, 0.03, P.snow, x, B + 0.03, z, 0.002);
+    }
+    k.box(0.06, 0.04, 0.03, P.snow, 0.28, B, 0.42, 0.004); k.box(0.066, 0.006, 0.036, P.fire, 0.28, B + 0.07, 0.42, 0.002);
+    for (const x of [0.255, 0.305]) k.cyl(0.002, 0.03, P.snow, x, B + 0.04, 0.42, 0.002, 4);
+    bunting(k, -0.42, 0.06, 0.42, 0.06, B + 0.16, [P.fire, P.gold, P.primary, P.green, P.pink]);
+  },
+};
+
 const BUILD: Record<string, (k: Kit) => void> = {
   village(k) {
     k.lot(P.lawn);
@@ -453,20 +587,7 @@ const BUILD: Record<string, (k: Kit) => void> = {
     k.box(0.34, 0.02, 0.3, P.lawnD, 0.26, B, -0.2, 0.008); k.tree(0.28, -0.24, 0.85); k.bush(0.16, -0.08); k.bush(0.4, -0.06);
     k.cyl(0.012, 0.1, P.steelL, 0.3, B + 0.33, 0.26, 0.012, 6); k.cone(0.06, 0.04, P.snow, 0.3, B + 0.42, 0.26, 12);
   },
-  townhall(k) {
-    k.lot(P.pave);
-    k.box(0.8, 0.07, 0.74, P.concrete, 0, B, 0, 0.015); k.box(0.5, 0.045, 0.12, P.stone, 0, B + 0.035, 0.36, 0.01);
-    k.box(0.68, 0.36, 0.52, P.snow, 0, B + 0.07, -0.06, 0.03);
-    for (let i = 0; i < 4; i++) k.cyl(0.03, 0.32, P.snow, -0.21 + i * 0.14, B + 0.07, 0.26, 0.027, 10);
-    k.box(0.74, 0.06, 0.64, P.stone, 0, B + 0.4, -0.02, 0.015);
-    k.hip(0.6, 0.5, 0.26, P.primary, 0, B + 0.46, -0.06);
-    k.box(0.16, 0.22, 0.16, P.snow, 0, B + 0.5, -0.06, 0.02); k.hip(0.2, 0.2, 0.14, P.primary, 0, B + 0.72, -0.06);
-    k.cyl(0.05, 0.012, P.gold, 0, B + 0.6, 0.026, 0.05, 12);
-    k.flag(0, B + 0.86, -0.06, 0.26, P.gold);
-    k.box(0.1, 0.18, 0.012, P.door, 0, B + 0.07, 0.204, 0); k.wins(0.68, 0.52, B + 0.14, 0.2, 1, 0, 0, -0.06, 4);
-    k.win(0.07, 0.11, -0.21, B + 0.24, 0.204, 0, true); k.win(0.07, 0.11, 0.21, B + 0.24, 0.204, 0, true);
-    k.bush(0.42, 0.42); k.bush(-0.42, 0.42); k.tree(0.42, -0.36, 0.7);
-  },
+  townhall(k) { hall(k, null); },
   branch(k) {
     k.lot(P.pave);
     k.tower(0.64, 0.74, 0.6, P.white, P.steelL, 4, 4, 0, -0.04);
@@ -951,13 +1072,6 @@ const EXTRA: Record<string, (k: Kit) => void> = {
     k.box(0.02, 0.07, 0.02, P.teal, -0.3, B, 0.45, 0.004); k.box(0.02, 0.07, 0.02, P.teal, -0.18, B, 0.45, 0.004);
     k.lamp(0.44, 0.44, 0.16); k.bench(0.3, 0.02, Math.PI / 2);
   },
-  townhall(k) {
-    k.disc(0.045, P.snow, 0, B + 0.61, 0.024); k.box(0.004, 0.035, 0.004, P.black, 0, B + 0.61, 0.033, 0);
-    for (const [x, c] of [[-0.3, P.primary], [-0.26, P.snow], [-0.22, P.fire], [0.22, P.primary], [0.26, P.snow], [0.3, P.fire]] as const) k.box(0.035, 0.13, 0.006, c, x, B + 0.2, 0.206, 0);
-    k.lamp(-0.3, 0.44, 0.18); k.lamp(0.3, 0.44, 0.18);
-    k.flowers(-0.16, 0.45, P.fire, 2); k.flowers(0.16, 0.45, P.gold, 2);
-    k.bench(-0.42, 0.2, Math.PI / 2);
-  },
   branch(k) {
     k.box(0.05, 0.22, 0.05, P.primary, 0.4, B, 0.1, 0.008); k.box(0.06, 0.06, 0.06, P.snow, 0.4, B + 0.2, 0.1, 0.008);
     k.mast(0.2, B + 0.82, -0.2, 0.16);
@@ -1189,7 +1303,14 @@ const cache = new Map<string, Model>();
 /** Modèle d'un bâtiment, construit à la première demande puis gardé. */
 export function buildingModel(id: string): Model {
   let m = cache.get(id);
-  if (!m) { const k = new Kit(); (BUILD[id] ?? fallback)(k); EXTRA[id]?.(k); m = k.done(); cache.set(id, m); }
+  if (!m) {
+    const k = new Kit();
+    // « townhall@noel » : la mairie avec son décor de saison
+    const [base, season] = id.split("@") as [string, Season | undefined];
+    if (base === "townhall") hall(k, season ?? null);
+    else { (BUILD[id] ?? fallback)(k); EXTRA[id]?.(k); }
+    m = k.done(); cache.set(id, m);
+  }
   return m;
 }
 

@@ -612,6 +612,9 @@ export default function WikiPage() {
 
           <Sec id="batiments" brief="Tous les bâtiments en images, avec ce qu’ils apportent. Filtrez par catégorie ou cherchez un nom.">
             <BuildingGallery population={population} />
+            <H3>La mairie</H3>
+            <p>La mairie occupe tout l’îlot du centre et loge les {num(STARTING_POPULATION)} premiers habitants. Elle peut être déplacée, pas démolie.</p>
+            <p className="mt-2">Elle se décore toute seule pour les fêtes, selon la date de votre appareil : citrouilles et fantômes pour Halloween (15 octobre au 2 novembre), sapin et toits enneigés pour Noël (1er décembre au 6 janvier), œufs géants pour Pâques (la semaine qui précède jusqu’au lundi de Pâques), parasols et fanions l’été (21 juin au 31 août). C’est seulement un décor : rien ne change dans les règles.</p>
             <H3>La taille des bâtiments</H3>
             <p>Un petit bâtiment tient sur un carreau. Les plus gros en occupent davantage : l’étiquette sombre de chaque fiche le dit.</p>
             <Facts cols={3} items={[

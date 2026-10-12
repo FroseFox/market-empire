@@ -5,6 +5,11 @@ import { isRoad } from "./layout";
 import { FOOD_PER_RESIDENT, SHORTAGE, START_GRANT, STARTING_CASH } from "./config";
 
 const T0 = Date.UTC(2026, 8, 27, 12);
+/** Premier carreau libre de la ville de départ dont le voisin du dessous l'est aussi (la mairie prend l'îlot 13-15). */
+function freeSpot(g: E.GameState): { x: number; y: number } {
+  for (let x = 13; x < 19; x++) for (let y = 13; y < 18; y++) if (E.isTileFree(g, x, y, 1) && E.isTileFree(g, x, y + 1, 1)) return { x, y };
+  throw new Error("aucun carreau libre");
+}
 
 describe("ville de départ (doc Équilibrage §2)", () => {
   const g = newGame(T0);
@@ -132,7 +137,7 @@ describe("carte", () => {
   it("répare une ancienne sauvegarde sans plan", () => {
     const g = newGame(T0);
     const old = { ...g, plots: undefined } as unknown as typeof g;
-    expect(normalize(old).plots.length).toBe(5);
+    expect(normalize(old).plots.length).toBe(4); // mairie (3 × 3), commerce, exploitation, centrale
   });
 });
 
@@ -163,16 +168,17 @@ describe("placement libre", () => {
     expect(build(g, "shop", T0, { x: 4, y: 5 }).ok).toBe(false); // route
     const taken = g.plots[0];
     expect(build(g, "shop", T0, { x: taken.x, y: taken.y }).ok).toBe(false); // occupé
-    const r = build(g, "shop", T0, { x: 13, y: 13 });
+    const at = freeSpot(g), below = { x: at.x, y: at.y + 1 };
+    const r = build(g, "shop", T0, at);
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     g = r.state;
-    expect(g.plots.some((p) => p.id === "shop" && p.x === 13 && p.y === 13)).toBe(true);
-    const m = moveBuilding(g, { x: 13, y: 13 }, { x: 13, y: 14 });
-    expect(m.ok && m.state.plots.some((p) => p.x === 13 && p.y === 14)).toBe(true);
-    expect(moveBuilding(g, { x: 13, y: 13 }, { x: 12, y: 12 }).ok).toBe(false); // route (12 % 4 == 0)
-    const d = demolish(g, "shop", T0, { x: 13, y: 13 });
-    expect(d.ok && d.state.plots.some((p) => p.x === 13 && p.y === 13)).toBe(false);
+    expect(g.plots.some((p) => p.id === "shop" && p.x === at.x && p.y === at.y)).toBe(true);
+    const m = moveBuilding(g, at, below);
+    expect(m.ok && m.state.plots.some((p) => p.x === below.x && p.y === below.y)).toBe(true);
+    expect(moveBuilding(g, at, { x: 12, y: 12 }).ok).toBe(false); // route (12 % 4 == 0)
+    const d = demolish(g, "shop", T0, at);
+    expect(d.ok && d.state.plots.some((p) => p.x === at.x && p.y === at.y)).toBe(false);
   });
 });
 
@@ -260,13 +266,14 @@ describe("rénovation, prévisions, audit", () => {
   const ok = (r: E.ActionResult) => { if (!r.ok) throw new Error(r.error); return r.state; };
   it("améliore un bâtiment sur place pour la différence de prix, après la recherche", () => {
     let g = { ...newGame(T0), cash: 500_000, population: 900 };
-    g = ok(build(g, "house_s", T0, { x: 13, y: 13 }));
-    expect(E.upgrade(g, { x: 13, y: 13 }, T0).ok).toBe(false); // recherche manquante
+    const at = freeSpot(g);
+    g = ok(build(g, "house_s", T0, at));
+    expect(E.upgrade(g, at, T0).ok).toBe(false); // recherche manquante
     g = ok(doResearch(g, "city_upgrade", T0));
     const cash = g.cash, worth = g.cash + computeCity(g).assetValue;
-    g = ok(E.upgrade(g, { x: 13, y: 13 }, T0));
+    g = ok(E.upgrade(g, at, T0));
     expect(g.cash).toBe(cash - 40_000);
-    expect(g.plots.find((p) => p.x === 13 && p.y === 13)?.id).toBe("house_m");
+    expect(g.plots.find((p) => p.x === at.x && p.y === at.y)?.id).toBe("house_m");
     expect(g.buildings.house_s).toBeUndefined();
     expect(g.cash + computeCity(g).assetValue).toBeCloseTo(worth, 2); // patrimoine inchangé
     expect(normalize(g)).toBe(g);
@@ -275,7 +282,7 @@ describe("rénovation, prévisions, audit", () => {
     const before = g.cash + computeCity(g).assetValue;
     g = ok(E.upgrade(g, shop, T0));
     expect(g.cash + computeCity(g).assetValue).toBeCloseTo(before, 2);
-    expect(E.upgrade(g, { x: 13, y: 13 }, T0).ok).toBe(false); // house_l : 2 000 habitants requis
+    expect(E.upgrade(g, at, T0).ok).toBe(false); // house_l : 2 000 habitants requis
   });
   it("la prévision suit ce que feront vraiment les prochains jours", () => {
     let g = ok(build({ ...newGame(T0), cash: 500_000 }, "house_s", T0));
@@ -504,7 +511,7 @@ describe("territoire", () => {
   it("s'agrandit contre paiement, à partir d'un certain rang, et compte dans le patrimoine", () => {
     let g = { ...newGame(T0), cash: 15_000_000 };
     expect(E.mapSize(g)).toBe(8);
-    expect(E.landUse(g)).toEqual({ used: g.plots.length, total: 25 });
+    expect(E.landUse(g)).toEqual({ used: 9 + g.plots.length - 1, total: 25 }); // la mairie occupe 9 carreaux
     expect(g.plots.every((p) => E.isTileFree({ plots: [], territory: 0 }, p.x, p.y))).toBe(true); // la ville de départ tient dans la petite carte
     expect(build(g, "house_s", T0, { x: 10, y: 13 }).ok).toBe(false);   // hors de la carte de départ
     expect(E.expandTerritory({ ...g, cash: 100 }, T0).ok).toBe(false);  // pas assez d'argent
@@ -546,7 +553,7 @@ describe("territoire", () => {
     let g = { ...newGame(T0), cash: 1e9 };
     let n = 0;
     for (;;) { const r = build(g, "house_s", T0); if (!r.ok) { expect(r.error).toMatch(/Plus de place/); break; } g = r.state; n++; }
-    expect(g.plots.length).toBe(25);
+    expect(g.plots.length).toBe(25 - 9 + 1); // la mairie occupe 9 carreaux à elle seule
     expect(g.buildings.house_s).toBe(n);
   });
 });
@@ -634,5 +641,51 @@ describe("lisibilité : fonctions ouvertes, aperçu, que faire maintenant", () =
     const rich = { ...g, population: 500 };
     expect(nextActions(rich, computeCity(rich), {})[0].id).toBe("claim");
     for (const x of nextActions(rich, computeCity(rich), {}, 20)) expect(x.title + x.text).not.toMatch(/achet|vend(ez|re) (des|une) action/i);
+  });
+});
+
+describe("grande mairie", () => {
+  const legacy = (): E.GameState => ({
+    ...newGame(T0), territory: 1,
+    buildings: { village: 1, townhall: 1, shop: 2, house_s: 1, farm_s: 1, power_s: 1 },
+    plots: [{ id: "village", x: 13, y: 13 }, { id: "townhall", x: 14, y: 13 }, { id: "shop", x: 15, y: 15 }, { id: "house_s", x: 13, y: 15 },
+      { id: "shop", x: 17, y: 13 }, { id: "farm_s", x: 17, y: 17 }, { id: "power_s", x: 18, y: 17 }],
+  });
+
+  it("une nouvelle partie commence avec la mairie sur l'îlot du centre, sans village", () => {
+    const g = newGame(T0);
+    expect(g.plots.find((p) => p.id === "townhall")).toEqual({ id: "townhall", x: 13, y: 13, s: 3 });
+    expect(g.buildings.village).toBeUndefined();
+    expect(computeCity(g).housing).toBe(250);
+  });
+
+  it("une ancienne partie est convertie sans rien perdre", () => {
+    const old = legacy(), before = computeCity(old);
+    const g = normalize(old);
+    expect(g.plots.filter((p) => p.id === "townhall")).toEqual([{ id: "townhall", x: 13, y: 13, s: 3 }]);
+    expect(g.plots.some((p) => p.id === "village")).toBe(false);
+    expect(g.buildings.village).toBeUndefined();
+    // Les deux bâtiments qui étaient sur l'îlot ont été reposés ailleurs
+    expect(g.buildings.shop).toBe(2); expect(g.buildings.house_s).toBe(1);
+    expect(g.plots.filter((p) => p.id === "shop").length).toBe(2);
+    expect(E.landUse(g).used).toBe(9 + 5);
+    const after = computeCity(g);
+    expect(after.housing).toBe(250 + 100); // les 250 logements du village sont dans la mairie, plus le petit quartier
+    expect(after.jobs).toBe(before.jobs);
+    expect(g.cash).toBe(old.cash);
+    expect(normalize(g)).toBe(g); // une seule fois
+  });
+
+  it("faute de place, ce qui était sur l'îlot est racheté à son prix", () => {
+    let g = { ...newGame(T0), cash: 1e9 };
+    for (;;) { const r = build(g, "house_s", T0); if (!r.ok) break; g = r.state; }
+    // Ancien plan : petite mairie et village, des quartiers sur le reste de l'îlot
+    const hall = g.plots.find((p) => p.id === "townhall")!;
+    const old: E.GameState = { ...g, buildings: { ...g.buildings, village: 1, house_s: g.buildings.house_s + 7 },
+      plots: [...g.plots.filter((p) => p !== hall), { id: "townhall", x: 13, y: 13 }, { id: "village", x: 14, y: 13 },
+        ...[[15, 13], [13, 14], [14, 14], [15, 14], [13, 15], [14, 15], [15, 15]].map(([x, y]) => ({ id: "house_s", x, y }))] };
+    const n = normalize(old);
+    expect(n.buildings.house_s).toBe(old.buildings.house_s - 7);
+    expect(n.cash).toBe(old.cash + 7 * 20_000);
   });
 });

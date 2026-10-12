@@ -7,6 +7,7 @@ import * as THREE from "three";
 import { BUILDING_BY_ID } from "@/lib/game/config";
 import { canPlace, footprint, isBuildable, isRoad, mapBounds, MAP_SIZE, MAX_MAP_SIZE, occupancy, sideOf, type Plot } from "@/lib/game/layout";
 import { CAT_COLOR, MARKER_COLOR, markerTip, nightFactor, type CityMarker, type CityMode, type CitySign, type Light, type MarkerKind } from "@/components/IsoCity";
+import { SEASON_LABEL, seasonOf, type Season } from "@/lib/game/season";
 import { buildingModel, propModel, treeModel, type Motion, type V3 } from "./models";
 
 export interface CityTip { left: number; top: number; title: string; text: string; warn?: boolean }
@@ -114,6 +115,8 @@ export class CityEngine {
   private glow: THREE.InstancedMesh | null = null;
   private seen: Set<string> | null = null; private births = new Map<string, number>(); private growUntil = 0;
   private hidden: string | null = null;
+  /** Décor de saison de la mairie (selon la date du joueur), vérifié toutes les minutes. */
+  private season: Season | null = seasonOf();
   // Vue
   private frameOpts: CityFrame = { height: 440, compact: false, interactive: false, initialZoom: 1, padTop: 0, padBottom: 0 };
   private live: CityLive = { mode: null, selected: null, tone: "primary", markers: [], signs: {}, layers: false, light: "auto" };
@@ -324,7 +327,9 @@ export class CityEngine {
 
     // ─── Bâtiments : une série d'instances par type ───
     const byId = new Map<string, Plot[]>();
-    for (const p of this.plots) { const l = byId.get(p.id); if (l) l.push(p); else byId.set(p.id, [p]); }
+    this.season = seasonOf();
+    const modelOf = (p: Plot) => (p.id === "townhall" && this.season ? `townhall@${this.season}` : p.id);
+    for (const p of this.plots) { const k = modelOf(p), l = byId.get(k); if (l) l.push(p); else byId.set(k, [p]); }
     for (const [id, list] of byId) {
       const model = buildingModel(id);
       const solid = new THREE.InstancedMesh(model.solid, this.bMat, list.length);
@@ -745,6 +750,8 @@ export class CityEngine {
       this.applyView();
     }
     if (t - this.nightAt > 60_000 || this.nightSeen !== this.live.light || this.nightDrawn < 0) {
+      // Nouvelle saison (la page est restée ouverte d'un jour à l'autre) : la mairie change de décor
+      if (seasonOf() !== this.season && this.nightDrawn >= 0) { this.rebuild(); this.applyLive(); }
       this.night = this.live.light === "day" ? 0 : nightFactor(); this.nightAt = t; this.nightSeen = this.live.light;
     }
     if (this.night !== this.nightDrawn) this.applyNight();
@@ -884,7 +891,8 @@ export class CityEngine {
     if (p && !this.live.mode) {
       const [ax, ay] = this.project(ctr(p, "x"), topOf(p) + 0.06, ctr(p, "y"));
       const mk = this.markerMap.get(`${p.x},${p.y}`), sg = this.live.signs[`${p.x},${p.y}`];
-      this.cb.tip({ left: ax, top: ay - (mk ? 34 : sg ? 30 : 6), title: sg?.title ?? b?.name ?? p.id, text: (mk && markerTip(mk)) ?? sg?.text ?? b?.description ?? "", warn: !!mk });
+      const name = p.id === "townhall" && this.season ? `${b?.name} · décor ${SEASON_LABEL[this.season] === "Été" ? "d'été" : `de ${SEASON_LABEL[this.season]}`}` : b?.name;
+      this.cb.tip({ left: ax, top: ay - (mk ? 34 : sg ? 30 : 6), title: sg?.title ?? name ?? p.id, text: (mk && markerTip(mk)) ?? sg?.text ?? b?.description ?? "", warn: !!mk });
     } else this.cb.tip(null);
     this.refreshHover(); this.draw();
   };
