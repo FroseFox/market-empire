@@ -104,10 +104,17 @@ function NextDay() {
   useEffect(() => { const id = setInterval(() => setNow(Date.now()), 15_000); return () => clearInterval(id); }, []);
   const mins = Math.max(0, Math.ceil((lastTick + DAY_MS - now) / 60_000));
   return (
-    <div className="hidden md:flex items-center gap-2 text-[12px] text-muted">
-      <Clock size={14} />
-      <span><b className="text-ink font-semibold">Jour {day}</b> · prochain jour dans {mins} min</span>
-    </div>
+    <>
+      <div className="hidden md:flex items-center gap-2 text-[12px] text-muted">
+        <Clock size={14} />
+        <span><b className="text-ink font-semibold">Jour {day}</b> · prochain jour dans {mins} min</span>
+      </div>
+      {/* Téléphone : la même information en court, à côté du logo */}
+      <div className="flex md:hidden shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-slate-100 px-2 max-[359px]:px-1.5 py-1 text-[11px] text-muted tabular" title={`Jour ${day} · prochain jour dans ${mins} min`}>
+        <Clock size={12} className="max-[359px]:hidden" />
+        <span><b className="text-ink font-semibold">J{day}</b> · {mins} min</span>
+      </div>
+    </>
   );
 }
 
