@@ -89,16 +89,21 @@ export function placeTile(plots: Plot[], buildingId: string, size = MAP_SIZE, s 
   return best ? { x: best.x, y: best.y } : null;
 }
 
+/** Îlot de la mairie : le seul îlot complet (3 × 3) du territoire de départ, au centre de la ville. */
+export const HALL_AT = { x: CENTER - 3, y: CENTER - 3 } as const;
+
 /** Bâtiment neuf posé à cet angle, à la taille de son type. */
 export const newPlot = (id: string, x: number, y: number): Plot => { const s = footprint(id); return s > 1 ? { id, x, y, s } : { id, x, y }; };
 
 /** Reconstruit un plan à partir des bâtiments (anciennes sauvegardes). */
 export function layoutFrom(buildings: Record<string, number>, size = MAP_SIZE): Plot[] {
   const plots: Plot[] = [];
-  const order = ["village", "townhall", ...Object.keys(buildings).filter((k) => k !== "village" && k !== "townhall")];
+  const order = ["townhall", "village", ...Object.keys(buildings).filter((k) => k !== "village" && k !== "townhall")];
   for (const id of order) {
     for (let i = 0; i < (buildings[id] ?? 0); i++) {
-      const t = placeTile(plots, id, size);
+      // La mairie va sur son îlot du centre
+      const hall = id === "townhall" && i === 0 && canPlace(occupancy(plots), HALL_AT.x, HALL_AT.y, footprint(id), size);
+      const t = hall ? { ...HALL_AT } : placeTile(plots, id, size);
       if (t) plots.push(newPlot(id, t.x, t.y));
     }
   }

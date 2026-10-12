@@ -2,7 +2,7 @@
 // Règle : une pastille se pose sur un bâtiment DU TYPE CONCERNÉ par le problème
 // (énergie → centrales, nourriture → exploitations, logements → quartiers, postes vacants → lieux de travail,
 // équipement public → équipements de ce service). S'il n'existe aucun bâtiment de ce type, le problème
-// concerne la ville entière : la pastille se pose sur la mairie (à défaut, le village d'origine).
+// concerne la ville entière : la pastille se pose sur la mairie (à défaut, le village d'origine des anciennes villes publiées).
 import type { CityMarker, MarkerKind } from "@/components/IsoCity";
 import { BUILDING_BY_ID, SERVICES, SERVICE_IDS, type BuildingType } from "./config";
 import type { CityStats } from "./engine";

@@ -25,7 +25,8 @@ describe("rythme de progression de la ville (robot)", () => {
     // et se retrouvait 150 fois à court d'énergie ou de nourriture sans pouvoir payer de quoi en produire.
     const short = (from: number, to: number) => days.slice(from, to).filter((d) => d.shortage).length / (to - from);
     expect(short(0, 72)).toBeLessThan(0.2);
-    expect(short(72, 900)).toBeLessThan(0.2);
+    // Jusqu'au dernier rang : ensuite la plus grande carte est pleine, et le robot ne sait pas réorganiser sa ville
+    expect(short(72, reached(CITY_RANKS.length - 1))).toBeLessThan(0.2);
     expect(stuck).toBeLessThan(40);
   });
   it("un joueur qui passe quatre fois par jour construit à la plupart de ses passages la première semaine", () => {

@@ -299,17 +299,18 @@ export const BUILDINGS: BuildingType[] = [
   { id: "hospital", size: 2, name: "Hôpital", category: "public", cost: 450_000, jobs: 250, energyUse: 40, service: "hospital", serves: 24_000, unlockPop: 5_000, description: "Soigne 24 000 habitants" },
 
   // 🏛️ Bâtiments de départ (non constructibles)
-  { id: "townhall", name: "Mairie", category: "civic", cost: 30_000, jobs: 30, energyUse: 5, buildable: false, description: "Administration de la ville" },
+  // Grande mairie : tout l'îlot du centre, et les logements du village d'origine (qu'elle remplace) autour de sa place
+  { id: "townhall", size: 3, name: "Mairie", category: "civic", cost: 80_000, housing: 250, jobs: 30, energyUse: 5, buildable: false, description: "Cœur de la ville : administration et 250 logements autour de la place" },
   // 🏢 Site d'une entreprise implantée : un par entreprise, posé par le jeu (ses effets viennent de BRANCH_EFFECTS)
   { id: "branch", name: "Site d'entreprise", category: "services", cost: 0, buildable: false, description: "Entreprise dont vous êtes actionnaire" },
+  // Ancien bâtiment de départ, remplacé par la grande mairie (les parties d'avant sont converties à l'ouverture)
   { id: "village", name: "Village d'origine", category: "housing", cost: 50_000, housing: 250, buildable: false, description: "250 logements" },
 ];
 
 export const BUILDING_BY_ID: Record<string, BuildingType> = Object.fromEntries(BUILDINGS.map((b) => [b.id, b]));
 
-/** Ville de départ : 250 habitants, 250 logements, 150 emplois (doc §2). */
+/** Ville de départ : 250 habitants, 250 logements (dans la mairie), 150 emplois (doc §2). */
 export const STARTING_BUILDINGS: Record<string, number> = {
-  village: 1,
   townhall: 1,
   shop: 1,
   farm_s: 1,

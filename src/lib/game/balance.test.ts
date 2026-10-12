@@ -29,17 +29,17 @@ describe("équilibrage : le dernier rang est atteignable par une ville saine", (
   };
 
   it("ville de finance et de technologie", () => {
-    healthy({ townhall: 1, village: 1, house_tower: 8, hospital: 18, park_l: 21, university: 11, police: 24,
+    healthy({ townhall: 1, house_tower: 8, hospital: 18, park_l: 21, university: 11, police: 24,
       farm_l: 13, power_l: 24, tech: 30, bizdistrict: 3, bank: 360 }, top.pop + 20_000);
   });
 
   it("ville industrielle", () => {
-    healthy({ townhall: 1, village: 1, house_tower: 8, hospital: 18, park_l: 30, university: 11, police: 24, recycling: 40,
+    healthy({ townhall: 1, house_tower: 8, hospital: 18, park_l: 30, university: 11, police: 24, recycling: 40,
       farm_l: 13, power_l: 28, factory_l: 32, bank: 70 }, top.pop + 20_000);
   });
 
   it("ville de tourisme et de commerce", () => {
-    healthy({ townhall: 1, village: 1, house_tower: 8, hospital: 18, park_l: 21, university: 11, police: 24, recycling: 20,
-      farm_l: 13, power_l: 24, themepark: 40, stadium: 6, hotel: 150, museum: 60, market: 110 }, top.pop + 20_000);
+    healthy({ townhall: 1, house_tower: 8, hospital: 18, park_l: 21, university: 11, police: 24, recycling: 20,
+      farm_l: 13, power_l: 24, themepark: 40, stadium: 6, hotel: 150, museum: 60, market: 100 }, top.pop + 20_000);
   });
 });

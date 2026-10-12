@@ -11,7 +11,7 @@ import {
   STARTING_BUILDINGS, STARTING_CASH, STARTING_POPULATION, START_GRANT, TAX_PER_RESIDENT, TRADE_FEE_MIN, TRADE_FEE_RATE,
   type BuildingType, type Category, type Goal, type ServiceId, type Specialty,
 } from "./config";
-import { buildableCount, canPlace, footprint, layoutFrom, mapBounds, newPlot, occupancy, placeTile, plotAt, sideOf, type Plot } from "./layout";
+import { HALL_AT, buildableCount, canPlace, footprint, layoutFrom, mapBounds, newPlot, occupancy, placeTile, plotAt, sideOf, type Plot } from "./layout";
 import { HUBS, HUB_BY_NAME, PLAYABLE, countryBonus, countryPrice, countrySpecialty, type Hub } from "../world/countries";
 import { ASSET_BY_SYMBOL, familyOf, regionOf, type Asset } from "../market/universe";
 import { RESEARCH_BY_ID, RETIRED_RESEARCH, STARTING_RESEARCH, researchFx } from "./research";
@@ -1257,6 +1257,27 @@ function removePlot(plots: Plot[], id: string): Plot[] {
   return i < 0 ? plots : [...plots.slice(0, i), ...plots.slice(i + 1)];
 }
 
+/** Grande mairie : elle prend l'îlot du centre (3 × 3) et loge les 250 habitants du village d'origine, qui disparaît.
+ *  Ce qui occupait l'îlot est reposé ailleurs sur le territoire ; s'il n'y a vraiment plus de place, il est racheté à son prix.
+ *  Ni habitant, ni emploi, ni euro de patrimoine n'est perdu. */
+export function bigHall(state: GameState): GameState {
+  const size = mapSize(state), hall = newPlot("townhall", HALL_AT.x, HALL_AT.y), s = sideOf(hall);
+  const inHall = (p: Plot) => p.x < HALL_AT.x + s && p.x + sideOf(p) > HALL_AT.x && p.y < HALL_AT.y + s && p.y + sideOf(p) > HALL_AT.y;
+  const rest = state.plots.filter((p) => p.id !== "village" && p.id !== "townhall");
+  const plots = [...rest.filter((p) => !inHall(p)), hall];
+  const buildings: Record<string, number> = { ...state.buildings, townhall: 1 };
+  delete buildings.village;
+  let cash = state.cash;
+  for (const p of rest.filter(inHall)) {
+    const t = placeTile(plots, p.id, size, sideOf(p));
+    if (t) { plots.push({ ...p, x: t.x, y: t.y }); continue; }
+    buildings[p.id] = (buildings[p.id] ?? 1) - 1;
+    if (buildings[p.id] <= 0) delete buildings[p.id];
+    cash += BUILDING_BY_ID[p.id]?.cost ?? 0;
+  }
+  return { ...state, buildings, plots, cash: round2(cash) };
+}
+
 /** Répare une sauvegarde : plan manquant ou incohérent avec les bâtiments. */
 export function normalize(input: GameState): GameState {
   let state = input;
@@ -1295,6 +1316,8 @@ export function normalize(input: GameState): GameState {
     const refund = state.research.reduce((a, r) => a + (RESEARCH_BY_ID[r] ? 0 : RETIRED_RESEARCH[r] ?? 0), 0);
     state = { ...state, research: state.research.filter((r) => RESEARCH_BY_ID[r]), cash: round2(state.cash + refund) };
   }
+  // Parties d'avant la grande mairie : mairie d'un carreau et village d'origine
+  if (Array.isArray(state.plots) && (state.buildings.village || state.plots.some((p) => p.id === "village" || (p.id === "townhall" && sideOf(p) !== footprint("townhall"))))) state = bigHall(state);
   // Une entreprise implantée = un bâtiment « branch » (les parties d'avant ce bâtiment n'en ont pas encore)
   const sites = state.branches?.length ?? 0;
   if ((state.buildings.branch ?? 0) !== sites) {
