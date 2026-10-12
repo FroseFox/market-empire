@@ -138,7 +138,7 @@ export default function CityPage() {
         setSelected(null);
         const off = mode?.kind === "place" && mode.id === id;
         setMode(off ? null : { kind: "place", id });
-        if (!off && small) setTool(null); // petit écran : on replie la palette pour voir la carte
+        if (!off) setTool(null); // on replie la palette pour voir toute la carte (le bandeau du haut garde le bâtiment choisi)
       }} />;
   } else if (tool === "goals") {
     dock = <DockPanel title="Progression de la ville" onClose={() => setTool(null)}><Progression city={city} population={game.population} goals={goals} onClaim={claimGoal} /></DockPanel>;

@@ -95,6 +95,8 @@ export class CityEngine {
   private selMat = new THREE.MeshBasicMaterial({ color: 0x2563eb, transparent: true, opacity: 0.2, depthWrite: false });
   private ringMat = new THREE.MeshBasicMaterial({ color: 0x2563eb });
   private layerMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, depthWrite: false });
+  /** Hors du territoire : le sol est un peu assombri, pour qu'on voie d'un coup d'œil où s'arrête la ville. */
+  private outMat = new THREE.MeshBasicMaterial({ color: 0x0f172a, transparent: true, opacity: 0.16, depthWrite: false });
   // Objets persistants
   private land: THREE.Mesh; private hover: THREE.Mesh; private sel: THREE.Mesh; private ring: THREE.Mesh;
   private ghost = new THREE.Mesh(new THREE.BufferGeometry(), this.ghostMat);
@@ -122,6 +124,11 @@ export class CityEngine {
   private framed = false;
   private night = 0; private nightAt = 0; private nightSeen: Light = "auto"; private nightDrawn = -1;
   private hoverTile: { x: number; y: number } | null = null;
+  /** Point du sol sous le pointeur (fractionnaire) : sert à centrer un grand bâtiment sous le doigt. */
+  private hoverPt: { x: number; z: number } | null = null;
+  /** Orientation de la caméra (angle autour de la ville) : on la tourne par quarts de tour pour voir derrière les tours. */
+  private az = Math.PI / 4; private azGoal = Math.PI / 4;
+  private rx = R2; private rz = -R2; private fx = R2; private fz = R2;
   // Boucle
   private raf = 0; private onScreen = true; private lastDraw = 0; private disposed = false;
   private reduce = false; private lite = false; private slowFrames = 0; private prevT = 0; private told = false;
@@ -191,6 +198,8 @@ export class CityEngine {
     let y0 = Math.min(...ys, MAP_SIZE / 2 - span) - pad, y1 = Math.max(...ys, MAP_SIZE / 2 + span) + pad;
     const { lo, hi } = mapBounds(mapSize);
     x0 = Math.max(lo, x0); y0 = Math.max(lo, y0); x1 = Math.min(hi - 1, x1); y1 = Math.min(hi - 1, y1);
+    // Dans sa propre ville, on voit et on peut construire sur tout le territoire, même là où il n'y a encore rien
+    if (f.interactive) { x0 = lo; y0 = lo; x1 = hi - 1; y1 = hi - 1; }
     this.x0 = Math.floor(x0 / 4) * 4; this.y0 = Math.floor(y0 / 4) * 4;
     this.x1 = Math.min(hi - 1, Math.ceil(x1 / 4) * 4); this.y1 = Math.min(hi - 1, Math.ceil(y1 / 4) * 4);
     this.byTile = occupancy(plots);
@@ -397,6 +406,24 @@ export class CityEngine {
       this.spinMesh.frustumCulled = false; this.spinMesh.castShadow = true; this.world.add(this.spinMesh);
     }
 
+    // ─── Limites du territoire : un liseré blanc bordé de bleu autour des carreaux constructibles, le dehors assombri ───
+    {
+      const { lo, hi } = mapBounds(this.mapSize), a = lo + 1, b = hi - 1, line = new Flat(), y = 0.024;
+      const frame = (w: number, color: number, inset = 0) => {
+        const o = a - inset, e = b + inset;
+        line.quad(o - w, o - w, e + w, o, y, color); line.quad(o - w, e, e + w, e + w, y, color);
+        line.quad(o - w, o, o, e, y, color); line.quad(e, o, e + w, e, y, color);
+      };
+      frame(0.16, 0xffffff, 0.04); frame(0.07, 0x2563eb, 0.2);
+      this.own(line.geometry(), this.gMat).renderOrder = 1;
+      if (this.frameOpts.interactive) {
+        const out = new Flat(), far = 260, yy = 0.03;
+        out.quad(a - far, a - far, b + far, a - 0.2, yy, 0); out.quad(a - far, b + 0.2, b + far, b + far, yy, 0);
+        out.quad(a - far, a - 0.2, a - 0.2, b + 0.2, yy, 0); out.quad(b + 0.2, a - 0.2, b + far, b + 0.2, yy, 0);
+        const m = this.own(out.geometry(), this.outMat, false); m.renderOrder = 1;
+      }
+    }
+
     // ─── Calque « Quartiers » : une dalle de couleur par bâtiment ───
     if (this.plots.length) {
       this.layerTiles = new THREE.InstancedMesh(this.plane, this.layerMat, this.plots.length);
@@ -437,7 +464,10 @@ export class CityEngine {
     if (l.mode && !this.modeGrid) this.buildModeGrid();
     if (this.modeGrid) this.modeGrid.visible = !!l.mode;
     if (this.layerTiles) this.layerTiles.visible = l.layers;
-    this.bMat.transparent = l.layers; this.bMat.opacity = l.layers ? 0.45 : 1; this.bMat.needsUpdate = true;
+    // Calque, ou bâtiment à poser : les bâtiments deviennent translucides, une tour ne cache plus les carreaux derrière elle
+    const see = l.layers || !!l.mode;
+    if (this.bMat.transparent !== see) { this.bMat.transparent = see; this.bMat.needsUpdate = true; }
+    this.bMat.opacity = l.layers ? 0.45 : l.mode ? 0.55 : 1;
     // Bâtiment en cours de déplacement : estompé à sa place d'origine
     const from = l.mode?.kind === "move" ? this.byTile.get(`${l.mode.from.x},${l.mode.from.y}`) : undefined;
     const hideKey = from ? keyOf(from) : null;
@@ -514,6 +544,7 @@ export class CityEngine {
     if (m) {
       const moving = m.kind === "move" ? this.byTile.get(`${m.from.x},${m.from.y}`) : undefined;
       w = moving ? sideOf(moving) : footprint(m.id);
+      ({ x, y } = this.anchor(w, moving));
       const free = canPlace(this.byTile, x, y, w, this.mapSize, moving), back = !!moving && moving.x === x && moving.y === y;
       const ok = free || back;
       this.hoverMat.color.set(ok ? 0x10b981 : 0xef4444); this.hoverMat.opacity = ok ? 0.45 : 0.35; this.hover.visible = true;
@@ -523,6 +554,27 @@ export class CityEngine {
       this.hoverMat.color.set(this.live.tone === "danger" ? 0xef4444 : 0x2563eb); this.hoverMat.opacity = this.live.tone === "danger" ? 0.28 : 0.22; this.hover.visible = true;
     }
     this.hover.position.set(x + w / 2, 0.056, y + w / 2); this.hover.scale.set(w, 1, w);
+  }
+
+  /** Carreau d'angle où poser un bâtiment de côté `w` sous le pointeur. Le bâtiment est centré sous le doigt ;
+   *  si ça ne tient pas, on prend l'emplacement libre le plus proche du pointeur (un 2 × 2 se cale tout seul dans
+   *  son îlot au lieu de déborder sur la route, et viser la route juste à côté d'un îlot libre suffit). */
+  private anchor(w: number, moving?: Plot): { x: number; y: number } {
+    const hv = this.hoverTile!, pt = this.hoverPt ?? { x: hv.x + 0.5, z: hv.y + 0.5 };
+    const centred = { x: Math.round(pt.x - w / 2), y: Math.round(pt.z - w / 2) };
+    if (w === 1 && canPlace(this.byTile, hv.x, hv.y, 1, this.mapSize, moving)) return { x: hv.x, y: hv.y };
+    let best: { x: number; y: number } | null = null, bestD = Infinity;
+    // Emplacements dont le centre est à moins d'un carreau et demi du pointeur : viser la route à côté d'un îlot
+    // suffit pour y poser le bâtiment
+    const reach = 1.6, lx = Math.floor(pt.x - w / 2 - reach), hx = Math.ceil(pt.x - w / 2 + reach), ly = Math.floor(pt.z - w / 2 - reach), hy = Math.ceil(pt.z - w / 2 + reach);
+    for (let x = lx; x <= hx; x++) for (let y = ly; y <= hy; y++) {
+      if (Math.hypot(x + w / 2 - pt.x, y + w / 2 - pt.z) > reach + (w - 1) / 2) continue;
+      const ok = canPlace(this.byTile, x, y, w, this.mapSize, moving) || (!!moving && moving.x === x && moving.y === y);
+      if (!ok) continue;
+      const d = Math.hypot(x + w / 2 - pt.x, y + w / 2 - pt.z);
+      if (d < bestD) { bestD = d; best = { x, y }; }
+    }
+    return best ?? (w === 1 ? { x: hv.x, y: hv.y } : centred);
   }
 
   // ─── Indicateurs et enseignes : de simples éléments HTML posés au-dessus des bâtiments ───
@@ -579,14 +631,20 @@ export class CityEngine {
     const dpr = this.lite ? 1 : Math.max(1, Math.min(window.devicePixelRatio || 1, 2, Math.sqrt(3_200_000 / (this.W * this.H))));
     this.renderer.setPixelRatio(dpr); this.renderer.setSize(this.W, this.H, false);
     this.canvas.style.width = `${this.W}px`; this.canvas.style.height = `${this.H}px`;
+    this.computeBase();
+    this.applyView();
+  }
+
+  /** Cadrage de base : l'échelle qui fait tenir la ville, et le point visé (il dépend de l'orientation de la caméra). */
+  private computeBase() {
+    const f = this.frameOpts;
     const n = this.x1 + 1 - this.x0 + (this.y1 + 1 - this.y0), allow = (f.compact ? 1 : 1.8) * COS;
     const spanR = n * R2, spanF = n * R2 * SIN + allow;
     const usable = this.H - f.padTop - f.padBottom >= 160, top = usable ? f.padTop : 0, Ha = usable ? this.H - f.padTop - f.padBottom : this.H;
     const u = Math.max(spanR / Math.max(40, this.W - 24), spanF / Math.max(40, Ha - 16));
     const cx = (this.x0 + this.x1 + 1) / 2, cz = (this.y0 + this.y1 + 1) / 2;
     const k = ((top + Ha / 2 + allow / u / 2 - this.H / 2) * u) / SIN;
-    this.base = { u, tx: cx - k * R2, tz: cz - k * R2 };
-    this.applyView();
+    this.base = { u, tx: cx - k * this.fx, tz: cz - k * this.fz };
   }
 
   /** Zoom le plus fort : au moins ×4, et toujours assez pour voir un bâtiment de près (écrans étroits). */
@@ -609,7 +667,7 @@ export class CityEngine {
     if (cx !== this.tx || cz !== this.tz) { v.ox = cx - this.base.tx; v.oz = cz - this.base.tz; this.tx = cx; this.tz = cz; }
     const D = 220;
     this.cam.left = (-this.W * this.u) / 2; this.cam.right = (this.W * this.u) / 2; this.cam.top = (this.H * this.u) / 2; this.cam.bottom = (-this.H * this.u) / 2;
-    this.cam.position.set(this.tx + D * COS * R2, D * SIN, this.tz + D * COS * R2); this.cam.lookAt(this.tx, 0, this.tz); this.cam.updateProjectionMatrix();
+    this.cam.position.set(this.tx + D * COS * this.fx, D * SIN, this.tz + D * COS * this.fz); this.cam.lookAt(this.tx, 0, this.tz); this.cam.updateProjectionMatrix();
     // Le soleil suit la vue : l'ombre ne couvre que ce qui est à l'écran
     const half = Math.max(6, Math.min(70, Math.max(this.W, this.H) * this.u * 0.62 + 3));
     const sc = this.sun.shadow.camera; sc.left = -half; sc.right = half; sc.top = half; sc.bottom = -half; sc.near = 1; sc.far = 150; sc.updateProjectionMatrix();
@@ -620,23 +678,23 @@ export class CityEngine {
 
   /** Décale le contenu de (dx, dy) pixels à l'écran. */
   private shift(dx: number, dy: number) {
-    const a = dx * this.u * R2, b = (dy * this.u * R2) / SIN;
-    this.view.ox -= a + b; this.view.oz -= -a + b;
+    const a = dx * this.u, b = (dy * this.u) / SIN;
+    this.view.ox -= a * this.rx + b * this.fx; this.view.oz -= a * this.rz + b * this.fz;
     this.tx = this.base.tx + this.view.ox; this.tz = this.base.tz + this.view.oz;
   }
   private project(x: number, y: number, z: number): [number, number] {
     const dx = x - this.tx, dz = z - this.tz;
-    return [this.W / 2 + ((dx - dz) * R2) / this.u, this.H / 2 + ((dx + dz) * R2 * SIN - y * COS) / this.u];
+    return [this.W / 2 + (dx * this.rx + dz * this.rz) / this.u, this.H / 2 + ((dx * this.fx + dz * this.fz) * SIN - y * COS) / this.u];
   }
   /** Point du sol sous un pixel de l'écran. */
   private ground(sx: number, sy: number): [number, number] {
-    const a = (sx - this.W / 2) * this.u * R2, b = ((sy - this.H / 2) * this.u * R2) / SIN;
-    return [this.tx + a + b, this.tz - a + b];
+    const a = (sx - this.W / 2) * this.u, b = ((sy - this.H / 2) * this.u) / SIN;
+    return [this.tx + a * this.rx + b * this.fx, this.tz + a * this.rz + b * this.fz];
   }
   private viewAround(z: number, sx: number, sy: number) {
     const zoom = Math.max(MIN_ZOOM, Math.min(this.maxZoom(), z)), [gx, gz] = this.ground(sx, sy), u = this.base.u / zoom;
-    const a = (sx - this.W / 2) * u * R2, b = ((sy - this.H / 2) * u * R2) / SIN;
-    return { zoom, ox: gx - a - b - this.base.tx, oz: gz + a - b - this.base.tz };
+    const a = (sx - this.W / 2) * u, b = ((sy - this.H / 2) * u) / SIN;
+    return { zoom, ox: gx - a * this.rx - b * this.fx - this.base.tx, oz: gz - a * this.rz - b * this.fz - this.base.tz };
   }
   private go(target: { zoom: number; ox: number; oz: number }, smooth: boolean) {
     if (!smooth || this.calm || !this.raf) { this.goal = null; this.view = { ...target }; this.applyView(); this.draw(); return; }
@@ -644,10 +702,25 @@ export class CityEngine {
   }
   zoomAt(f: number, sx = this.W / 2, sy = this.H / 2) { this.go(this.viewAround((this.goal?.zoom ?? this.view.zoom) * f, sx, sy), true); }
   panBy(dx: number, dy: number) {
-    const v = this.goal ?? this.view, u = this.base.u / v.zoom, a = dx * u * R2, b = (dy * u * R2) / SIN;
-    this.go({ zoom: v.zoom, ox: v.ox - (a + b), oz: v.oz - (-a + b) }, true);
+    const v = this.goal ?? this.view, u = this.base.u / v.zoom, a = dx * u, b = (dy * u) / SIN;
+    this.go({ zoom: v.zoom, ox: v.ox - (a * this.rx + b * this.fx), oz: v.oz - (a * this.rz + b * this.fz) }, true);
   }
   reset() { this.go({ zoom: this.startZoom(), ox: 0, oz: 0 }, true); }
+  /** Tourne la vue d'un quart de tour autour du point au centre de l'écran (1 = sens horaire). */
+  rotate(dir: 1 | -1) {
+    this.azGoal += (dir * Math.PI) / 2;
+    if (this.calm || !this.raf) { this.turnTo(this.azGoal); this.draw(); }
+  }
+  /** Oriente la caméra sans que le centre de l'écran bouge. */
+  private turnTo(az: number) {
+    const cx = this.tx, cz = this.tz;
+    this.az = az;
+    this.rx = Math.sin(az); this.rz = -Math.cos(az); this.fx = Math.cos(az); this.fz = Math.sin(az);
+    this.computeBase();
+    this.view.ox = cx - this.base.tx; this.view.oz = cz - this.base.tz;
+    if (this.goal) { this.goal = null; }
+    this.applyView(); this.clearHover();
+  }
 
   // ─── Image ───
   private applyNight() {
@@ -661,6 +734,10 @@ export class CityEngine {
 
   private frame(t: number) {
     if (this.disposed) return;
+    if (this.az !== this.azGoal) {
+      const d = this.azGoal - this.az;
+      this.turnTo(Math.abs(d) < 0.004 ? this.azGoal : this.az + d * 0.2);
+    }
     if (this.goal) {
       const v = this.view, g = this.goal, a = 0.22;
       v.zoom += (g.zoom - v.zoom) * a; v.ox += (g.ox - v.ox) * a; v.oz += (g.oz - v.oz) * a;
@@ -691,7 +768,7 @@ export class CityEngine {
     this.moveParts(tt / 1000);
     if (this.spinMesh) {
       this.spins.forEach((r, i) => {
-        this.e.set(0, Math.PI / 4, 0); this.q.setFromEuler(this.e); this.e.set(0, 0, tt / 700 + r.off); this.q2.setFromEuler(this.e); this.q.multiply(this.q2);
+        this.e.set(0, Math.PI / 2 - this.az, 0); this.q.setFromEuler(this.e); this.e.set(0, 0, tt / 700 + r.off); this.q2.setFromEuler(this.e); this.q.multiply(this.q2);
         this.m4.compose(this.v.set(r.at[0], r.at[1], r.at[2]), this.q, this.s.set(r.size, r.size, r.size)); this.spinMesh!.setMatrixAt(i, this.m4);
       });
       this.spinMesh.instanceMatrix.needsUpdate = true;
@@ -725,7 +802,7 @@ export class CityEngine {
   private loop = (t: number) => {
     // Pleine fluidité tant que le joueur est sur le jeu. Fenêtre visible mais sans le focus (autre fenêtre ou
     // autre appli au premier plan) : 30 images par seconde suffisent. Onglet caché : la boucle est arrêtée (run).
-    if (document.hasFocus() || this.goal || this.pts.size > 0 || t < this.growUntil || t - this.lastDraw >= 33) { this.lastDraw = t; this.frame(t); }
+    if (document.hasFocus() || this.goal || this.az !== this.azGoal || this.pts.size > 0 || t < this.growUntil || t - this.lastDraw >= 33) { this.lastDraw = t; this.frame(t); }
     // Mesure de fluidité : sous ~20 images par seconde pendant plusieurs secondes d'affilée, on prévient (une fois)
     if (document.hasFocus() && this.prevT) {
       const dt = t - this.prevT;
@@ -755,7 +832,7 @@ export class CityEngine {
   }
   private local(e: { clientX: number; clientY: number }) { const r = this.canvas.getBoundingClientRect(); return { lx: e.clientX - r.left, ly: e.clientY - r.top }; }
   private tileAt(lx: number, ly: number) { const [gx, gz] = this.ground(lx, ly); return { tx: Math.floor(gx), ty: Math.floor(gz) }; }
-  private clearHover() { this.hoverTile = null; this.cb.tip(null); this.refreshHover(); }
+  private clearHover() { this.hoverTile = null; this.hoverPt = null; this.cb.tip(null); this.refreshHover(); }
   private onDown = (e: PointerEvent) => {
     this.pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (this.pts.size === 1) this.drag = { x: e.clientX, y: e.clientY, moved: false };
@@ -770,7 +847,16 @@ export class CityEngine {
     if (this.pts.size === 0) this.drag = null;
     if (wasClick && this.frameOpts.interactive) {
       const { lx, ly } = this.local(e), { tx, ty } = this.tileAt(lx, ly);
-      if (tx >= this.x0 && tx <= this.x1 && ty >= this.y0 && ty <= this.y1) this.cb.click(tx, ty);
+      if (!(tx >= this.x0 && tx <= this.x1 && ty >= this.y0 && ty <= this.y1)) return;
+      const m = this.live.mode;
+      if (m) {
+        // Même emplacement que l'aperçu : le bâtiment se pose là où on le voit
+        const [gx, gz] = this.ground(lx, ly);
+        this.hoverTile = { x: tx, y: ty }; this.hoverPt = { x: gx, z: gz };
+        const moving = m.kind === "move" ? this.byTile.get(`${m.from.x},${m.from.y}`) : undefined;
+        const at = this.anchor(moving ? sideOf(moving) : footprint(m.id), moving);
+        this.cb.click(at.x, at.y);
+      } else this.cb.click(tx, ty);
     }
   };
   private onMove = (e: PointerEvent) => {
@@ -789,8 +875,10 @@ export class CityEngine {
         if (this.drag.moved) { this.shift(e.clientX - prev.x, e.clientY - prev.y); this.applyView(); this.clearHover(); this.draw(); return; }
       }
     }
-    const { tx, ty } = this.tileAt(lx, ly), last = this.hoverTile;
-    if (last && last.x === tx && last.y === ty) return;
+    const { tx, ty } = this.tileAt(lx, ly), last = this.hoverTile, [gx, gz] = this.ground(lx, ly);
+    this.hoverPt = { x: gx, z: gz };
+    // En construction, l'aperçu suit le pointeur à l'intérieur du carreau (un 2 × 2 change de côté selon la moitié visée)
+    if (last && last.x === tx && last.y === ty) { if (this.live.mode) { this.refreshHover(); this.draw(); } return; }
     this.hoverTile = { x: tx, y: ty };
     const p = this.byTile.get(`${tx},${ty}`), b = p ? BUILDING_BY_ID[p.id] : undefined;
     if (p && !this.live.mode) {
@@ -819,7 +907,7 @@ export class CityEngine {
     this.clearWorld(); this.overlay.replaceChildren();
     this.land.geometry.dispose(); (this.land.material as THREE.Material).dispose(); this.plane.dispose(); this.ring.geometry.dispose();
     this.glowMat.map?.dispose();
-    for (const m of [this.gMat, this.bMat, this.litMat, this.ghostMat, this.fadeMat, this.bulbMat, this.glowMat, this.smokeMat, this.tintMat, this.hoverMat, this.selMat, this.ringMat, this.layerMat]) m.dispose();
+    for (const m of [this.gMat, this.bMat, this.litMat, this.ghostMat, this.fadeMat, this.bulbMat, this.glowMat, this.smokeMat, this.tintMat, this.hoverMat, this.selMat, this.ringMat, this.layerMat, this.outMat]) m.dispose();
     this.renderer.dispose(); this.renderer.forceContextLoss();
   }
 }
