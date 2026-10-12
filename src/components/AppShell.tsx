@@ -109,10 +109,11 @@ function NextDay() {
         <Clock size={14} />
         <span><b className="text-ink font-semibold">Jour {day}</b> · prochain jour dans {mins} min</span>
       </div>
-      {/* Téléphone : la même information en court, à côté du logo */}
+      {/* Téléphone : juste le temps restant, à côté du logo (le jour est rappelé dans Ville). Court, pour que le profil
+          garde sa place dans la barre : avec « J157 · », il était poussé hors de l'écran. */}
       <div className="flex md:hidden shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-slate-100 px-2 max-[359px]:px-1.5 py-1 text-[11px] text-muted tabular" title={`Jour ${day} · prochain jour dans ${mins} min`}>
-        <Clock size={12} className="max-[359px]:hidden" />
-        <span><b className="text-ink font-semibold">J{day}</b> · {mins} min</span>
+        <Clock size={12} />
+        <span><b className="text-ink font-semibold">{mins} min</b></span>
       </div>
     </>
   );
@@ -184,7 +185,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         {/* Barre du haut */}
         {/* Au-dessus des panneaux flottants des pages (z-20) : ses menus (notifications, compte) passent devant eux */}
         <header className="h-16 bg-card border-b border-line flex items-center gap-2 sm:gap-4 px-3 sm:px-4 md:px-8 sticky top-0 z-30">
-          <div className="lg:hidden"><Logo /></div>
+          {/* Téléphone : pas de logo dans la barre (la barre du bas suffit), la place va au profil et au compte à rebours */}
+          <div className="hidden sm:block lg:hidden"><Logo /></div>
           {hydrated && <NextDay />}
           <div className="ml-auto flex min-w-0 items-center gap-1.5 sm:gap-3">
             {hydrated && sandbox && <Link href="/ville" title="Mode test actif : argent et capital sans limite. Il se quitte dans Ville › Options." className="inline-flex shrink-0 items-center rounded-full bg-amber-400 px-2.5 py-1 text-[11px] font-bold text-amber-950">Mode test</Link>}
@@ -209,7 +211,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 {/* Deuxième monnaie : le capital, produit par les placements en bourse */}
                 <div className="whitespace-nowrap text-[10px] text-emerald-700/70">Liquidités{hydrated && <> · <b className="font-semibold text-violet-700" title="Capital : produit par vos placements, demandé par les gros bâtiments">{sandbox ? "∞ ◆" : capitalFmt(capital)}</b></>}</div>
               </div>
-              <span className="h-6 w-6 rounded-full bg-success text-white grid place-items-center"><Plus size={14} /></span>
+              <span className="hidden sm:grid h-6 w-6 rounded-full bg-success text-white place-items-center"><Plus size={14} /></span>
             </Link>
           </div>
         </header>
