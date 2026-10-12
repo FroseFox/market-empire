@@ -34,7 +34,11 @@ export interface Model {
   /** Sorties de fumée (sommet des cheminées). */
   smoke: V3[];
   rotors: Rotor[];
+  /** Ampoules décoratives (guirlandes, citrouilles, lanternes) : elles brillent, surtout la nuit. */
+  lights: Light[];
 }
+/** Ampoule : position, couleur, rayon. */
+export interface Light { at: V3; c: number; r: number }
 
 // ─── Palette (aspect maquette : couleurs franches, matière mate) ───
 const P = {
@@ -85,6 +89,9 @@ class Kit {
   private smoke: V3[] = [];
   private rotors: Rotor[] = [];
   private motions: Motion[] = [];
+  private bulbs: Light[] = [];
+  /** Ampoule décorative (allumée par la ville, plus forte la nuit). */
+  light(x: number, y: number, z: number, c: number, r = 0.008) { this.bulbs.push({ at: [x, y, z], c, r }); }
 
   /** Pièce animée : `build` la dessine autour de son pivot (0, 0, 0), qui sera posé en `def.at`. */
   motion(def: Omit<Motion, "geo">, build: (m: Kit) => void) {
@@ -157,10 +164,16 @@ class Kit {
   }
   /** Socle du carreau (trottoir ou pelouse). */
   lot(c: number, size = 0.94) { this.box(size, B, size, c, 0, 0, 0, 0.02); }
-  tree(x: number, z: number, s = 1, pine = false, y = B) {
+  /** Arbre ; `leaves` = couleurs du feuillage (automne, fleurs…), `snow` = coiffé de neige. */
+  tree(x: number, z: number, s = 1, pine = false, y = B, leaves: [number, number] = pine ? [P.pine, P.pineL] : [P.leaf, P.leafL], snow = false) {
     this.cyl(0.03 * s, 0.13 * s, P.wood, x, y, z, 0.022 * s, 6);
-    if (pine) { this.cone(0.125 * s, 0.2 * s, P.pine, x, y + 0.09 * s, z, 8); this.cone(0.095 * s, 0.19 * s, P.pineL, x, y + 0.2 * s, z, 8); }
-    else { this.ball(0.125 * s, P.leaf, x, y + 0.22 * s, z, 0.92); this.ball(0.078 * s, P.leafL, x - 0.045 * s, y + 0.29 * s, z + 0.035 * s); }
+    if (pine) {
+      this.cone(0.125 * s, 0.2 * s, leaves[0], x, y + 0.09 * s, z, 8); this.cone(0.095 * s, 0.19 * s, leaves[1], x, y + 0.2 * s, z, 8);
+      if (snow) { this.cone(0.06 * s, 0.1 * s, P.snow, x, y + 0.3 * s, z, 8); this.cyl(0.126 * s, 0.012 * s, P.snow, x, y + 0.13 * s, z, 0.1 * s, 8); }
+    } else {
+      this.ball(0.125 * s, leaves[0], x, y + 0.22 * s, z, 0.92); this.ball(0.078 * s, leaves[1], x - 0.045 * s, y + 0.29 * s, z + 0.035 * s);
+      if (snow) this.ball(0.1 * s, P.snow, x, y + 0.27 * s, z, 0.5);
+    }
   }
   bush(x: number, z: number, s = 1, y = B) { this.ball(0.055 * s, P.leaf, x, y + 0.035 * s, z, 0.8); }
   /** Maison : murs, toit à deux pans, porte, fenêtres, cheminée. Façade (+z) tournée de ry. */
@@ -268,7 +281,7 @@ class Kit {
     const top = still.boundingBox ? still.boundingBox.max.y : 1;
     for (const p of this.parts) p.dispose();
     for (const p of this.lits) p.dispose();
-    return { solid, lit, top, smoke: this.smoke, rotors: this.rotors, motions: this.motions, still };
+    return { solid, lit, top, smoke: this.smoke, rotors: this.rotors, motions: this.motions, still, lights: this.bulbs };
   }
 }
 
@@ -356,9 +369,8 @@ function hall(k: Kit, season: Season | null) {
   const flags = season === "ete" ? [P.fire, P.gold, P.primary] : [P.primary, P.snow, P.fire];
   flags.forEach((c, i) => { const x = -0.26 + i * 0.03; k.cyl(0.003, 0.16, P.snow, x, B, 0.1, 0.003, 6); k.box(0.035, 0.022, 0.002, c, x + 0.019, B + 0.135, 0.1, 0); });
   flags.forEach((c, i) => { const x = 0.2 + i * 0.03; k.cyl(0.003, 0.16, P.snow, x, B, 0.1, 0.003, 6); k.box(0.035, 0.022, 0.002, c, x + 0.019, B + 0.135, 0.1, 0); });
-  // Centre de la place : la fontaine, ou le grand sapin à Noël
-  if (season === "noel") xmasTree(k, 0, 0.3);
-  else {
+  // Centre de la place : la fontaine (à Noël, le grand sapin la remplace : voir DECOR)
+  if (season !== "noel") {
     k.cyl(0.07, 0.022, P.stone, 0, B, 0.3, 0.07, 20); k.cyl(0.06, 0.024, P.water, 0, B + 0.002, 0.3, 0.06, 20);
     k.cyl(0.01, 0.06, P.stone, 0, B, 0.3, 0.008, 8); k.cyl(0.028, 0.008, P.stone, 0, B + 0.055, 0.3, 0.028, 14); k.ball(0.012, P.waterL, 0, B + 0.07, 0.3, 1.4);
   }
@@ -382,76 +394,183 @@ function bunting(k: Kit, x0: number, z0: number, x1: number, z1: number, y: numb
     k.box(0.012, 0.014, 0.002, colors[i % colors.length], x0 + (x1 - x0) * t, y - sag, z0 + (z1 - z0) * t, 0, Math.atan2(x1 - x0, z1 - z0) + Math.PI / 2);
   }
 }
+/** Guirlande d'ampoules entre deux points (elles s'allument le soir). */
+function string(k: Kit, x0: number, z0: number, x1: number, z1: number, y: number, colors: number[], step = 0.028, sagH = 0.012) {
+  const n = Math.max(2, Math.round(Math.hypot(x1 - x0, z1 - z0) / step));
+  for (let i = 0; i <= n; i++) {
+    const t = i / n;
+    k.light(x0 + (x1 - x0) * t, y - Math.sin(t * Math.PI) * sagH, z0 + (z1 - z0) * t, colors[i % colors.length], 0.0045);
+  }
+}
+/** Contour lumineux d'un toit ou d'une façade (rectangle à la hauteur y). */
+function outline(k: Kit, x0: number, z0: number, x1: number, z1: number, y: number, colors: number[]) {
+  string(k, x0, z0, x1, z0, y, colors, 0.03, 0); string(k, x1, z0, x1, z1, y, colors, 0.03, 0);
+  string(k, x1, z1, x0, z1, y, colors, 0.03, 0); string(k, x0, z1, x0, z0, y, colors, 0.03, 0);
+}
 
-function xmasTree(k: Kit, x: number, z: number) {
-  k.cyl(0.05, 0.016, P.stone, x, B, z, 0.05, 16);
-  k.cyl(0.008, 0.03, P.wood, x, B + 0.016, z, 0.008, 6);
-  const tiers: [number, number, number][] = [[0.055, 0.07, 0.03], [0.044, 0.065, 0.07], [0.032, 0.06, 0.11], [0.02, 0.05, 0.15]];
-  for (const [r, h, y] of tiers) k.cone(r, h, P.pine, x, B + y, z, 10);
-  k.ball(0.011, P.gold, x, B + 0.205, z, 1, 0);
+function xmasTree(k: Kit, x: number, z: number, s = 1) {
+  k.cyl(0.06 * s, 0.016, P.stone, x, B, z, 0.06 * s, 16);
+  k.cyl(0.01 * s, 0.035 * s, P.wood, x, B + 0.016, z, 0.01 * s, 6);
+  const tiers: [number, number, number][] = [[0.07, 0.085, 0.035], [0.057, 0.08, 0.085], [0.043, 0.075, 0.135], [0.03, 0.065, 0.18], [0.017, 0.05, 0.22]];
+  for (const [r, h, y] of tiers) k.cone(r * s, h * s, P.pine, x, B + y * s, z, 12);
+  // Étoile et boules
+  k.ball(0.014 * s, P.gold, x, B + 0.275 * s, z, 1, 0); k.light(x, B + 0.275 * s, z, P.gold, 0.016 * s);
   const balls = [P.fire, P.gold, P.primary, P.snow, P.pink];
-  for (let i = 0; i < 14; i++) {
-    const a = i * 2.4, t = (i % 7) / 7, y = B + 0.045 + t * 0.13, r = 0.05 - t * 0.04;
-    k.ball(0.0055, balls[i % balls.length], x + Math.cos(a) * r, y, z + Math.sin(a) * r, 1, 0);
+  for (let i = 0; i < 26; i++) {
+    const a = i * 2.39, t = (i % 13) / 13, y = B + (0.05 + t * 0.2) * s, r = (0.064 - t * 0.05) * s;
+    if (i % 2) k.ball(0.0055 * s, balls[i % balls.length], x + Math.cos(a) * r, y, z + Math.sin(a) * r, 1, 0);
+    else k.light(x + Math.cos(a) * r, y, z + Math.sin(a) * r, [P.gold, P.fire, 0x60a5fa, P.snow][i % 4], 0.005 * s);
   }
   // Cadeaux au pied du sapin
-  for (const [dx, dz, c, w] of [[-0.05, 0.04, P.fire, 0.022], [0.045, 0.045, P.primary, 0.02], [0.0, 0.06, P.gold, 0.018]] as const) {
-    k.box(w, w * 0.8, w, c, x + dx, B + 0.016, z + dz, 0.002); k.box(w + 0.002, 0.004, 0.004, P.snow, x + dx, B + 0.016 + w * 0.8, z + dz, 0);
+  for (const [dx, dz, c, w] of [[-0.06, 0.05, P.fire, 0.024], [0.055, 0.05, P.primary, 0.022], [0.0, 0.075, P.gold, 0.02], [-0.03, 0.085, P.green, 0.016], [0.07, -0.02, P.violet, 0.018], [-0.07, -0.01, P.pink, 0.02]] as const) {
+    k.box(w * s, w * 0.8 * s, w * s, c, x + dx * s, B + 0.016, z + dz * s, 0.002); k.box((w + 0.003) * s, 0.004, 0.005, P.snow, x + dx * s, B + 0.016 + w * 0.8 * s, z + dz * s, 0);
   }
+}
+
+/** Petit chalet de marché de Noël (façade +z). */
+function chalet(k: Kit, x: number, z: number, roof: number) {
+  k.box(0.07, 0.045, 0.05, P.wood, x, B, z, 0.004); k.gable(0.08, 0.06, 0.03, P.snow, x, B + 0.045, z);
+  k.box(0.08, 0.004, 0.01, roof, x, B + 0.04, z + 0.028, 0.001);
+  k.box(0.05, 0.02, 0.002, 0xfde68a, x, B + 0.02, z + 0.026, 0);
+  string(k, x - 0.04, z + 0.031, x + 0.04, z + 0.031, B + 0.046, [P.gold], 0.016, 0.004);
+}
+function snowman(k: Kit, x: number, z: number) {
+  k.ball(0.022, P.snow, x, B + 0.02, z); k.ball(0.016, P.snow, x, B + 0.05, z); k.ball(0.011, P.snow, x, B + 0.072, z);
+  k.cyl(0.011, 0.004, P.black, x, B + 0.081, z, 0.011, 10); k.cyl(0.007, 0.014, P.black, x, B + 0.084, z, 0.007, 10);
+  k.cone(0.003, 0.014, P.orange, x, B + 0.072, z + 0.016, 6); k.box(0.026, 0.006, 0.006, P.fire, x, B + 0.062, z, 0.002);
+}
+function pumpkin(k: Kit, x: number, z: number, r: number, y = B, glow = true) {
+  k.ball(r, P.orange, x, y + r * 0.7, z, 0.72);
+  for (const a of [0, Math.PI / 2]) { const g = new THREE.TorusGeometry(r * 0.98, r * 0.06, 4, 16); g.rotateY(a); g.scale(1, 0.72, 1); k.add(g, 0xc2410c, x, y + r * 0.7, z); }
+  k.cyl(r * 0.16, r * 0.45, P.green, x, y + r * 1.2, z, r * 0.1, 5);
+  if (glow) { k.light(x - r * 0.35, y + r * 0.8, z + r * 0.85, 0xfbbf24, r * 0.2); k.light(x + r * 0.35, y + r * 0.8, z + r * 0.85, 0xfbbf24, r * 0.2); }
+}
+function grave(k: Kit, x: number, z: number, ry = 0) {
+  k.box(0.024, 0.032, 0.008, 0x9ca3af, x, B, z, 0.006, ry); k.box(0.03, 0.004, 0.016, P.soil, x, B, z + 0.012, 0.001, ry);
+}
+function deadTree(k: Kit, x: number, z: number) {
+  k.cyl(0.008, 0.11, 0x3f2a1d, x, B, z, 0.005, 6);
+  for (const [a, y, l] of [[0.6, 0.06, 0.04], [2.4, 0.08, 0.035], [4.2, 0.095, 0.03], [5.4, 0.05, 0.03]] as const) {
+    const g = new THREE.CylinderGeometry(0.002, 0.004, l, 5); g.rotateZ(0.9); g.rotateY(a); k.add(g, 0x3f2a1d, x + Math.cos(a) * l * 0.35, B + y, z - Math.sin(a) * l * 0.35);
+  }
+}
+function bunny(k: Kit, x: number, z: number, c: number = P.snow, s = 1) {
+  k.ball(0.018 * s, c, x, B + 0.018 * s, z, 1.1); k.ball(0.012 * s, c, x, B + 0.045 * s, z + 0.008 * s);
+  k.box(0.005 * s, 0.024 * s, 0.003 * s, c, x - 0.005 * s, B + 0.066 * s, z + 0.006 * s, 0.002); k.box(0.005 * s, 0.024 * s, 0.003 * s, c, x + 0.005 * s, B + 0.066 * s, z + 0.006 * s, 0.002);
+  k.ball(0.003 * s, 0xf9a8d4, x, B + 0.045 * s, z + 0.02 * s, 1, 0); k.ball(0.007 * s, P.snow, x, B + 0.02 * s, z - 0.02 * s, 1, 0);
+}
+function egg(k: Kit, x: number, z: number, r: number, c: number, band: number, y = B) {
+  k.ball(r, c, x, y + r * 1.3, z, 1.35, 2);
+  k.cyl(r * 1.01, r * 0.22, band, x, y + r * 1.25, z, r * 1.01, 18);
+  k.cyl(r * 0.86, r * 0.14, P.snow, x, y + r * 1.75, z, r * 0.8, 18);
+}
+function palm(k: Kit, x: number, z: number, s = 1) {
+  for (let i = 0; i < 5; i++) k.cyl(0.008 * s, 0.03 * s, 0xa16207, x + i * 0.002 * s, B + i * 0.028 * s, z, 0.007 * s, 6);
+  for (let i = 0; i < 6; i++) { const g = rbox(0.01 * s, 0.004 * s, 0.07 * s, 0.002); g.rotateX(-0.35); g.translate(0, 0, 0.032 * s); g.rotateY((i * Math.PI) / 3); k.add(g, P.leafL, x + 0.01 * s, B + 0.14 * s, z); }
 }
 
 const DECOR: Record<Season, (k: Kit) => void> = {
   halloween(k) {
-    // Citrouilles sur les marches et autour de la place, une grosse sur la fontaine
-    const pumpkin = (x: number, z: number, r: number, y = B) => { k.ball(r, P.orange, x, y + r * 0.7, z, 0.72); k.cyl(r * 0.18, r * 0.5, P.green, x, y + r * 1.25, z, r * 0.12, 5); };
-    for (const [x, z] of [[-0.15, 0.04], [0.15, 0.04], [-0.17, 0.03], [0.17, 0.03], [-0.3, 0.17], [0.3, 0.17], [-0.06, 0.42], [0.06, 0.42], [-0.44, 0.06], [0.44, 0.06]] as const) pumpkin(x, z, 0.014);
-    pumpkin(0, 0.3, 0.03, B + 0.06);
-    // Guirlandes orange et violettes le long de la façade
+    // Citrouilles partout : marches, place, pelouses ; une géante à la place de la fontaine
+    for (const [x, z, r] of [[-0.15, 0.04, 0.015], [0.15, 0.04, 0.015], [-0.18, 0.03, 0.012], [0.18, 0.03, 0.012], [-0.3, 0.17, 0.014], [0.3, 0.17, 0.014],
+      [-0.06, 0.44, 0.013], [0.06, 0.44, 0.013], [-0.44, 0.06, 0.012], [0.44, 0.06, 0.012], [-0.24, 0.24, 0.016], [0.22, 0.4, 0.018], [-0.38, 0.33, 0.012], [0.4, 0.28, 0.012]] as const) pumpkin(k, x, z, r);
+    pumpkin(k, 0, 0.3, 0.045, B + 0.03);
+    // Cimetière sur la pelouse de gauche, arbre mort et corbeau
+    for (const [x, z, a] of [[-0.36, 0.25, 0.1], [-0.3, 0.27, -0.15], [-0.24, 0.3, 0.05], [-0.36, 0.34, -0.05], [-0.3, 0.36, 0.2]] as const) grave(k, x, z, a);
+    deadTree(k, -0.42, 0.38); deadTree(k, 0.42, 0.34);
+    // Chaudron qui bouillonne sur la pelouse de droite
+    k.cyl(0.026, 0.03, P.black, 0.3, B + 0.008, 0.3, 0.03, 14); k.cyl(0.024, 0.004, 0x84cc16, 0.3, B + 0.036, 0.3, 0.024, 14);
+    for (const a of [0, 2.1, 4.2]) k.cyl(0.002, 0.012, P.black, 0.3 + Math.cos(a) * 0.022, B, 0.3 + Math.sin(a) * 0.022, 0.002, 4);
+    k.light(0.3, B + 0.045, 0.3, 0xa3e635, 0.012);
+    k.motion({ kind: "bob", at: [0.3, B + 0.06, 0.3], amount: 0.012, period: 1.3 }, (m) => { m.ball(0.006, 0xa3e635, 0, 0, 0, 1, 0); m.ball(0.004, 0xa3e635, 0.008, 0.012, 0.003, 1, 0); });
+    // Chapeau de sorcière sur le beffroi
+    k.cyl(0.07, 0.004, 0x1f1235, 0, B + 0.47, -0.22, 0.07, 16); k.cone(0.035, 0.09, 0x1f1235, 0, B + 0.474, -0.22, 12); k.cyl(0.036, 0.008, P.violet, 0, B + 0.478, -0.22, 0.034, 16);
+    // Toiles d'araignée entre les colonnes, guirlandes et lanternes
+    for (const x of [-0.1, 0.1]) { const g = new THREE.CircleGeometry(0.035, 8, 0, Math.PI / 2); k.add(g, 0xe5e7eb, x, B + 0.15, -0.005); }
     bunting(k, -0.42, 0.06, 0.42, 0.06, B + 0.16, [P.orange, P.violet, P.black]);
-    // Fantômes qui flottent au-dessus de la place
-    for (const [x, z, p] of [[-0.2, 0.28, 3.2], [0.22, 0.32, 4]] as const) {
+    string(k, -0.42, 0.3, 0.42, 0.3, B + 0.14, [P.orange, P.violet], 0.04, 0.02);
+    outline(k, -0.31, -0.33, 0.31, -0.03, B + 0.205, [P.orange, P.violet]);
+    // Fantômes qui flottent, chauves-souris qui tournent autour du beffroi
+    for (const [x, z, p] of [[-0.2, 0.28, 3.2], [0.22, 0.32, 4], [0.05, 0.16, 3.6], [-0.36, 0.1, 4.4]] as const) {
       k.motion({ kind: "bob", at: [x, B + 0.2, z], amount: 0.03, period: p }, (m) => {
         m.ball(0.022, P.snow, 0, 0, 0, 1.2); m.cone(0.024, 0.03, P.snow, 0, -0.04, 0, 8);
-        m.ball(0.004, P.black, -0.007, 0.006, 0.02, 1, 0); m.ball(0.004, P.black, 0.007, 0.006, 0.02, 1, 0);
+        m.ball(0.004, P.black, -0.007, 0.006, 0.02, 1, 0); m.ball(0.004, P.black, 0.007, 0.006, 0.02, 1, 0); m.ball(0.005, P.black, 0, -0.006, 0.02, 1.4, 0);
       });
     }
-    // Chauves-souris sur le toit
-    for (const x of [-0.1, 0.12]) { k.box(0.03, 0.004, 0.01, P.black, x, B + 0.31, -0.12, 0); k.ball(0.006, P.black, x, B + 0.312, -0.12, 1, 0); }
+    k.motion({ kind: "spin", axis: "y", at: [0, B + 0.42, -0.22], amount: 0.12 }, (m) => {
+      for (let i = 0; i < 5; i++) {
+        const a = (i * Math.PI * 2) / 5, r = 0.11 + (i % 2) * 0.04, y = (i % 3) * 0.03;
+        m.box(0.03, 0.003, 0.01, P.black, Math.cos(a) * r, y, Math.sin(a) * r, 0, -a); m.ball(0.005, P.black, Math.cos(a) * r, y + 0.002, Math.sin(a) * r, 1, 0);
+      }
+    });
   },
   noel(k) {
-    // Toits enneigés (un manteau blanc posé sur chaque toit) et corniche
+    // Toits enneigés
     k.hip(0.57, 0.29, 0.072, P.snow, 0, B + 0.224, -0.18); k.box(0.64, 0.006, 0.33, P.snow, 0, B + 0.221, -0.18, 0.002);
     for (const x of [-0.36, 0.36]) k.hip(0.175, 0.375, 0.062, P.snow, x, B + 0.151, -0.15);
     k.hip(0.104, 0.104, 0.072, P.snow, 0, B + 0.405, -0.22);
-    // Guirlande lumineuse sur la façade et couronne sur la porte
-    bunting(k, -0.42, 0.045, 0.42, 0.045, B + 0.15, [P.fire, P.gold, P.green, P.primary]);
-    k.cyl(0.016, 0.004, P.pine, 0, B + 0.12, -0.026, 0.016, 12); k.ball(0.004, P.fire, 0, B + 0.106, -0.024, 1, 0);
-    // Petits sapins de part et d'autre de l'entrée
-    for (const x of [-0.2, 0.2]) { k.cone(0.02, 0.05, P.pine, x, B, 0.02, 8); k.ball(0.004, P.gold, x, B + 0.052, 0.02, 1, 0); }
+    // Façade illuminée : contours du toit, guirlandes, couronnes aux fenêtres
+    outline(k, -0.31, -0.33, 0.31, -0.03, B + 0.205, [P.gold, P.fire, P.green, 0x60a5fa]);
+    for (const x of [-0.36, 0.36]) outline(k, x - 0.08, -0.33, x + 0.08, 0.03, B + 0.15, [P.gold, P.fire]);
+    string(k, -0.42, 0.045, 0.42, 0.045, B + 0.15, [P.gold, P.fire, P.green, 0x60a5fa]);
+    for (const x of [-0.25, -0.19, 0.19, 0.25]) { k.cyl(0.011, 0.003, P.pine, x, B + 0.165, -0.027, 0.011, 10); k.ball(0.003, P.fire, x, B + 0.156, -0.025, 1, 0); }
+    k.cyl(0.018, 0.004, P.pine, 0, B + 0.12, -0.026, 0.018, 12); k.ball(0.005, P.fire, 0, B + 0.104, -0.024, 1, 0);
+    // Traîneau et rennes sur le toit
+    k.box(0.06, 0.016, 0.026, P.fire, 0.1, B + 0.29, -0.2, 0.006); k.box(0.07, 0.004, 0.004, P.gold, 0.1, B + 0.282, -0.19, 0.001);
+    for (const dx of [0.17, 0.21]) { k.ball(0.009, 0x92400e, dx, B + 0.3, -0.2, 0.8); k.ball(0.006, 0x92400e, dx + 0.012, B + 0.312, -0.2); k.light(dx + 0.018, B + 0.312, -0.2, P.fire, 0.003); }
+    // Grand sapin, petits sapins illuminés de part et d'autre de l'entrée
+    xmasTree(k, 0, 0.3, 1.25);
+    for (const x of [-0.2, 0.2]) { k.cone(0.022, 0.06, P.pine, x, B, 0.02, 8); k.light(x, B + 0.062, 0.02, P.gold, 0.005); k.light(x - 0.01, B + 0.03, 0.03, P.fire, 0.0035); k.light(x + 0.01, B + 0.02, 0.03, 0x60a5fa, 0.0035); }
+    // Patinoire sur la pelouse de gauche, avec patineurs qui tournent
+    k.box(0.24, 0.006, 0.18, 0xd8f1fb, -0.3, B + 0.008, 0.3, 0.02); k.box(0.25, 0.01, 0.006, P.snow, -0.3, B + 0.008, 0.39, 0.002); k.box(0.25, 0.01, 0.006, P.snow, -0.3, B + 0.008, 0.21, 0.002);
+    k.motion({ kind: "spin", axis: "y", at: [-0.3, B + 0.014, 0.3], amount: 0.07 }, (m) => {
+      for (const [a, c] of [[0, P.fire], [2.1, P.primary], [4.2, P.gold]] as const) {
+        const x = Math.cos(a) * 0.06, z = Math.sin(a) * 0.05;
+        m.box(0.008, 0.018, 0.006, c, x, 0, z, 0.002); m.ball(0.004, P.skin, x, 0.022, z, 1, 0);
+      }
+    });
+    // Marché de Noël sur la pelouse de droite, bonhomme de neige
+    chalet(k, 0.25, 0.25, P.fire); chalet(k, 0.36, 0.25, P.green); chalet(k, 0.3, 0.37, P.gold);
+    snowman(k, -0.42, 0.13); snowman(k, 0.42, 0.42);
+    string(k, -0.42, 0.21, -0.42, 0.42, B + 0.1, [P.gold], 0.03, 0.01); string(k, 0.42, 0.21, 0.42, 0.42, B + 0.1, [P.gold], 0.03, 0.01);
   },
   paques(k) {
-    // Œufs géants peints sur les pelouses, petits œufs cachés
-    const egg = (x: number, z: number, r: number, c: number, band: number) => {
-      k.ball(r, c, x, B + r * 1.3, z, 1.35, 2);
-      k.cyl(r * 1.01, r * 0.35, band, x, B + r * 1.15, z, r * 1.01, 16);
-    };
-    egg(-0.3, 0.3, 0.035, 0xf6a5c0, 0xfde68a); egg(0.3, 0.3, 0.035, 0xa5d8f3, 0xc4b5fd); egg(0.24, 0.36, 0.022, 0xa7f3d0, 0xf6a5c0);
-    for (let i = 0; i < 12; i++) k.ball(0.007, PASTEL[i % PASTEL.length], -0.4 + (i % 6) * 0.16 + (i > 5 ? 0.06 : 0), B + 0.012, i > 5 ? 0.44 : 0.22, 1.35, 1);
-    // Lapin assis près de la fontaine
-    const bx = -0.1, bz = 0.34;
-    k.ball(0.018, P.snow, bx, B + 0.018, bz, 1.1); k.ball(0.012, P.snow, bx, B + 0.045, bz + 0.008);
-    k.box(0.005, 0.022, 0.003, P.snow, bx - 0.005, B + 0.065, bz + 0.006, 0.002); k.box(0.005, 0.022, 0.003, P.snow, bx + 0.005, B + 0.065, bz + 0.006, 0.002);
-    bunting(k, -0.42, 0.06, 0.42, 0.06, B + 0.16, PASTEL);
+    // Œuf géant sur la fontaine, œufs peints sur les pelouses
+    egg(k, 0, 0.3, 0.045, 0xf6a5c0, 0xa5d8f3, B + 0.02);
+    for (const [x, z, r, c, b] of [[-0.32, 0.28, 0.03, 0xfde68a, 0xc4b5fd], [-0.24, 0.36, 0.022, 0xa7f3d0, 0xf6a5c0], [0.3, 0.3, 0.032, 0xa5d8f3, 0xfde68a], [0.37, 0.38, 0.02, 0xc4b5fd, 0xa7f3d0], [0.22, 0.24, 0.018, 0xf6a5c0, 0xfde68a]] as const) egg(k, x, z, r, c, b);
+    for (let i = 0; i < 24; i++) k.ball(0.0065, PASTEL[i % PASTEL.length], -0.42 + ((i * 37) % 85) / 100, B + 0.012, 0.2 + ((i * 53) % 25) / 100, 1.35, 1);
+    // Lapins, poussins et paniers
+    bunny(k, -0.1, 0.36); bunny(k, 0.12, 0.38, 0xd6b48c); bunny(k, -0.38, 0.42, P.snow, 0.8);
+    for (const [x, z] of [[0.05, 0.42], [-0.18, 0.2], [0.2, 0.42]] as const) { k.ball(0.009, 0xfacc15, x, B + 0.009, z); k.ball(0.006, 0xfacc15, x, B + 0.021, z + 0.004); k.cone(0.002, 0.005, P.orange, x, B + 0.021, z + 0.011, 4); }
+    for (const [x, z] of [[-0.42, 0.22], [0.42, 0.22]] as const) { k.cyl(0.018, 0.016, 0xb08257, x, B, z, 0.022, 12); for (let i = 0; i < 4; i++) k.ball(0.007, PASTEL[i], x + (i - 1.5) * 0.008, B + 0.02, z, 1.35, 1); }
+    // Arches fleuries, massifs de tulipes, fanions pastel
+    for (const x of [-0.13, 0.13]) {
+      const g = new THREE.TorusGeometry(0.045, 0.006, 6, 16, Math.PI); k.add(g, P.leaf, x, B, 0.12);
+      for (let i = 0; i <= 6; i++) { const a = (i / 6) * Math.PI; k.ball(0.007, PASTEL[i % PASTEL.length], x + Math.cos(a) * 0.045, B + Math.sin(a) * 0.045, 0.12, 1, 0); }
+    }
+    for (const z of [0.16, 0.44]) for (let i = 0; i < 14; i++) { const x = -0.4 + i * 0.062; k.cyl(0.0015, 0.014, P.green, x, B, z, 0.0015, 4); k.ball(0.006, [0xf43f5e, 0xfacc15, 0xf6a5c0, 0xa855f7][i % 4], x, B + 0.016, z, 1.3, 0); }
+    bunting(k, -0.42, 0.06, 0.42, 0.06, B + 0.16, PASTEL); bunting(k, -0.42, 0.21, 0.42, 0.21, B + 0.12, PASTEL);
+    outline(k, -0.31, -0.33, 0.31, -0.03, B + 0.205, PASTEL);
   },
   ete(k) {
-    // Parasols et buvette sur la place, guirlande de fanions
-    for (const [x, z, c] of [[-0.32, 0.3, P.fire], [0.32, 0.3, P.primary], [-0.24, 0.4, P.gold]] as const) {
-      k.cyl(0.003, 0.07, P.snow, x, B, z, 0.003, 6); k.cone(0.04, 0.02, c, x, B + 0.065, z, 10);
-      k.box(0.03, 0.002, 0.03, P.snow, x, B + 0.03, z, 0.002);
+    // Jets d'eau qui dansent dans la fontaine
+    for (const [dx, dz, p] of [[0.03, 0, 1.4], [-0.03, 0, 1.7], [0, 0.03, 1.2], [0, -0.03, 1.9]] as const) {
+      k.motion({ kind: "bob", at: [dx, B + 0.05, 0.3 + dz], amount: 0.02, period: p }, (m) => { m.ball(0.008, P.waterL, 0, 0, 0, 2.4, 1); });
     }
-    k.box(0.06, 0.04, 0.03, P.snow, 0.28, B, 0.42, 0.004); k.box(0.066, 0.006, 0.036, P.fire, 0.28, B + 0.07, 0.42, 0.002);
-    for (const x of [0.255, 0.305]) k.cyl(0.002, 0.03, P.snow, x, B + 0.04, 0.42, 0.002, 4);
+    // Palmiers, transats, parasols
+    for (const [x, z] of [[-0.42, 0.13], [0.42, 0.13], [-0.2, 0.43], [0.2, 0.43]] as const) palm(k, x, z);
+    for (const [x, z, c] of [[-0.34, 0.27, P.fire], [-0.25, 0.35, P.primary], [0.3, 0.27, P.gold], [0.36, 0.36, P.teal]] as const) {
+      k.cyl(0.003, 0.07, P.snow, x, B, z, 0.003, 6); k.cone(0.042, 0.02, c, x, B + 0.065, z, 10);
+      k.box(0.03, 0.004, 0.014, c, x + 0.03, B + 0.006, z + 0.02, 0.002, 0.3); k.box(0.012, 0.012, 0.014, c, x + 0.044, B + 0.01, z + 0.02, 0.002, 0.3);
+    }
+    // Camion de glaces et buvette
+    k.box(0.08, 0.04, 0.04, 0xfbcfe8, 0.12, B + 0.008, 0.42, 0.008); k.box(0.03, 0.03, 0.038, 0xf9a8d4, 0.17, B + 0.008, 0.42, 0.006);
+    k.box(0.04, 0.016, 0.002, 0x7dd3fc, 0.11, B + 0.03, 0.441, 0); k.cone(0.009, 0.02, 0xf59e0b, 0.12, B + 0.048, 0.42, 6); k.ball(0.009, 0xf9a8d4, 0.12, B + 0.07, 0.42, 1, 1);
+    for (const x of [0.105, 0.155]) k.cyl(0.006, 0.004, P.black, x, B + 0.004, 0.442, 0.006, 8);
+    k.box(0.06, 0.04, 0.03, P.snow, -0.12, B, 0.42, 0.004); k.box(0.07, 0.006, 0.04, P.fire, -0.12, B + 0.06, 0.42, 0.002);
+    // Fanions et guirlandes d'ampoules au-dessus de la place
     bunting(k, -0.42, 0.06, 0.42, 0.06, B + 0.16, [P.fire, P.gold, P.primary, P.green, P.pink]);
+    string(k, -0.42, 0.2, 0.42, 0.42, B + 0.14, [0xfde68a], 0.035, 0.03); string(k, 0.42, 0.2, -0.42, 0.42, B + 0.14, [0xfde68a], 0.035, 0.03);
   },
 };
 
@@ -1314,12 +1433,43 @@ export function buildingModel(id: string): Model {
   return m;
 }
 
+/** Allure des arbres selon la saison : feuillage d'automne (trois teintes), neige, fleurs de printemps. */
+export type TreeLook = "" | "autumn0" | "autumn1" | "autumn2" | "snow" | "blossom";
+const LOOK: Record<Exclude<TreeLook, "">, { leaves?: [number, number]; pine?: [number, number]; snow?: boolean }> = {
+  autumn0: { leaves: [0xe07a2f, 0xf59e0b] }, autumn1: { leaves: [0xc2410c, 0xea580c] }, autumn2: { leaves: [0xd9a72b, 0xfacc15] },
+  snow: { leaves: [0x7f9c86, 0xa3b8a8], snow: true }, blossom: { leaves: [0xf9a8d4, 0xfce7f3] },
+};
 /** Arbre isolé (feuillu ou sapin), pour la ville et la campagne. Origine au pied. */
-export function treeModel(pine: boolean): THREE.BufferGeometry {
-  const key = pine ? "#pine" : "#tree";
+export function treeModel(pine: boolean, look: TreeLook = ""): THREE.BufferGeometry {
+  const key = `${pine ? "#pine" : "#tree"}${look}`;
   let m = cache.get(key);
-  if (!m) { const k = new Kit(); k.tree(0, 0, 1.25, pine, 0); m = k.done(); cache.set(key, m); }
+  if (!m) {
+    const k = new Kit(), l = look ? LOOK[look] : null;
+    k.tree(0, 0, 1.25, pine, 0, pine ? l?.pine : l?.leaves, l?.snow ?? false);
+    m = k.done(); cache.set(key, m);
+  }
   return m.solid;
+}
+
+/** Décor de rue de la saison, posé au pied de chaque lampadaire (citrouilles, petit sapin, pots de fleurs…). */
+export function streetDecor(season: Season): Model {
+  const key = `#street-${season}`;
+  let m = cache.get(key);
+  if (!m) {
+    const k = new Kit();
+    if (season === "halloween") { pumpkin(k, 0, 0, 0.05, 0); pumpkin(k, 0.09, 0.05, 0.035, 0); k.light(0, 0.42, 0, P.orange, 0.025); }
+    else if (season === "noel") {
+      k.cone(0.07, 0.2, P.pine, 0, 0, 0, 8); k.cone(0.045, 0.14, P.pineL, 0, 0.12, 0, 8); k.cone(0.03, 0.06, P.snow, 0, 0.22, 0, 8);
+      for (let i = 0; i < 6; i++) { const a = i * 1.9, h = 0.04 + (i % 3) * 0.06; k.light(Math.cos(a) * (0.065 - h * 0.25), h, Math.sin(a) * (0.065 - h * 0.25), [P.gold, P.fire, 0x60a5fa][i % 3], 0.012); }
+      k.light(0, 0.28, 0, P.gold, 0.016);
+    } else if (season === "paques") {
+      k.cyl(0.05, 0.05, 0xb08257, 0, 0, 0, 0.06, 10);
+      for (let i = 0; i < 5; i++) k.ball(0.02, [0xf43f5e, 0xfacc15, 0xf6a5c0, 0xa855f7, P.snow][i], Math.cos(i * 1.26) * 0.03, 0.065, Math.sin(i * 1.26) * 0.03, 1, 0);
+      egg(k, 0.1, 0.04, 0.025, 0xa5d8f3, 0xfde68a, 0);
+    } else { k.cyl(0.05, 0.05, 0xc2410c, 0, 0, 0, 0.06, 10); for (let i = 0; i < 5; i++) k.ball(0.02, [P.fire, P.gold, P.pink, P.snow, P.fire][i], Math.cos(i * 1.26) * 0.03, 0.065, Math.sin(i * 1.26) * 0.03, 1, 0); }
+    m = k.done(); cache.set(key, m);
+  }
+  return m;
 }
 
 /** Petits objets de la rue. La voiture est blanche : sa couleur vient de l'instance. */

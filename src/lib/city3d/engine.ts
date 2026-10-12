@@ -8,7 +8,7 @@ import { BUILDING_BY_ID } from "@/lib/game/config";
 import { canPlace, footprint, isBuildable, isRoad, mapBounds, MAP_SIZE, MAX_MAP_SIZE, occupancy, sideOf, type Plot } from "@/lib/game/layout";
 import { CAT_COLOR, MARKER_COLOR, markerTip, nightFactor, type CityMarker, type CityMode, type CitySign, type Light, type MarkerKind } from "@/components/IsoCity";
 import { SEASON_LABEL, seasonOf, type Season } from "@/lib/game/season";
-import { buildingModel, propModel, treeModel, type Motion, type V3 } from "./models";
+import { buildingModel, propModel, streetDecor, treeModel, type Motion, type TreeLook, type V3 } from "./models";
 
 export interface CityTip { left: number; top: number; title: string; text: string; warn?: boolean }
 export interface CityFrame { height: number | "fill"; compact: boolean; interactive: boolean; initialZoom: number; padTop: number; padBottom: number }
@@ -32,6 +32,13 @@ const EL = (32 * Math.PI) / 180, SIN = Math.sin(EL), COS = Math.cos(EL), R2 = Ma
 const OLD_PX = 45.25;
 const LAND = 0x69b34c, ROAD = 0x3d4656, CURB = 0xc4b9a2, LINE = 0xf1f4f8, SAND = 0xefe3bc, SEA = 0x4fb4e4, DEEP = 0x2f8fcb;
 const PATCHES = [0x62ad49, 0x7abd55, 0x9fc45c, 0x5ea746, 0x8cc257];
+/** Couleurs du sol selon la saison : feuilles mortes à Halloween, neige à Noël, prés fleuris à Pâques, herbe dorée l'été. */
+const GROUND: Record<Season, { land: number; patches: number[] }> = {
+  halloween: { land: 0x7d9443, patches: [0x8a9440, 0xa5863a, 0x7d8f3e, 0xb4743a, 0x96a04a] },
+  noel: { land: 0xe6edf4, patches: [0xf4f7fb, 0xd9e3ec, 0xe9eff5, 0xd2deea, 0xf1f5f9] },
+  paques: { land: 0x6dbb50, patches: [0x7cc25a, 0x8fcf63, 0xa6d86c, 0xf2c5da, 0xfbe7a1] },
+  ete: { land: 0x86b84a, patches: [0x9cc25a, 0xb3c95e, 0xc9c46a, 0x8fbf52, 0xd9c777] },
+};
 const CAR_COLORS = [0xef4444, 0xf8fafc, 0x2563eb, 0xf59e0b, 0x1f2937, 0x10b981];
 const COATS = [0x2563eb, 0xef4444, 0xf59e0b, 0x10b981, 0x8b5cf6, 0x1f2937, 0xec4899];
 
@@ -115,6 +122,12 @@ export class CityEngine {
   private glow: THREE.InstancedMesh | null = null;
   private seen: Set<string> | null = null; private births = new Map<string, number>(); private growUntil = 0;
   private hidden: string | null = null;
+  /** Ampoules décoratives de la saison (une matière par couleur, plus forte la nuit). */
+  private festive = new Map<number, THREE.MeshStandardMaterial>();
+  private bulbGeo = new THREE.SphereGeometry(1, 8, 6);
+  private flakeMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9 });
+  /** Neige qui tombe (Noël) : position de départ de chaque flocon, autour du centre de l'écran. */
+  private flakes: { ox: number; oz: number; y0: number; sp: number; ph: number }[] = []; private flakeMesh: THREE.InstancedMesh | null = null;
   /** Décor de saison de la mairie (selon la date du joueur), vérifié toutes les minutes. */
   private season: Season | null = seasonOf();
   // Vue
@@ -234,7 +247,7 @@ export class CityEngine {
     this.world.clear();
     this.inst.clear(); this.puffs = []; this.spins = []; this.cars = []; this.walkers = []; this.parts = []; this.partScale.clear();
     this.puffMesh = this.spinMesh = this.carMesh = this.bodyMesh = this.headMesh = this.glow = this.layerTiles = null;
-    this.modeGrid = null; this.hidden = null;
+    this.modeGrid = null; this.hidden = null; this.flakeMesh = null; this.flakes = [];
   }
 
   private own(geo: THREE.BufferGeometry, mat: THREE.Material, shadow = true) {
@@ -247,6 +260,10 @@ export class CityEngine {
 
   private rebuild() {
     this.clearWorld();
+    this.season = seasonOf();
+    const ground = this.season ? GROUND[this.season] : { land: LAND, patches: PATCHES };
+    (this.scene.background as THREE.Color).set(ground.land); (this.land.material as THREE.MeshStandardMaterial).color.set(ground.land);
+    const bulbs: { x: number; y: number; z: number; r: number; c: number }[] = [];
     const { x0, x1, y0, y1 } = this, mid = MAP_SIZE / 2;
     const cx = (x0 + x1 + 1) / 2, cy = (y0 + y1 + 1) / 2, R = Math.max(28, Math.max(x1 - x0, y1 - y0) * 1.5 + 10);
     const wx0 = Math.floor(cx - R), wx1 = Math.ceil(cx + R), wy0 = Math.floor(cy - R), wy1 = Math.ceil(cy + R);
@@ -261,7 +278,7 @@ export class CityEngine {
         const x = gx * CELL, y = gy * CELL;
         if (y + CELL > COAST - 4) continue;
         const r = hash(gx * 7 + 3, gy * 11 + 5);
-        if (r < 0.62) flat.quad(x + 0.15, y + 0.15, x + CELL - 0.15, y + CELL - 0.15, 0.002, PATCHES[Math.floor((r / 0.62) * PATCHES.length)]);
+        if (r < 0.62) flat.quad(x + 0.15, y + 0.15, x + CELL - 0.15, y + CELL - 0.15, 0.002, ground.patches[Math.floor((r / 0.62) * ground.patches.length)]);
         const inCity = x + CELL > x0 - 1 && x < x1 + 2 && y + CELL > y0 - 1 && y < y1 + 2;
         const onRoad = (x <= 17 && x + CELL >= 16) || (y <= 17 && y + CELL >= 16);
         if (!inCity && !onRoad && hash(gx * 13 + 1, gy * 5 + 9) < 0.42) {
@@ -327,7 +344,6 @@ export class CityEngine {
 
     // ─── Bâtiments : une série d'instances par type ───
     const byId = new Map<string, Plot[]>();
-    this.season = seasonOf();
     const modelOf = (p: Plot) => (p.id === "townhall" && this.season ? `townhall@${this.season}` : p.id);
     for (const p of this.plots) { const k = modelOf(p), l = byId.get(k); if (l) l.push(p); else byId.set(k, [p]); }
     for (const [id, list] of byId) {
@@ -343,6 +359,7 @@ export class CityEngine {
         this.inst.set(keyOf(p), { solid, lit, index: i, plot: p });
         for (const s of model.smoke) for (let k = 0; k < 3; k++) this.puffs.push({ at: [cx + s[0] * w, s[1] * h, cy + s[2] * w], off: k / 3 + hash(p.x, p.y) });
         for (const r of model.rotors) this.spins.push({ at: [cx + r.at[0] * w, r.at[1] * h, cy + r.at[2] * w], size: r.size * w, off: hash(p.x * 3, p.y * 5) * 6 });
+        for (const l of model.lights) bulbs.push({ x: cx + l.at[0] * w, y: l.at[1] * h, z: cy + l.at[2] * w, r: l.r * w, c: l.c });
       });
       this.world.add(solid); if (lit) this.world.add(lit);
       // Pièces animées de ce type de bâtiment
@@ -363,12 +380,57 @@ export class CityEngine {
         trees.push([tx, ty, 0.8 + hash(x * i + 1, y) * 0.4, hash(Math.round(tx * 13), Math.round(ty * 17)) < 0.35]);
       }
     }
-    for (const pine of [false, true]) {
-      const list = trees.filter((t) => t[3] === pine);
+    // Allure de saison : feuillage d'automne (trois teintes mêlées), neige, arbres en fleurs
+    const lookOf = (pine: boolean, x: number, y: number): TreeLook => {
+      const sz = this.season;
+      if (sz === "noel") return "snow";
+      if (sz === "halloween" && !pine) return (`autumn${Math.floor(hash(Math.round(x * 7), Math.round(y * 11)) * 3)}`) as TreeLook;
+      if (sz === "paques" && !pine && hash(Math.round(x * 3), Math.round(y * 5)) < 0.6) return "blossom";
+      return "";
+    };
+    const looks = new Set(trees.map((t) => `${t[3] ? 1 : 0}|${lookOf(t[3], t[0], t[1])}`));
+    for (const key of looks) {
+      const [pf, look] = key.split("|") as [string, TreeLook], pine = pf === "1";
+      const list = trees.filter((t) => t[3] === pine && lookOf(pine, t[0], t[1]) === look);
       if (!list.length) continue;
-      const tm = new THREE.InstancedMesh(treeModel(pine), this.gMat, list.length);
+      const tm = new THREE.InstancedMesh(treeModel(pine, look), this.gMat, list.length);
       list.forEach(([x, y, s], i) => this.place(tm, i, x, 0, y, s, s, s, hash(Math.round(x * 5), Math.round(y * 3)) * 6));
       tm.castShadow = true; tm.receiveShadow = true; this.world.add(tm);
+    }
+
+    // ─── Décor de saison dans les rues : au pied des lampadaires (un carrefour sur deux pour les sapins) ───
+    if (this.season && lamps.length) {
+      const deco = streetDecor(this.season), spots = lamps.filter(([x, y]) => this.season !== "noel" || hash(Math.round(x), Math.round(y)) < 0.55);
+      if (spots.length) {
+        const dm = new THREE.InstancedMesh(deco.solid, this.gMat, spots.length);
+        spots.forEach(([x, y], i) => {
+          const dx = x + 0.08, dz = y + 0.3, ry = hash(Math.round(x * 3), Math.round(y)) * 6;
+          this.place(dm, i, dx, 0.016, dz, 1, 1, 1, ry);
+          for (const l of deco.lights) {
+            const c = Math.cos(ry), sn = Math.sin(ry);
+            bulbs.push({ x: dx + l.at[0] * c + l.at[2] * sn, y: 0.016 + l.at[1], z: dz - l.at[0] * sn + l.at[2] * c, r: l.r, c: l.c });
+          }
+        });
+        dm.castShadow = true; dm.frustumCulled = false; this.world.add(dm);
+      }
+    }
+    // Ampoules décoratives : une série par couleur
+    const byColor = new Map<number, typeof bulbs>();
+    for (const b of bulbs) { const l = byColor.get(b.c); if (l) l.push(b); else byColor.set(b.c, [b]); }
+    for (const [c, list] of byColor) {
+      let mat = this.festive.get(c);
+      if (!mat) { mat = new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: 0.4, roughness: 0.4 }); this.festive.set(c, mat); }
+      const bm = new THREE.InstancedMesh(this.bulbGeo, mat, list.length);
+      list.forEach((b, i) => this.place(bm, i, b.x, b.y, b.z, b.r));
+      bm.frustumCulled = false; this.world.add(bm);
+    }
+    this.applyNight();
+    // Neige qui tombe à Noël (pas en graphismes légers)
+    if (this.season === "noel" && !this.lite) {
+      const n = 420;
+      this.flakes = Array.from({ length: n }, (_, i) => ({ ox: hash(i, 3) * 2 - 1, oz: hash(i, 7) * 2 - 1, y0: hash(i, 11) * 7, sp: 0.6 + hash(i, 13) * 0.8, ph: hash(i, 17) * 6.28 }));
+      this.flakeMesh = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(0.028, 0), this.flakeMat, n);
+      this.flakeMesh.userData.own = true; this.flakeMesh.frustumCulled = false; this.flakeMesh.renderOrder = 5; this.world.add(this.flakeMesh);
     }
 
     // ─── Lampadaires (un par carrefour), ampoules et halos de nuit ───
@@ -734,6 +796,7 @@ export class CityEngine {
     this.sun.intensity = 2.9 - 1.6 * n; this.sun.color.set(0xffe9c4).lerp(this.col.set(0x9db4ff), n);
     this.litMat.emissiveIntensity = 1.5 * n; this.bulbMat.emissiveIntensity = 2 * n; this.glowMat.opacity = 0.5 * n;
     if (this.glow) this.glow.visible = n > 0.01;
+    for (const m of this.festive.values()) m.emissiveIntensity = 0.4 + 1.8 * n;
     this.nightDrawn = n;
   }
 
@@ -800,6 +863,14 @@ export class CityEngine {
         this.place(this.bodyMesh!, i, x, 0.016, y, s); this.headMesh!.setMatrixAt(i, this.m4);
       });
       this.bodyMesh.instanceMatrix.needsUpdate = true; this.headMesh.instanceMatrix.needsUpdate = true;
+    }
+    if (this.flakeMesh) {
+      const span = Math.max(this.W, this.H) * this.u * 0.8 + 3, sec = tt / 1000;
+      this.flakes.forEach((f, i) => {
+        const y = (((f.y0 - sec * 0.45 * f.sp) % 7) + 7) % 7;
+        this.place(this.flakeMesh!, i, this.tx + f.ox * span + Math.sin(sec * 0.8 + f.ph) * 0.15, y, this.tz + f.oz * span, 1);
+      });
+      this.flakeMesh.instanceMatrix.needsUpdate = true;
     }
     this.renderer.render(this.scene, this.cam);
   }
@@ -915,7 +986,8 @@ export class CityEngine {
     this.clearWorld(); this.overlay.replaceChildren();
     this.land.geometry.dispose(); (this.land.material as THREE.Material).dispose(); this.plane.dispose(); this.ring.geometry.dispose();
     this.glowMat.map?.dispose();
-    for (const m of [this.gMat, this.bMat, this.litMat, this.ghostMat, this.fadeMat, this.bulbMat, this.glowMat, this.smokeMat, this.tintMat, this.hoverMat, this.selMat, this.ringMat, this.layerMat, this.outMat]) m.dispose();
+    for (const m of [this.gMat, this.bMat, this.litMat, this.ghostMat, this.fadeMat, this.bulbMat, this.glowMat, this.smokeMat, this.tintMat, this.hoverMat, this.selMat, this.ringMat, this.layerMat, this.outMat, this.flakeMat, ...this.festive.values()]) m.dispose();
+    this.bulbGeo.dispose();
     this.renderer.dispose(); this.renderer.forceContextLoss();
   }
 }
