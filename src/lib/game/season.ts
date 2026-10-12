@@ -18,13 +18,13 @@ const DAY = 86_400_000;
 const dayNum = (y: number, m: number, d: number) => Math.round(Date.UTC(y, m - 1, d) / DAY);
 
 /** Décor du moment, selon la date locale du joueur :
- *  - Halloween : du 15 octobre au 2 novembre ;
+ *  - Halloween : tout le mois d'octobre, jusqu'au 2 novembre ;
  *  - Noël : du 1er décembre au 6 janvier (jour des Rois) ;
  *  - Pâques : de la semaine qui précède Pâques au lundi de Pâques ;
  *  - Été : du 21 juin au 31 août. */
 export function seasonOf(date = new Date()): Season | null {
   const y = date.getFullYear(), m = date.getMonth() + 1, d = date.getDate(), n = dayNum(y, m, d);
-  if (n >= dayNum(y, 10, 15) && n <= dayNum(y, 11, 2)) return "halloween";
+  if (n >= dayNum(y, 10, 1) && n <= dayNum(y, 11, 2)) return "halloween";
   if (m === 12 || n <= dayNum(y, 1, 6)) return "noel";
   const e = easter(y), sunday = dayNum(y, e.month, e.day);
   if (n >= sunday - 7 && n <= sunday + 1) return "paques";
