@@ -73,7 +73,7 @@ export default function AccountMenu() {
   }
 
   return (
-    <div ref={box} className="relative sm:pl-3 sm:border-l border-line">
+    <div ref={box} className="relative shrink-0 sm:pl-3 sm:border-l border-line">
       <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-haspopup="menu"
         className="flex items-center gap-2.5 rounded-[10px] px-1.5 py-1 hover:bg-slate-50">
         {user.avatar
