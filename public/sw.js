@@ -1,7 +1,11 @@
 // Market Empire — service worker : notifications reçues quand le jeu est fermé, et installation de l'appli.
 // (Pas de mise en cache : le site se charge toujours depuis le réseau.)
 self.addEventListener("install", () => self.skipWaiting());
-self.addEventListener("activate", (e) => e.waitUntil(self.clients.claim()));
+// Une version précédente gardait une copie du site pour jouer sans réseau : elle est effacée de l'appareil.
+self.addEventListener("activate", (e) => e.waitUntil((async () => {
+  for (const k of await caches.keys()) if (k.startsWith("market-empire-")) await caches.delete(k);
+  await self.clients.claim();
+})()));
 
 // Chrome ne propose d'installer le jeu (invitation « Installer », bouton du jeu en un geste) que si le service worker
 // répond lui-même aux pages. Il les demande au réseau, comme avant ; hors connexion, une page simple le dit.

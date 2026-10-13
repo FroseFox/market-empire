@@ -48,6 +48,8 @@ export async function fetchQuotes(symbols?: string[]): Promise<{ mode: string; u
   if (STATIC_MODE) return { mode: "simulé", updatedAt: now, quotes: list.map((s) => localQuote(s, now)) };
   const rows = await rest<{ symbol: string; price: string | number; change_1d: string | number | null; updated_at: string }[]>(
     "asset_prices?select=symbol,price,change_1d,updated_at");
+  // Serveur injoignable : surtout pas de cours inventés à la place des vrais, on garde les derniers connus
+  if (rows === null) throw new Error("cours injoignables");
   const real = new Map((rows ?? [])
     .filter((r) => Number(r.price) > 0)
     .map((r) => [r.symbol, { symbol: r.symbol, price: roundPrice(Number(r.price)), change: Number(r.change_1d ?? 0), source: "réel" }]));
@@ -62,7 +64,7 @@ export async function fetchQuotes(symbols?: string[]): Promise<{ mode: string; u
 /** Courbe simulée recalée sur le prix actuel (pour ne pas créer de saut). */
 async function simulatedFor(symbol: string, range: Range) {
   const pts = simulatedHistory(symbol, range, Date.now());
-  const q = (await fetchQuotes([symbol])).quotes[0];
+  const q = (await fetchQuotes([symbol]).catch(() => null))?.quotes[0];
   const k = q && pts.length ? q.price / pts[pts.length - 1].p : 1;
   return pts.map((p) => ({ t: p.t, p: roundPrice(p.p * k) }));
 }
