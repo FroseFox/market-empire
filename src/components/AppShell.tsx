@@ -25,6 +25,7 @@ import { startChat } from "@/lib/chat";
 import { useSound } from "@/lib/sound";
 import AuthGate, { Splash } from "@/components/AuthGate";
 import { DAY_MS } from "@/lib/game/engine";
+import { nextHourly } from "@/lib/refresh";
 import { now as gameNow } from "@/lib/clock";
 import { capitalFmt, compactEur, eur } from "@/lib/format";
 
@@ -67,20 +68,24 @@ function useHydrated() {
   return ok;
 }
 
-/** Les cours ne changent qu'une fois par heure : on les relit toutes les 10 min
- *  (et au retour sur l'onglet). La ville, elle, avance en local sans réseau. */
-const QUOTES_EVERY = 10 * 60_000;
+/** Les cours ne changent qu'une fois par heure, entre h05 et h13 (supabase/functions/refresh-market) : on les relit
+ *  à l'ouverture, puis une fois par heure juste après cette mise à jour (h15 à h19, réparti entre les joueurs).
+ *  Échec (réseau) : nouvel essai 2 min plus tard. La ville, elle, avance en local sans réseau. */
+const QUOTES_MINUTE = 15 + Math.floor(Math.random() * 5), QUOTES_RETRY = 2 * 60_000;
+const nextQuotesPull = (at: number) => nextHourly(at, QUOTES_MINUTE);
 function useHeartbeat(enabled: boolean) {
   const setQuotes = useGame((s) => s.setQuotes);
   const sync = useGame((s) => s.sync);
   const notify = useGame((s) => s.notify);
   useEffect(() => {
     if (!enabled) return;
-    let alive = true, lastPull = 0;
+    let alive = true, nextPull = 0;
     const pull = async () => {
-      lastPull = Date.now();
+      const at = Date.now();
+      nextPull = at + QUOTES_RETRY;
       try {
         const j = await fetchQuotes();
+        nextPull = nextQuotesPull(at);
         if (alive) { setQuotes(j.quotes, j.mode); useGame.setState({ quotesAt: j.updatedAt }); }
       } catch { /* hors ligne : on garde les derniers cours */ }
     };
@@ -94,9 +99,9 @@ function useHeartbeat(enabled: boolean) {
     const id = setInterval(() => {
       if (document.hidden) return;
       tick();
-      if (Date.now() - lastPull >= QUOTES_EVERY) pull();
+      if (Date.now() >= nextPull) pull();
     }, 30_000);
-    const onVisible = () => { if (!document.hidden) { tick(); if (Date.now() - lastPull >= QUOTES_EVERY) pull(); } };
+    const onVisible = () => { if (!document.hidden) { tick(); if (Date.now() >= nextPull) pull(); } };
     document.addEventListener("visibilitychange", onVisible);
     return () => { alive = false; clearInterval(id); document.removeEventListener("visibilitychange", onVisible); };
   }, [enabled, setQuotes, sync, notify]);
