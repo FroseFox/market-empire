@@ -12,6 +12,7 @@
 import { create } from "zustand";
 import * as E from "@/lib/game/engine";
 import { pack, unpack } from "@/lib/game/pack";
+import { compactCity } from "@/lib/game/layout";
 import { useGame } from "@/store/game";
 import { restAsUser, rpc, useAuth } from "@/lib/auth";
 import { STATIC_MODE } from "@/lib/market/client";
@@ -61,7 +62,9 @@ let lastSent = "";
 let lastCity = "";
 
 /** Publie le plan de la ville, seulement s'il a changé. Sans effet si le serveur ne propose pas encore la fonction. */
-async function publishCity(pl: Record<string, number[]>) {
+async function publishCity(full: Record<string, number[]>) {
+  // Format compact : une grande ville (48 × 48) dépassait la limite de 16 Ko du serveur et n'était plus publiée
+  const pl = compactCity(full);
   const key = JSON.stringify(pl);
   if (key === lastCity) return;
   const before = lastCity;

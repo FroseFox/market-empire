@@ -2,13 +2,15 @@
 // La partie complète reste sur l'appareil ; en ligne on n'envoie que le nécessaire, sous forme compacte :
 // - historique : 30 derniers jours complets, puis 1 jour sur 3 jusqu'à 90 jours, en colonnes et en euros entiers ;
 // - opérations : les 25 dernières (ce que la page Portefeuille affiche), sans texte quand il se recalcule ;
-// - carte : les emplacements regroupés par type de bâtiment.
+// - carte : les emplacements regroupés par type de bâtiment ;
+// - actionnaires de la ville : les 20 plus gros (jusqu'à 490 possibles : la sauvegarde frôlait sa limite de 128 Ko).
+//   La liste complète reste sur le serveur et revient à chaque synchronisation (online.ts › syncShares).
 // Les anciennes sauvegardes (format complet) se relisent telles quelles.
 import { dayFlow, type GameState, type Snapshot, type Transaction } from "./engine";
 import type { Plot } from "./layout";
 
 const KINDS: Transaction["kind"][] = ["buy", "sell", "build", "demolish", "research", "reward", "move"];
-const RECENT_DAYS = 30, OLD_DAYS = 60, OLD_STEP = 3, MAX_TX = 25;
+const RECENT_DAYS = 30, OLD_DAYS = 60, OLD_STEP = 3, MAX_TX = 25, MAX_HOLDERS = 20;
 const cents = (v: number) => Math.round(v * 100) / 100;
 const round4 = (v: number) => Math.round(v * 10_000) / 10_000;
 
@@ -52,6 +54,9 @@ export function pack(g: GameState): PackedSave {
   void _h; void _t; void _p;
   return {
     ...rest,
+    ...(g.shares && g.shares.holders.length > MAX_HOLDERS
+      ? { shares: { ...g.shares, holders: [...g.shares.holders].sort((a, b) => b.qty - a.qty).slice(0, MAX_HOLDERS) } }
+      : {}),
     cash: cents(g.cash),
     holdings: Object.fromEntries(Object.entries(g.holdings).map(([k, v]) => [k, { qty: v.qty, avgCost: round4(v.avgCost), ...(v.debt ? { debt: cents(v.debt) } : {}) }])),
     fmt: 2,

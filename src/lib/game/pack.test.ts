@@ -66,3 +66,17 @@ describe("sauvegarde en ligne allégée", () => {
     expect(unpack(JSON.parse(JSON.stringify(g)))).toEqual(g);
   });
 });
+
+describe("pack : grosses parties", () => {
+  it("ne garde que les 20 plus gros actionnaires dans la sauvegarde en ligne", async () => {
+    const { pack: p } = await import("./pack");
+    const { newGame } = await import("./engine");
+    const g = newGame(Date.UTC(2026, 9, 1));
+    const holders = Array.from({ length: 490 }, (_, i) => ({ holder: `h${i}`, name: `Ville ${i}`, qty: i === 300 ? 250 : 1 }));
+    g.shares = { credit: 0, float: 490, sold: 490, held: [], holders };
+    const out = p(g).shares!;
+    expect(out.holders).toHaveLength(20);
+    expect(out.holders[0]).toMatchObject({ holder: "h300", qty: 250 });
+    expect(g.shares.holders).toHaveLength(490); // la partie sur l'appareil garde tout
+  });
+});
