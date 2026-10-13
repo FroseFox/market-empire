@@ -441,9 +441,13 @@ export class CityEngine {
       if (spots.length) {
         const dm = new THREE.InstancedMesh(deco.solid, this.gMat, spots.length);
         spots.forEach(([x, y], i) => {
-          const dx = x + 0.08, dz = y + 0.3, ry = hash(Math.round(x * 3), Math.round(y)) * 6;
+          // Au pied du poteau, côté trottoir (le poteau est à 0,1 du coin de l'îlot). Avant : 0,3 plus loin, au milieu
+          // du carrefour, où le décor faisait des taches de couleur sur la route.
+          const dx = x - 0.07, dz = y - 0.07, ry = hash(Math.round(x * 3), Math.round(y)) * 6;
           this.place(dm, i, dx, 0.016, dz, 1, 1, 1, ry);
           for (const l of deco.lights) {
+            // Lumière haute (lanterne d'Halloween) : accrochée sous la tête du lampadaire, au lieu de flotter à côté
+            if (l.at[1] > 0.3) { bulbs.push({ x: x + 0.09, y: 0.37, z: y, r: l.r, c: l.c }); continue; }
             const c = Math.cos(ry), sn = Math.sin(ry);
             bulbs.push({ x: dx + l.at[0] * c + l.at[2] * sn, y: 0.016 + l.at[1], z: dz - l.at[0] * sn + l.at[2] * c, r: l.r, c: l.c });
           }
