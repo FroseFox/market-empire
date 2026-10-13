@@ -144,6 +144,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const path = usePathname();
   const hydrated = useHydrated();
   useHeartbeat(hydrated);
+  // Le jeu a démarré : le filet de sécurité de layout.tsx (rechargement si le jeu ne démarre pas) n'a plus à agir
+  useEffect(() => { (window as { __meStarted?: boolean }).__meStarted = true; }, []);
   useEffect(() => {
     if (!hydrated) return;
     startNotifs();
