@@ -22,7 +22,9 @@ const OFFLINE = '<!doctype html><html lang="fr"><meta charset="utf-8"><meta name
   + '<script>addEventListener("online",function(){location.reload()})</script>';
 self.addEventListener("fetch", (e) => {
   if (e.request.mode !== "navigate") return; // le reste (images, données, Supabase) passe sans détour
-  e.respondWith(fetch(e.request).catch(() => new Response(OFFLINE, { headers: { "Content-Type": "text/html; charset=utf-8" } })));
+  // Page toujours revalidée auprès du serveur (réponse « inchangée » très légère) : sans ça, le navigateur peut garder
+  // jusqu'à 10 min la page d'avant un déploiement, qui réclame des fichiers du jeu supprimés → chargement bloqué.
+  e.respondWith(fetch(e.request, { cache: "no-cache" }).catch(() => new Response(OFFLINE, { headers: { "Content-Type": "text/html; charset=utf-8" } })));
 });
 
 self.addEventListener("push", (e) => {
