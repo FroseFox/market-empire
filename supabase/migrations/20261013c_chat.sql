@@ -11,7 +11,7 @@ alter table public.players add column if not exists moderator boolean not null d
 create table if not exists public.chat_messages (
   id bigint generated always as identity primary key,
   room text not null check (room = 'global' or room ~ '^[0-9a-f-]{36}$'),
-  author uuid not null references public.players(id) on delete cascade,
+  author uuid not null,
   name text not null,
   body text not null check (char_length(body) between 1 and 300),
   hidden boolean not null default false,
@@ -22,14 +22,14 @@ create index if not exists chat_messages_author_idx on public.chat_messages (aut
 create index if not exists chat_messages_created_idx on public.chat_messages (created_at);
 
 create table if not exists public.chat_reports (
-  message bigint not null references public.chat_messages(id) on delete cascade,
-  reporter uuid not null references public.players(id) on delete cascade,
+  message bigint not null,
+  reporter uuid not null,
   primary key (message, reporter)
 );
 create index if not exists chat_reports_reporter_idx on public.chat_reports (reporter);
 
 create table if not exists public.chat_bans (
-  player uuid primary key references public.players(id) on delete cascade,
+  player uuid primary key,
   until timestamptz not null,
   reason text
 );
@@ -39,7 +39,6 @@ alter table public.chat_reports enable row level security;
 alter table public.chat_bans enable row level security;
 
 -- Lecture : le salon global, et celui de son alliance. Les messages masqués et de plus de 24 h ne sont plus servis.
-drop policy if exists "salons du joueur" on public.chat_messages;
 create policy "salons du joueur" on public.chat_messages for select to authenticated using (
   not hidden and created_at > now() - interval '24 hours'
   and (room = 'global' or room = (select p.alliance::text from public.players p where p.id = (select auth.uid())))
@@ -115,9 +114,4 @@ grant execute on function public.send_chat(text, text) to authenticated;
 grant execute on function public.report_chat(bigint) to authenticated;
 grant execute on function public.moderate_chat(bigint, integer) to authenticated;
 
--- Effacement glissant : toutes les 10 minutes, les messages de plus de 24 h (et leurs signalements) disparaissent.
-select cron.unschedule('chat-cleanup') where exists (select 1 from cron.job where jobname = 'chat-cleanup');
-select cron.schedule('chat-cleanup', '*/10 * * * *', $cron$
-  delete from public.chat_messages where created_at < now() - interval '24 hours';
-  delete from public.chat_bans where until < now();
-$cron$);
+-- Liens vers les joueurs (effacement avec le compte) et effacement des 24 h : voir 20261013d_chat_cleanup.sql.
