@@ -53,13 +53,23 @@ jobs:
           sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-17
 
       # Selon l'âge du projet, Supabase l'a rangé derrière l'un de ces deux serveurs : on prend celui qui répond
+      # Le message exact de chaque essai est affiché (jamais le mot de passe) : « password authentication failed » = mauvais
+      # mot de passe, « Tenant or user not found » = pas le bon serveur.
       - name: Trouver le serveur de la base
         if: steps.config.outputs.ready == 'true'
         run: |
-          for h in aws-0-eu-central-1.pooler.supabase.com aws-1-eu-central-1.pooler.supabase.com; do
-            if /usr/lib/postgresql/17/bin/psql -h "$h" -tAc "select 1" >/dev/null 2>&1; then echo "PGHOST=$h" >> "$GITHUB_ENV"; echo "Serveur : $h"; exit 0; fi
+          # Un espace ou un retour à la ligne copié avec le mot de passe suffit à le rendre faux
+          PW="$(printf '%s' "$PGPASSWORD" | tr -d '\r\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+          echo "::add-mask::$PW"
+          echo "PGPASSWORD=$PW" >> "$GITHUB_ENV"
+          export PGPASSWORD="$PW" PGSSLMODE=require PGCONNECT_TIMEOUT=15
+          for h in aws-1-eu-central-1.pooler.supabase.com aws-0-eu-central-1.pooler.supabase.com; do
+            if out=$(/usr/lib/postgresql/17/bin/psql -h "$h" -tAc "select 1" 2>&1); then
+              echo "PGHOST=$h" >> "$GITHUB_ENV"; echo "PGSSLMODE=require" >> "$GITHUB_ENV"; echo "Serveur : $h"; exit 0
+            fi
+            echo "Essai $h : $out"
           done
-          echo "::error::Connexion impossible à la base : vérifiez le mot de passe (secret SUPABASE_DB_PASSWORD)."
+          echo "::error::Connexion impossible à la base. Si les essais disent « password authentication failed », le secret SUPABASE_DB_PASSWORD n'est pas le bon mot de passe (refaites « Reset database password » et recopiez-le)."
           exit 1
 
       # Les tables du jeu (structure et données) et les comptes des joueurs (données seulement)
