@@ -75,9 +75,10 @@ export default function LegalPage() {
             <ul>
               <li>choisir un pseudo ou un nom de ville injurieux, haineux, à caractère sexuel ou usurpant l&apos;identité d&apos;autrui ;</li>
               <li>tricher : modifier sa sauvegarde, exploiter un bug, automatiser des actions ou attaquer le serveur ;</li>
-              <li>harceler d&apos;autres joueurs, notamment via les alliances, la guerre économique ou le commerce.</li>
+              <li>harceler d&apos;autres joueurs, notamment via les alliances, la guerre économique ou le commerce ;</li>
+              <li>publier dans le chat des propos injurieux, haineux, discriminatoires, à caractère sexuel, des données personnelles d&apos;autrui, de la publicité ou des liens frauduleux.</li>
             </ul>
-            <p>En cas de manquement, le pseudo ou le nom de ville peut être modifié, le joueur retiré du classement ou son compte supprimé.</p>
+            <p>Chaque message du chat peut être signalé ; un message signalé par plusieurs joueurs est masqué, et les modérateurs peuvent masquer un message et exclure son auteur du chat. En cas de manquement, le pseudo ou le nom de ville peut aussi être modifié, le joueur retiré du classement ou son compte supprimé.</p>
             <H3>5. Disponibilité et évolution</H3>
             <p>Le jeu est un prototype en accès anticipé, fourni tel quel. Il peut être interrompu, modifié ou remis à zéro (équilibrage, nouvelle saison, correction de bug) sans indemnité, puisqu&apos;il est gratuit et sans valeur marchande. Nous faisons de notre mieux pour éviter toute perte de partie, sans pouvoir la garantir.</p>
             <H3>6. Modification des conditions</H3>
@@ -93,6 +94,7 @@ export default function LegalPage() {
             <ul>
               <li><b>Compte</b> (transmis par Discord ou Google à la connexion) : identifiant du compte, nom, image de profil et adresse e-mail. L&apos;adresse e-mail est conservée par le service de connexion mais n&apos;est ni affichée, ni utilisée pour vous écrire. Le jeu ne reçoit jamais votre mot de passe.</li>
               <li><b>Profil public</b> : pseudo, image de profil, pays, nom et plan de votre ville, population, patrimoine, classement, alliance et échanges. Ces informations sont visibles par les autres joueurs.</li>
+              <li><b>Chat</b> : vos messages, avec votre pseudo et l&apos;heure d&apos;envoi, visibles par tous les joueurs (salon commun) ou par votre alliance. Chaque message est effacé 24 h après son envoi ; les signalements disparaissent avec lui.</li>
               <li><b>Partie</b> : votre sauvegarde (ville, portefeuille, recherches, historique d&apos;opérations du jeu).</li>
               <li><b>Notifications</b> (seulement si vous les activez) : l&apos;adresse technique d&apos;abonnement fournie par votre navigateur.</li>
               <li><b>Données techniques</b> : comme tout site, les serveurs reçoivent votre adresse IP pour répondre à vos requêtes.</li>
