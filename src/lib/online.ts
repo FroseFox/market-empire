@@ -6,8 +6,9 @@
 // - au plus une écriture toutes les 5 minutes, seulement si le contenu a vraiment changé,
 //   + une dernière écriture quand on quitte la page ;
 // - à l'ouverture, on ne télécharge la sauvegarde que si elle a changé depuis la dernière synchronisation de l'appareil ;
-// - avant chaque écriture et à chaque retour sur l'onglet, on relit seulement la date de la sauvegarde (quelques octets) :
-//   si un autre appareil a enregistré entre-temps, c'est sa partie qui est reprise, jamais écrasée ;
+// - chaque écriture dit au serveur sur quelle sauvegarde elle repose : si un autre appareil a enregistré entre-temps,
+//   le serveur refuse (« conflit ») et c'est sa partie qui est reprise, jamais écrasée ;
+// - à chaque retour sur l'onglet, on relit seulement la date de la sauvegarde (quelques octets) ;
 // - sauvegarde et chiffres du classement envoyés en un seul appel.
 import { create } from "zustand";
 import * as E from "@/lib/game/engine";
@@ -20,6 +21,7 @@ import { countryPreference } from "@/lib/world/countries";
 import { openingMove } from "@/lib/syncRule";
 import { now, setServerTime } from "@/lib/clock";
 import { PSEUDO_ERRORS, pseudoProblem, tidyPseudo } from "@/lib/pseudo";
+import { beforePause, tabPaused } from "@/lib/tabLock";
 
 const LINK_KEY = "market-empire-linked";
 const SYNC_KEY = "market-empire-synced";
@@ -56,6 +58,9 @@ let active: string | null = null;
 let unsubGame: (() => void) | null = null;
 let timer: ReturnType<typeof setTimeout> | null = null;
 let lastWrite = 0, dirty = false, writing = false;
+/** Date de la sauvegarde en ligne sur laquelle repose la partie de CET onglet (lue ou écrite par lui).
+ *  Gardée en mémoire et non sur l'appareil : deux onglets partagent le stockage de l'appareil, pas cette valeur. */
+let base: number | null = null;
 /** Dernier contenu envoyé : on n'écrit pas deux fois la même chose. */
 let lastSent = "";
 /** Dernier plan de ville publié (ce que les autres joueurs voient en visitant). */
@@ -105,6 +110,7 @@ async function pull(uid: string) {
   const at = Number(rows[0].saved_at);
   useGame.setState({ game: E.normalize(unpack(rows[0].data)), savedAt: at });
   setSynced(uid, at);
+  base = at;
   dirty = false; lastSent = "";
   useGame.getState().sync();
   setCloud("saved");
@@ -114,10 +120,10 @@ let lastCheck = 0;
 /** Retour sur l'onglet : si un autre appareil a enregistré entre-temps, on reprend sa partie. */
 async function refresh() {
   const uid = active;
-  if (!uid || writing || useOnline.getState().phase !== "ready" || Date.now() - lastCheck < 30_000) return;
+  if (!uid || writing || tabPaused() || useOnline.getState().phase !== "ready" || Date.now() - lastCheck < 30_000) return;
   lastCheck = Date.now();
   const [at] = await Promise.all([serverAt().catch(() => undefined), syncClock()]);
-  if (active !== uid || writing || typeof at !== "number" || at === syncedAt(uid)) return;
+  if (active !== uid || writing || typeof at !== "number" || at === (base ?? syncedAt(uid))) return;
   writing = true;
   try {
     await pull(uid);
@@ -130,6 +136,8 @@ async function refresh() {
 /** Le serveur a refusé la sauvegarde : elle n'est pas possible depuis la dernière qu'il a acceptée
  *  (plus de jours de ville que d'heures passées, argent ou habitants apparus trop vite, mode test sur un compte ordinaire). */
 export const isRefusal = (e: unknown) => e instanceof Error && / refus:/.test(e.message);
+/** Le serveur a refusé la sauvegarde parce qu'un autre appareil (ou onglet) a enregistré depuis notre dernière lecture. */
+const isConflict = (e: unknown) => e instanceof Error && / conflit$/.test(e.message);
 
 /** Cale l'heure du jeu sur celle du serveur (quelques octets). Sans effet si le serveur ne répond pas. */
 async function syncClock() {
@@ -139,39 +147,36 @@ async function syncClock() {
 }
 
 async function flush(keepalive = false) {
-  if (!active || writing || !dirty) return;
+  if (!active || writing || !dirty || tabPaused()) return;
   const uid = active;
   writing = true;
   try {
-    // Un autre appareil a-t-il enregistré depuis notre dernière synchronisation ? Alors on reprend sa partie au lieu de l'écraser.
-    const at = await serverAt();
-    if (active !== uid) { writing = false; return; }
-    if (at === undefined) throw new Error("sauvegarde illisible");
-    lastCheck = Date.now();
-    if (at !== null && at !== syncedAt(uid)) {
-      await pull(uid);
-      adoptCountry();
-      useGame.getState().notify("Partie mise à jour depuis votre autre appareil");
-      writing = false;
-      return;
-    }
+    // Plus de lecture préalable de la date : le serveur compare lui-même `p_base` à sa sauvegarde, sans course possible
+    // entre deux appareils, et refuse (« conflit ») si un autre a enregistré entre-temps.
     dirty = false;
     const s = useGame.getState();
     const data = pack(s.game), fig = figures();
     const body = JSON.stringify([data, fig]);
     if (body === lastSent) { writing = false; setCloud("saved"); return; }
     const sentAt = s.savedAt || Date.now();
-    const ok = await rpc<boolean>("save_game", { p_data: data, p_saved_at: sentAt, ...fig }, { keepalive });
+    const ok = await rpc<boolean>("save_game", { p_data: data, p_saved_at: sentAt, ...fig, p_base: base ?? syncedAt(uid) }, { keepalive });
     if (ok === false) { dirty = true; schedule(); } // le serveur limite à une écriture toutes les 20 s
     else {
       lastWrite = Date.now(); lastSent = body; setCloud("saved");
       // On retient la date réellement enregistrée (relue sur le serveur quand la page reste ouverte)
       const stored = keepalive ? sentAt : await serverAt().catch(() => undefined);
-      if (active === uid) setSynced(uid, typeof stored === "number" ? stored : sentAt);
+      if (active === uid) { base = typeof stored === "number" ? stored : sentAt; setSynced(uid, base); }
       if (!keepalive) { void publishCity(data.pl); void publishOffer(); void publishIncome(); void syncShares(); void syncAlliance(); void import("@/lib/push").then((m) => m.syncReminder()).catch(() => {}); }
     }
   } catch (e) {
-    if (isRefusal(e) && active === uid) {
+    if (isConflict(e) && active === uid) {
+      // Un autre appareil a joué depuis : sa partie fait foi
+      try {
+        await pull(uid);
+        adoptCountry();
+        useGame.getState().notify("Partie mise à jour depuis votre autre appareil");
+      } catch { dirty = true; setCloud("error"); }
+    } else if (isRefusal(e) && active === uid) {
       // Partie impossible : on reprend celle du serveur, la dernière qu'il a acceptée
       try {
         await pull(uid);
@@ -451,6 +456,7 @@ async function connect(uid: string, name: string) {
       // (ou sur un appareil jamais lié à ce compte). La date locale ne sert pas à trancher : elle avance toute seule
       // à chaque jour de ville rattrapé à l'ouverture, ce qui faisait écraser la vraie partie par celle de l'appareil.
       const move = openingMove({ linked: previous === uid, remoteAt, syncedAt: syncedAt(uid), localAt: local.savedAt });
+      base = remoteAt; // « push » et « same » : l'appareil était à jour de cette sauvegarde ; « pull » la relit
       if (move === "pull") {
         await pull(uid);
         if (active !== uid) return;
@@ -569,6 +575,7 @@ function disconnect() {
   unsubGame?.(); unsubGame = null;
   if (timer) { clearTimeout(timer); timer = null; }
   dirty = false;
+  base = null;
   lastSent = "";
   lastCheck = 0;
   lastCity = "";
@@ -596,4 +603,9 @@ export function startOnline() {
   document.addEventListener("visibilitychange", () => { if (document.hidden) leave(); else void refresh(); });
   window.addEventListener("pagehide", leave);
   window.addEventListener("focus", () => void refresh());
+  // Un autre onglet prend la main : dernière sauvegarde de celui-ci avant la pause
+  beforePause(() => {
+    if (timer) { clearTimeout(timer); timer = null; }
+    if (dirty) void flush(true);
+  });
 }

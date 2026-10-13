@@ -11,6 +11,8 @@ import { startCloudSync } from "@/lib/cloud";
 import { startWorldSync } from "@/lib/world/players";
 import { initAuth, useAuth } from "@/lib/auth";
 import { retryOnline, startOnline, useOnline } from "@/lib/online";
+import { claimTab, useTab } from "@/lib/tabLock";
+import TabPaused from "@/components/TabPaused";
 import NoNetwork, { useNetwork } from "@/components/NoNetwork";
 import AccountMenu from "@/components/AccountMenu";
 import InstallApp from "@/components/InstallApp";
@@ -148,7 +150,10 @@ function CloudBadge({ status }: { status: keyof typeof CLOUD_LABEL }) {
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const path = usePathname();
   const hydrated = useHydrated();
-  useHeartbeat(hydrated);
+  // Un seul onglet joue à la fois sur l'appareil : les autres se mettent en pause (lib/tabLock.ts)
+  useEffect(() => { claimTab(); }, []);
+  const paused = useTab((s) => s.paused);
+  useHeartbeat(hydrated && !paused);
   // Le jeu a démarré : le filet de sécurité de layout.tsx (rechargement si le jeu ne démarre pas) n'a plus à agir
   useEffect(() => { (window as { __meStarted?: boolean }).__meStarted = true; }, []);
   useEffect(() => {
@@ -182,6 +187,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   // Informations légales : lisibles sans compte, hors du cadre du jeu
   if (path.startsWith("/legal")) return <>{children}</>;
   // Site publié : pas de jeu sans compte Discord (la page Claude, elle, a sa propre identité)
+  if (paused) return <TabPaused />;
   if (!STATIC_MODE && !network) return <NoNetwork />;
   if (!STATIC_MODE && !hydrated) return <Splash text="Chargement de votre empire…" />;
   const shell = (
