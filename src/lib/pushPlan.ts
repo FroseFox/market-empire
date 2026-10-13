@@ -10,7 +10,7 @@ export function cityFullReminder(game: Pick<GameState, "lastTick" | "cityName">,
   if (days > 14 * 24) return null; // trop loin pour être utile
   return {
     at: game.lastTick + days * DAY_MS,
-    title: "Votre ville est pleine",
-    body: `Tous les logements de ${game.cityName} sont occupés : elle ne grandit plus tant que vous ne construisez pas.`,
+    title: "Ville pleine",
+    body: `Plus de logement libre à ${game.cityName}.`,
   };
 }

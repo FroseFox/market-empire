@@ -87,18 +87,18 @@ export function startNotifs() {
       for (const st of E.goalStatuses(g, city)) {
         if (!st.done || known.has(st.goal.id)) continue;
         known.add(st.goal.id);
-        if (!st.claimed) push({ id: `goal-${g.createdAt}-${st.goal.id}`, tone: "good", title: "Subvention à encaisser", text: `${st.goal.label} : ${fmt(st.goal.reward)} € vous attendent dans Ville › Objectifs.`, href: "/ville" });
+        if (!st.claimed) push({ id: `goal-${g.createdAt}-${st.goal.id}`, tone: "good", title: "Subvention à encaisser", text: `${st.goal.label} : ${fmt(st.goal.reward)} €`, href: "/ville" });
       }
-      if (city.rank > rank) push({ id: `rank-${g.createdAt}-${city.rank}`, tone: "good", title: `Nouveau rang : ${CITY_RANKS[city.rank].name}`, text: `Votre ville compte ${fmt(g.population)} habitants.`, href: "/ville" });
-      for (const f of FEATURES) if (f.rank > rank && f.rank <= city.rank) push({ id: `feature-${g.createdAt}-${f.id}`, tone: "info", title: `Nouveau : ${f.label}`, text: f.text, href: f.href });
+      if (city.rank > rank) push({ id: `rank-${g.createdAt}-${city.rank}`, tone: "good", title: `Nouveau rang : ${CITY_RANKS[city.rank].name}`, text: `${fmt(g.population)} habitants`, href: "/ville" });
+      for (const f of FEATURES) if (f.rank > rank && f.rank <= city.rank) push({ id: `feature-${g.createdAt}-${f.id}`, tone: "info", title: `Nouveau : ${f.label}`, text: `Débloqué au rang ${CITY_RANKS[f.rank].name}`, href: f.href });
       rank = city.rank;
       // Événement de la semaine : signalé quand il commence
-      if (g.event && g.event.until !== eventUntil && city.event) push({ id: `event-${g.createdAt}-${g.event.until}`, tone: city.event.kind === "bonus" ? "good" : "bad", title: city.event.name, text: `${city.event.text} ${city.event.effect}, pendant ${city.event.daysLeft} jours de ville.`, href: "/ville" });
+      if (g.event && g.event.until !== eventUntil && city.event) push({ id: `event-${g.createdAt}-${g.event.until}`, tone: city.event.kind === "bonus" ? "good" : "bad", title: city.event.name, text: `${city.event.effect}, ${city.event.daysLeft} j`, href: "/ville" });
       eventUntil = g.event?.until ?? eventUntil;
-      if (city.wear >= 0.5 && !wearHigh) push({ id: `wear-${g.createdAt}-${g.day}`, tone: "bad", title: "Votre ville vieillit", text: `Vétusté de ${Math.round(city.wear * 100)} % : l'entretien augmente jusqu'à la prochaine rénovation.`, href: "/ville" });
+      if (city.wear >= 0.5 && !wearHigh) push({ id: `wear-${g.createdAt}-${g.day}`, tone: "bad", title: "Ville vétuste", text: `Vétusté ${Math.round(city.wear * 100)} % : entretien en hausse`, href: "/ville" });
       wearHigh = city.wear >= 0.5;
       const nowAsleep = (g.branches?.length ?? 0) - city.branches;
-      if (nowAsleep > asleep) push({ id: `branch-${g.createdAt}-${g.day}-${nowAsleep}`, tone: "info", title: "Un site d'entreprise est en sommeil", text: "Vous ne détenez plus la participation de départ : il ne rapporte plus rien.", href: "/ville" });
+      if (nowAsleep > asleep) push({ id: `branch-${g.createdAt}-${g.day}-${nowAsleep}`, tone: "info", title: "Site en sommeil", text: "Participation de départ vendue", href: "/ville" });
       asleep = nowAsleep;
     }
     if (s.quotes !== prev.quotes) {
@@ -108,7 +108,7 @@ export function startNotifs() {
         const q = s.quotes[symbol];
         if (!q || Math.abs(q.change) < BIG_MOVE) continue;
         const pct = `${q.change > 0 ? "+" : "−"}${(Math.abs(q.change) * 100).toLocaleString("fr-FR", { maximumFractionDigits: 1 })} %`;
-        push({ id: `move-${symbol}-${day}`, tone: q.change > 0 ? "good" : "bad", title: `${ASSET_BY_SYMBOL[symbol]?.name ?? symbol} : ${pct} sur un jour`, text: "Un actif de votre portefeuille bouge fortement.", href: "/portefeuille" });
+        push({ id: `move-${symbol}-${day}`, tone: q.change > 0 ? "good" : "bad", title: `${ASSET_BY_SYMBOL[symbol]?.name ?? symbol} : ${pct} sur un jour`, text: "Forte variation dans votre portefeuille", href: "/portefeuille" });
       }
     }
   });
