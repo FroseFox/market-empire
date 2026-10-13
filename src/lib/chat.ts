@@ -10,8 +10,10 @@ import { getToken, restAsUser, rpc, useAuth } from "@/lib/auth";
 import { watchInserts, type Watch } from "@/lib/realtime";
 import { useGame } from "@/store/game";
 
-import { mergeMessages, type ChatMessage } from "./chatList";
-export { fresh, mergeMessages, type ChatMessage } from "./chatList";
+import { mentions, mergeMessages, type ChatMessage } from "./chatList";
+import { useOnline } from "@/lib/online";
+import { useNotifs } from "@/lib/notifs";
+export { fresh, mentionChoices, mentionQuery, mentions, mergeMessages, splitMentions, type ChatMessage } from "./chatList";
 export type Room = "global" | "alliance";
 
 const SEEN_KEY = "market-empire-chat-seen";
@@ -33,8 +35,42 @@ interface ChatStore {
   moderator: boolean;
   /** `false` tant que le serveur n'a pas répondu une fois (chat indisponible). */
   ready: boolean;
+  /** Pseudos des joueurs (pour compléter « @… ») : tous, et ceux de mon alliance. */
+  names: { all: string[]; alliance: string[] };
 }
-export const useChat = create<ChatStore>(() => ({ open: false, room: "global", rooms: { global: [], alliance: [] }, unread: 0, moderator: false, ready: false }));
+export const useChat = create<ChatStore>(() => ({ open: false, room: "global", rooms: { global: [], alliance: [] }, unread: 0, moderator: false, ready: false, names: { all: [], alliance: [] } }));
+
+/** Pseudos des joueurs, relus au plus toutes les 10 min quand le chat s'ouvre (quelques octets par joueur). */
+let namesAt = 0;
+async function loadNames() {
+  if (Date.now() - namesAt < 10 * 60_000) return;
+  namesAt = Date.now();
+  const rows = await restAsUser<{ name: string | null; alliance: string | null }[]>("players?select=name,alliance&limit=2000");
+  if (!rows) { namesAt = 0; return; }
+  const mine = useGame.getState().game.alliance?.id ?? null;
+  const ok = (r: { name: string | null }) => !!r.name;
+  useChat.setState({ names: {
+    all: rows.filter(ok).map((r) => r.name!),
+    alliance: mine ? rows.filter((r) => ok(r) && r.alliance === mine).map((r) => r.name!) : [],
+  } });
+}
+
+/** Messages d'autres joueurs qui me mentionnent (« @mon pseudo »), arrivés depuis ma dernière lecture : notification. */
+function notifyMentions(rows: { id: number; author: string; name: string; body: string; room?: string }[], after: number) {
+  const me = useAuth.getState().user?.id, pseudo = useOnline.getState().name;
+  if (!me || !pseudo) return;
+  for (const r of rows) {
+    if (Number(r.id) <= after || r.author === me || !mentions(r.body, pseudo)) continue;
+    const room = r.room && r.room !== "global" ? "alliance" : "global";
+    // Salon ouvert sous ses yeux, onglet visible : il le voit déjà (le message est surligné)
+    const s = useChat.getState();
+    if (s.open && s.room === room && typeof document !== "undefined" && !document.hidden) continue;
+    useNotifs.getState().push({
+      id: `mention-${r.id}`, tone: "info", href: `chat:${room}`,
+      title: `${r.name} vous a mentionné`, text: r.body.length > 120 ? `${r.body.slice(0, 119)}…` : r.body,
+    });
+  }
+}
 
 /** Identifiant du salon côté serveur : « global », ou l'identifiant de l'alliance du joueur. */
 export const roomId = (room: Room): string | null => (room === "global" ? "global" : useGame.getState().game.alliance?.id ?? null);
@@ -70,6 +106,7 @@ async function load(room: Room): Promise<boolean> {
   const rows = await restAsUser<Row[]>(q);
   if (!rows) return false;
   const hide = hiddenIds();
+  notifyMentions(rows.filter((r) => !hide.has(Number(r.id))).map((r) => ({ ...r, room: id })), seen());
   const add = rows.map(toMsg).filter((m) => !hide.has(m.id));
   useChat.setState((s) => ({ ready: true, rooms: { ...s.rooms, [room]: mergeMessages(s.rooms[room], add) } }));
   return true;
@@ -79,8 +116,9 @@ async function load(room: Room): Promise<boolean> {
 async function checkUnread() {
   const me = useAuth.getState().user?.id;
   const ids = ["global", roomId("alliance")].filter(Boolean).join(",");
-  const rows = await restAsUser<{ id: number }[]>(`chat_messages?select=id&room=in.(${ids})&id=gt.${seen()}&author=neq.${me}&limit=30`);
-  if (rows) useChat.setState({ ready: true, unread: rows.length });
+  const after = seen();
+  const rows = await restAsUser<{ id: number; author: string; name: string; body: string; room: string }[]>(`chat_messages?select=id,author,name,body,room&room=in.(${ids})&id=gt.${after}&author=neq.${me}&limit=30`);
+  if (rows) { useChat.setState({ ready: true, unread: rows.length }); notifyMentions(rows, after); }
 }
 
 let timer: ReturnType<typeof setInterval> | null = null;
@@ -124,7 +162,7 @@ export function startChat() {
   useAuth.subscribe((a, b) => {
     if (a.user?.id !== b.user?.id) {
       // Autre compte : le temps réel est rouvert avec ses droits à lui
-      watch?.close(); watch = null;
+      watch?.close(); watch = null; namesAt = 0;
       useChat.setState({ rooms: { global: [], alliance: [] }, moderator: false, unread: 0 }); void readModerator();
     }
     syncWatch();
@@ -142,6 +180,7 @@ async function readModerator() {
 
 export function openChat(open: boolean) {
   useChat.setState({ open });
+  if (open) void loadNames();
   if (open) { ticks = 0; tick(); } else syncWatch();
 }
 export function switchRoom(room: Room) {

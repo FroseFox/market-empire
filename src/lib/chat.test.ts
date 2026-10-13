@@ -18,3 +18,27 @@ describe("chat", () => {
     expect(fresh([m(1, now - 25 * 3_600_000), m(2, now - 3_600_000)], now).map((x) => x.id)).toEqual([2]);
   });
 });
+
+import { mentionChoices, mentionQuery, mentions, splitMentions } from "./chatList";
+
+describe("mentions @pseudo", () => {
+  it("reconnaît un pseudo, même avec espaces, sans tenir compte des majuscules", () => {
+    expect(mentions("salut @celyan !", "Celyan")).toBe(true);
+    expect(mentions("go @Jean Paul.2 ce soir", "Jean Paul.2")).toBe(true);
+    expect(mentions("@Léonard bonjour", "Léo")).toBe(false);
+    expect(mentions("mail@celyan.fr", "Celyan")).toBe(false); // une adresse e-mail n'est pas une mention
+    expect(mentions("rien ici", "Celyan")).toBe(false);
+  });
+  it("découpe le message en texte et mentions, le pseudo le plus long d'abord", () => {
+    expect(splitMentions("yo @Léo et @Léonard", ["Léo", "Léonard"])).toEqual([
+      { text: "yo " }, { text: "@Léo", mention: "Léo" }, { text: " et " }, { text: "@Léonard", mention: "Léonard" },
+    ]);
+    expect(splitMentions("@inconnu salut", ["Léo"])).toEqual([{ text: "@inconnu salut" }]);
+  });
+  it("repère la saisie d'une mention et propose les pseudos", () => {
+    expect(mentionQuery("salut @ce", 9)).toEqual({ query: "ce", start: 6 });
+    expect(mentionQuery("mail@ce", 7)).toBeNull();
+    expect(mentionQuery("@", 1)).toEqual({ query: "", start: 0 });
+    expect(mentionChoices("ce", ["Celyan", "Cedric", "Bob", "celyan"], "Cedric")).toEqual(["celyan", "Celyan"]);
+  });
+});

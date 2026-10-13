@@ -6,6 +6,7 @@ import { Bell, BellRing } from "lucide-react";
 import { useNotifs } from "@/lib/notifs";
 import { disablePush, enablePush, usePush } from "@/lib/push";
 import { useAuth } from "@/lib/auth";
+import { openChat, switchRoom } from "@/lib/chat";
 
 const DOT = { good: "bg-success", bad: "bg-danger", info: "bg-primary" } as const;
 const ago = (at: number, now: number) => {
@@ -46,11 +47,17 @@ export default function NotifBell() {
             <h2 className="text-[14px] font-semibold">Notifications</h2>
             {list.length > 0 && <button onClick={clear} className="text-[11px] font-medium text-muted hover:text-ink">Tout effacer</button>}
           </div>
-          {list.length === 0 ? <p className="px-4 pb-4 text-[12px] text-muted">Rien pour l&apos;instant. Vous serez prévenu d&apos;une subvention disponible, d&apos;un nouveau rang ou d&apos;une forte variation d&apos;un actif que vous détenez.</p> : (
+          {list.length === 0 ? <p className="px-4 pb-4 text-[12px] text-muted">Rien pour l&apos;instant. Vous serez prévenu d&apos;une subvention disponible, d&apos;un nouveau rang, d&apos;une forte variation d&apos;un actif que vous détenez, ou quand un joueur vous mentionne dans le chat.</p> : (
             <ul className="max-h-[52vh] divide-y divide-line overflow-y-auto">
               {list.map((n) => (
                 <li key={n.id}>
-                  <Link href={n.href} onClick={() => { readAll(); setOpen(false); }} className={`flex gap-2.5 px-4 py-2.5 hover:bg-slate-50 ${n.read ? "" : "bg-primary-soft/40"}`}>
+                  {/* « chat:global » / « chat:alliance » (mention) : ouvre le chat sur ce salon au lieu d'une page */}
+                  <Link href={n.href.startsWith("chat:") ? "#" : n.href}
+                    onClick={(e) => {
+                      readAll(); setOpen(false);
+                      if (n.href.startsWith("chat:")) { e.preventDefault(); switchRoom(n.href.slice(5) === "alliance" ? "alliance" : "global"); openChat(true); }
+                    }}
+                    className={`flex gap-2.5 px-4 py-2.5 hover:bg-slate-50 ${n.read ? "" : "bg-primary-soft/40"}`}>
                     <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${DOT[n.tone]}`} />
                     <span className="min-w-0">
                       <span className="block text-[13px] font-semibold">{n.title}</span>
@@ -67,7 +74,7 @@ export default function NotifBell() {
             <div className="border-t border-line px-4 py-3 text-[12px] text-muted">
               {push.state === "on" ? (
                 <div className="flex items-start gap-2">
-                  <span className="min-w-0 flex-1"><b className="font-semibold text-ink">Notifications activées sur cet appareil</b>, même quand le jeu est fermé : ville pleine, contrat signé, parts achetées, blocus.</span>
+                  <span className="min-w-0 flex-1"><b className="font-semibold text-ink">Notifications activées sur cet appareil</b>, même quand le jeu est fermé : ville pleine, contrat signé, parts achetées, blocus, mention dans le chat.</span>
                   <button disabled={push.busy} onClick={() => void disablePush()} className="shrink-0 font-semibold text-muted hover:text-ink hover:underline">Désactiver</button>
                 </div>
               ) : push.state === "ios" ? (
