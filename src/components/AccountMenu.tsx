@@ -1,6 +1,7 @@
 "use client";
 // Compte du joueur (site publié) : bouton Discord, ou avatar + menu.
 import { useEffect, useRef, useState } from "react";
+import { usePopover } from "@/lib/panels";
 import { ChevronDown, Download, FileText, LogOut, Pencil, Trash2, UserPlus } from "lucide-react";
 import Link from "next/link";
 import { MAX_ACCOUNTS, addAccount, deleteAccount, logout, switchAccount, useAuth, type Account } from "@/lib/auth";
@@ -23,7 +24,7 @@ export function Face({ a, size }: { a: Account; size: number }) {
 export default function AccountMenu() {
   const { status, user, saved } = useAuth();
   const notify = useGame((s) => s.notify);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = usePopover("account");
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
   // Pseudo public : celui du serveur ; le nom du compte en attendant qu'il soit lu

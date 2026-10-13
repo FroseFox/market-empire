@@ -1,12 +1,13 @@
 "use client";
 // Bouton haut-parleur de la barre du haut : couper le son ou régler le volume.
 import { useEffect, useRef, useState } from "react";
+import { usePopover } from "@/lib/panels";
 import { Volume1, Volume2, VolumeX } from "lucide-react";
 import { useSound } from "@/lib/sound";
 
 export default function SoundButton() {
   const { on, volume, setOn, setVolume } = useSound();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = usePopover("sound");
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;

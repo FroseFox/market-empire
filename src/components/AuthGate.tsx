@@ -8,7 +8,7 @@ import { Building2, FlaskConical, Globe2, LineChart, LogOut, RefreshCw, ShieldCh
 import type { LucideIcon } from "lucide-react";
 import { forgetAccount, googleEnabled, loginWithDiscord, loginWithGoogle, loginWithPassword, logout, switchAccount, useAuth } from "@/lib/auth";
 import { Face } from "@/components/AccountMenu";
-import { createAccount, playOffline, retryOnline, setPseudo, useOnline } from "@/lib/online";
+import { acceptTermsEverywhere, createAccount, playOffline, retryOnline, setPseudo, useOnline } from "@/lib/online";
 import { PSEUDO_MAX, pseudoProblem, suggestPseudo } from "@/lib/pseudo";
 import { useGame } from "@/store/game";
 import { DiscordIcon, GoogleIcon, ProviderTag } from "@/components/DiscordButton";
@@ -16,7 +16,7 @@ import { Logo } from "@/components/AppShell";
 import { Button } from "@/components/ui";
 import { eur } from "@/lib/format";
 import Link from "next/link";
-import { acceptTerms, termsAccepted } from "@/lib/legal";
+import { TERMS_VERSION, termsAccepted } from "@/lib/legal";
 
 const PITCH: { icon: LucideIcon; title: string; text: string }[] = [
   { icon: LineChart, title: "Investissez sur les vrais marchés", text: "Actions, ETF, matières premières et cryptos, aux cours réels. Aucun argent réel en jeu." },
@@ -203,7 +203,7 @@ function CreateAccount() {
     e.preventDefault();
     if (!agreed) return;
     setBusy(true);
-    acceptTerms();
+    acceptTermsEverywhere();
     const refused = await setPseudo(pseudo);
     setError(refused ?? await createAccount(city));
     setBusy(false);
@@ -261,7 +261,7 @@ function AcceptTerms({ onDone }: { onDone: () => void }) {
       </p>
       <Who />
       <TermsCheckbox checked={agreed} onChange={setAgreed} />
-      <Button onClick={() => { acceptTerms(); onDone(); }} disabled={!agreed} className="mt-5 w-full !rounded-[12px] !py-3 !text-[15px]">Continuer</Button>
+      <Button onClick={() => { acceptTermsEverywhere(); onDone(); }} disabled={!agreed} className="mt-5 w-full !rounded-[12px] !py-3 !text-[15px]">Continuer</Button>
     </Frame>
   );
 }
@@ -288,11 +288,16 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
   const status = useAuth((s) => s.status);
   const phase = useOnline((s) => s.phase);
   const [accepted, setAccepted] = useState(termsAccepted);
+  const terms = useOnline((s) => s.terms);
   if (status === "loading") return <Splash text="Chargement…" />;
   if (status === "out") return <LoginScreen />;
   if (phase === "new") return <CreateAccount />;
   if (phase === "error") return <ServerError />;
   if (phase !== "ready") return <Splash text="Chargement de votre partie…" />;
-  if (!accepted && !termsAccepted()) return <AcceptTerms onDone={() => setAccepted(true)} />;
+  // Conditions : déjà acceptées sur cet appareil, ou sur ce compte depuis un autre appareil (lu sur le serveur)
+  if (!accepted && !termsAccepted()) {
+    if (terms === undefined) return <Splash text="Chargement de votre partie…" />;
+    if (terms !== TERMS_VERSION) return <AcceptTerms onDone={() => setAccepted(true)} />;
+  }
   return <>{children}</>;
 }

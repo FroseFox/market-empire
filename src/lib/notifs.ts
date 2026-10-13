@@ -58,6 +58,12 @@ export const useNotifs = create<Store>((set, get) => ({
 }));
 
 let started = false;
+/** Repart d'une autre partie sans rien signaler (voir rebaseNotifs). */
+let rebase: ((game: E.GameState) => void) | null = null;
+/** La partie va être remplacée par celle du serveur (jouée sur un autre appareil) : ce qui y est déjà arrivé
+ *  (rang, objectifs, nouveautés) a été signalé là-bas. On repart d'elle sans le re-signaler ici. */
+export function rebaseNotifs(game: E.GameState) { rebase?.(game); }
+
 /** Surveille la partie et les cours, et crée les notifications. À appeler une fois la partie chargée. */
 export function startNotifs() {
   if (started || typeof window === "undefined") return;
@@ -73,16 +79,16 @@ export function startNotifs() {
   let g = useGame.getState().game, city = E.computeCity(g);
   let rank = city.rank, wearHigh = city.wear >= 0.5, asleep = (g.branches?.length ?? 0) - city.branches, eventUntil = g.event?.until ?? 0;
   const known = new Set(E.goalStatuses(g, city).filter((s) => s.done).map((s) => s.goal.id));
+  rebase = (game) => {
+    g = game; city = E.computeCity(g); rank = city.rank; wearHigh = city.wear >= 0.5; asleep = (g.branches?.length ?? 0) - city.branches;
+    known.clear(); for (const st of E.goalStatuses(g, city)) if (st.done) known.add(st.goal.id);
+    eventUntil = g.event?.until ?? 0;
+  };
 
   useGame.subscribe((s, prev) => {
     if (s.game !== prev.game) {
       // Nouvelle partie : on repart de zéro sans rien signaler
-      if (s.game.createdAt !== g.createdAt) {
-        g = s.game; city = E.computeCity(g); rank = city.rank; wearHigh = city.wear >= 0.5; asleep = (g.branches?.length ?? 0) - city.branches;
-        known.clear(); for (const st of E.goalStatuses(g, city)) if (st.done) known.add(st.goal.id);
-        eventUntil = g.event?.until ?? 0;
-        return;
-      }
+      if (s.game.createdAt !== g.createdAt) { rebase!(s.game); return; }
       g = s.game; city = E.computeCity(g);
       for (const st of E.goalStatuses(g, city)) {
         if (!st.done || known.has(st.goal.id)) continue;

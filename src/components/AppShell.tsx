@@ -11,6 +11,7 @@ import { startCloudSync } from "@/lib/cloud";
 import { startWorldSync } from "@/lib/world/players";
 import { initAuth, useAuth } from "@/lib/auth";
 import { retryOnline, startOnline, useOnline } from "@/lib/online";
+import { usePopover } from "@/lib/panels";
 import { claimTab, useTab } from "@/lib/tabLock";
 import TabPaused from "@/components/TabPaused";
 import NoNetwork, { useNetwork } from "@/components/NoNetwork";
@@ -273,7 +274,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 const MOBILE_MAIN = ["/", "/marches", "/portefeuille", "/ville"];
 
 function MobileNav({ isActive, mode, quotesAt }: { isActive: (href: string) => boolean; mode: string; quotesAt: number }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = usePopover("more");
   const path = usePathname();
   const main = NAV.filter((n) => MOBILE_MAIN.includes(n.href));
   const more = NAV.filter((n) => !MOBILE_MAIN.includes(n.href));
