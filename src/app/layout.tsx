@@ -40,7 +40,7 @@ const CSP = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https://img.logo.dev https://cdn.discordapp.com https://lh3.googleusercontent.com",
   "font-src 'self'",
-  "connect-src 'self' https://elpkixotuarcymalehjs.supabase.co",
+  "connect-src 'self' https://elpkixotuarcymalehjs.supabase.co wss://elpkixotuarcymalehjs.supabase.co",
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",

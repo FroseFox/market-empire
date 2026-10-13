@@ -74,11 +74,15 @@ function profileFromGame(country: string) {
   };
 }
 
-type Row = { id: string; name: string; avatar: string | null; country: string | null; city_name: string; net_worth: number; population: number; perf: number; day: number; updated_at: string; flagged?: boolean; income?: number; share_float?: number; share_sold?: number; alliance?: string | null; alliance_gift?: number; tester?: boolean };
+type Row = { id: string; name: string; avatar: string | null; country: string | null; city_name: string; net_worth: number; population: number; perf: number; day: number; updated_at: string; changed_at?: string; flagged?: boolean; income?: number; share_float?: number; share_sold?: number; alliance?: string | null; alliance_gift?: number; tester?: boolean };
 
 let lastLoad = 0;
 /** Délai minimal entre deux lectures du classement, et rythme de relecture tant que la page Monde reste ouverte. */
-const RELOAD_MIN = 30_000, RELOAD_EVERY = 120_000;
+const RELOAD_MIN = 30_000, RELOAD_EVERY = 5 * 60_000;
+/** Lecture complète au plus tard toutes les 15 min (comptes supprimés) ; entre deux, seulement les joueurs modifiés. */
+const FULL_EVERY = 15 * 60_000;
+/** Dernière lecture complète : lignes par joueur, requête qui a marché, plus récente modification vue (texte du serveur). */
+let known = new Map<string, Row>(), knownQuery = "", knownNewest = "", lastFull = 0;
 /** Lecture du classement : lignes par requête (le serveur n'en rend pas plus de 1 000) et nombre de requêtes au plus. */
 const PAGE = 1000, MAX_PAGES = 3;
 /** Site publié : classement lu dans Supabase, seulement quand la page Monde est ouverte. Toujours relu sur le serveur :
@@ -99,6 +103,18 @@ async function loadOnline(fresh = false) {
     `ranking?select=${cols}`,
     `players?select=${cols}`,
   ];
+  // Relecture légère : seulement les joueurs modifiés depuis la dernière lecture (colonne changed_at)
+  if (!fresh && knownNewest && knownQuery.startsWith("players?") && Date.now() - lastFull < FULL_EVERY) {
+    const delta = await rest<Row[]>(`${knownQuery},changed_at&changed_at=gt.${encodeURIComponent(knownNewest)}&order=changed_at.asc&limit=${PAGE}`, 0);
+    if (delta && delta.length < PAGE) {
+      for (const r of delta) { known.set(r.id, r); if (r.changed_at && r.changed_at > knownNewest) knownNewest = r.changed_at; }
+      return show([...known.values()].sort((a, b) => Number(b.net_worth) - Number(a.net_worth)), false);
+    }
+    // Échec, ou trop de changements : lecture complète
+  }
+  // Repère pris AVANT la lecture complète : un joueur modifié pendant celle-ci sera relu la fois suivante, jamais oublié.
+  // (Pas de colonne changed_at sur le serveur : pas de repère, et toujours la lecture complète.)
+  const probe = await rest<{ changed_at: string }[]>("players?select=changed_at&order=changed_at.desc&limit=1", 0);
   let rows: Row[] | null = null;
   for (const q of variants) {
     const first = await rest<Row[]>(q + page(0), ttl);
@@ -111,10 +127,17 @@ async function loadOnline(fresh = false) {
       for (const r of more) if (!seen.has(r.id)) { seen.add(r.id); all.push(r); }
     }
     rows = all;
+    // Mémorisé pour les relectures légères (si la colonne changed_at existe : sinon, toujours la lecture complète)
+    known = new Map(all.map((r) => [r.id, r])); knownQuery = q; lastFull = Date.now();
+    knownNewest = probe?.[0]?.changed_at ?? "";
     break;
   }
   // Échec : on réessaiera à la prochaine ouverture de la page, sans attendre 5 minutes
   if (!rows) { lastLoad = 0; emit({ status: "offline", players: [], me: null }); return; }
+  show(rows, fresh);
+}
+
+function show(rows: Row[], fresh: boolean) {
   const me = useAuth.getState().user?.id ?? null;
   const mine = me ? rows.find((r) => r.id === me) : undefined;
   if (me && mine && fresh) followServerCountry(me, mine.country);

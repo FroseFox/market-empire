@@ -1,10 +1,13 @@
 "use client";
 // Chat du jeu : un salon pour tous les joueurs et un salon privé par alliance. Chaque message s'efface 24 h après son envoi
 // (côté serveur, voir supabase/migrations/20261013c_chat.sql).
-// Économe : le salon ouvert est relu toutes les 4 s (seulement les nouveaux messages, souvent rien) ; panneau fermé,
-// une vérification par minute pour la pastille « non lus », et rien quand l'onglet est caché.
+// Économe : panneau ouvert, les nouveaux messages arrivent par le temps réel de Supabase (le serveur prévient, voir
+// lib/realtime.ts), avec une relecture de contrôle toutes les 32 s ; tant que le temps réel n'est pas prêt (ou s'il
+// ne passe pas), le salon est relu toutes les 4 s comme avant. Panneau fermé : une vérification par minute pour la
+// pastille « non lus », et rien quand l'onglet est caché.
 import { create } from "zustand";
-import { restAsUser, rpc, useAuth } from "@/lib/auth";
+import { getToken, restAsUser, rpc, useAuth } from "@/lib/auth";
+import { watchInserts, type Watch } from "@/lib/realtime";
 import { useGame } from "@/store/game";
 
 import { mergeMessages, type ChatMessage } from "./chatList";
@@ -82,17 +85,33 @@ async function checkUnread() {
 
 let timer: ReturnType<typeof setInterval> | null = null;
 let ticks = 0;
+/** Temps réel : ouvert seulement tant que le panneau du chat l'est. */
+let watch: Watch | null = null;
+let soon: ReturnType<typeof setTimeout> | null = null;
+function readOpenRoom() {
+  const s = useChat.getState();
+  if (!s.open) return;
+  void load(s.room).then(() => {
+    const last = useChat.getState().rooms[s.room].at(-1)?.id;
+    if (last) setSeen(last);
+    useChat.setState({ unread: 0 });
+  });
+}
+function syncWatch() {
+  const want = useChat.getState().open && useAuth.getState().status === "in" && !(typeof document !== "undefined" && document.hidden);
+  if (want && !watch) {
+    // Un message arrive : relecture des nouveaux messages (regroupée si plusieurs arrivent ensemble)
+    watch = watchInserts("chat_messages", getToken, () => { if (!soon) soon = setTimeout(() => { soon = null; readOpenRoom(); }, 250); }, (live) => { if (live) readOpenRoom(); });
+  } else if (!want && watch) { watch.close(); watch = null; }
+}
 function tick() {
+  syncWatch();
   if (typeof document !== "undefined" && document.hidden) return;
   if (useAuth.getState().status !== "in") return;
   const s = useChat.getState();
-  if (s.open) {
-    void load(s.room).then(() => {
-      const last = useChat.getState().rooms[s.room].at(-1)?.id;
-      if (last) setSeen(last);
-      useChat.setState({ unread: 0 });
-    });
-  } else if (ticks % 15 === 0) void checkUnread();
+  // Temps réel actif : simple contrôle toutes les 32 s ; sinon, relecture toutes les 4 s
+  if (s.open) { if (!watch?.live || ticks % 8 === 0) readOpenRoom(); }
+  else if (ticks % 15 === 0) void checkUnread();
   ticks++;
 }
 
@@ -100,9 +119,16 @@ function tick() {
 export function startChat() {
   if (timer || typeof window === "undefined") return;
   timer = setInterval(tick, 4_000);
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) { ticks = 0; tick(); } });
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) { ticks = 0; tick(); } else syncWatch(); });
   // Le droit de modérer n'existe que pour quelques comptes : lu une fois, sans rien bloquer s'il manque
-  useAuth.subscribe((a, b) => { if (a.user?.id !== b.user?.id) { useChat.setState({ rooms: { global: [], alliance: [] }, moderator: false, unread: 0 }); void readModerator(); } });
+  useAuth.subscribe((a, b) => {
+    if (a.user?.id !== b.user?.id) {
+      // Autre compte : le temps réel est rouvert avec ses droits à lui
+      watch?.close(); watch = null;
+      useChat.setState({ rooms: { global: [], alliance: [] }, moderator: false, unread: 0 }); void readModerator();
+    }
+    syncWatch();
+  });
   void readModerator();
   tick();
 }
@@ -116,7 +142,7 @@ async function readModerator() {
 
 export function openChat(open: boolean) {
   useChat.setState({ open });
-  if (open) { ticks = 0; tick(); }
+  if (open) { ticks = 0; tick(); } else syncWatch();
 }
 export function switchRoom(room: Room) {
   useChat.setState({ room });
