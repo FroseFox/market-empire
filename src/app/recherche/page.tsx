@@ -10,6 +10,7 @@ import { BRANCH_COLOR, RESEARCH, RESEARCH_BY_ID, type Branch, type ResearchNode 
 import { useMedia } from "@/lib/useMedia";
 import { Button, Card, PageHeader, LockTag } from "@/components/ui";
 import { compactEur, eur } from "@/lib/format";
+import { branchPerks, researchPrice } from "@/lib/game/engine";
 
 const ICONS: Record<string, LucideIcon> = {
   hq: Landmark, us_stocks: DollarSign, eu_stocks: Euro, world_stocks: Earth, crypto: Bitcoin, commodities: Gem, etf: PieChart, history_1y: History, sector_view: LayoutGrid,
@@ -30,6 +31,9 @@ type Status = "done" | "open" | "locked";
 
 export default function ResearchPage() {
   const game = useGame((s) => s.game);
+  // Prix après le bonus des entreprises de logiciels implantées dans la ville
+  const price = (n: ResearchNode) => researchPrice(game, n.cost);
+  const cut = branchPerks(game).researchCut;
   const research = useGame((s) => s.research);
   const done = new Set(game.research);
   const status = (n: ResearchNode): Status => done.has(n.id) ? "done" : n.requires.every((r) => done.has(r)) ? "open" : "locked";
@@ -85,7 +89,7 @@ export default function ResearchPage() {
                             </span>
                           </span>
                           <span className={`text-[12px] tabular font-semibold shrink-0 ${st === "done" ? "text-success" : st === "open" ? "text-primary" : "text-muted"}`}>
-                            {st === "done" ? <Check size={16} /> : st === "locked" ? <LockTag className="tabular">{compactEur(n.cost)}</LockTag> : n.cost === 0 ? "Gratuite" : compactEur(n.cost)}
+                            {st === "done" ? <Check size={16} /> : st === "locked" ? <LockTag className="tabular">{compactEur(price(n))}</LockTag> : n.cost === 0 ? "Gratuite" : compactEur(price(n))}
                           </span>
                         </button>
                       </li>
@@ -135,7 +139,7 @@ export default function ResearchPage() {
                   <button key={n.id} onClick={() => setSelected(n.id)}
                     className="absolute flex flex-col items-center gap-1.5 group focus:outline-none"
                     style={{ left: x - 71, top: y - NODE / 2, width: 142 }}
-                    aria-label={`${n.name} : ${st === "done" ? "débloquée" : st === "open" ? `disponible, ${eur(n.cost)}` : "verrouillée"}`}>
+                    aria-label={`${n.name} : ${st === "done" ? "débloquée" : st === "open" ? `disponible, ${eur(price(n))}` : "verrouillée"}`}>
                     <span className="relative grid place-items-center rounded-full transition-transform group-hover:scale-105 group-focus-visible:ring-4 group-focus-visible:ring-primary/30"
                       style={{
                         width: NODE, height: NODE,
@@ -157,7 +161,7 @@ export default function ResearchPage() {
                     <span className={`text-[12px] font-semibold leading-tight text-center ${st === "locked" ? "text-muted" : "text-ink"} ${isSel ? "underline decoration-2 underline-offset-4" : ""}`}
                       style={isSel ? { textDecorationColor: color } : undefined}>{n.name}</span>
                     <span className={`text-[11px] tabular font-semibold ${st === "done" ? "text-success" : st === "open" ? "text-primary" : "text-muted"}`}>
-                      {st === "done" ? "Débloquée" : n.cost === 0 ? "Gratuite" : compactEur(n.cost)}
+                      {st === "done" ? "Débloquée" : n.cost === 0 ? "Gratuite" : compactEur(price(n))}
                     </span>
                   </button>
                 );
@@ -218,10 +222,11 @@ export default function ResearchPage() {
               <>
                 <div className="flex items-baseline justify-between mb-2">
                   <span className="text-[12px] text-muted">Coût</span>
-                  <span className="text-[22px] font-bold tabular">{eur(sel.cost)}</span>
+                  <span className="text-[22px] font-bold tabular">{eur(price(sel))}</span>
+                  {cut > 0 && sel.cost > 0 && <span className="ml-2 text-[11px] font-semibold text-success">−{Math.round(cut * 100)} % (entreprises de logiciels)</span>}
                 </div>
-                <Button className="w-full" disabled={selStatus === "locked" || sel.cost > game.cash} onClick={() => research(sel.id)}>
-                  {selStatus === "locked" ? "Prérequis manquants" : sel.cost > game.cash ? "Liquidités insuffisantes" : "Rechercher"}
+                <Button className="w-full" disabled={selStatus === "locked" || price(sel) > game.cash} onClick={() => research(sel.id)}>
+                  {selStatus === "locked" ? "Prérequis manquants" : price(sel) > game.cash ? "Liquidités insuffisantes" : "Rechercher"}
                 </Button>
                 <p className="text-[11px] text-muted mt-2">Liquidités : {eur(game.cash)}</p>
               </>

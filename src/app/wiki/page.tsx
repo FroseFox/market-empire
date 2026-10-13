@@ -10,13 +10,14 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { useGame } from "@/store/game";
 import {
-  ACTIVE_RATIO, ALLIANCE, BANK, BLOCKADE, BRANCH_COST, BRANCH_EFFECTS, BRANCH_MIN_VALUE, BUILDINGS, CAPITAL, CATEGORY_LABELS, CITIES_PER_COUNTRY, CITY_EFFECT_CAPS, CITY_RANKS,
+  ACTIVE_RATIO, ALLIANCE, BANK, BLOCKADE, BRANCH_COST, BRANCH_EFFECTS, BRANCH_PERK_CAPS, SECTOR_PERKS, BRANCH_MIN_VALUE, BUILDINGS, CAPITAL, CATEGORY_LABELS, CITIES_PER_COUNTRY, CITY_EFFECT_CAPS, CITY_RANKS,
   CONTRACT_RATIO, COUNTRY_PRICES, DAY_LENGTH_MINUTES, DEMOLISH_REFUND, ENERGY_PER_RESIDENT, EXPORT_RATIO, FEATURES, FOOD_PER_RESIDENT, GOALS, HUB_DESK_COST, HUB_FEE_FACTOR,
   LEVERAGE, MAINTENANCE_RATE, MAX_CATCHUP_DAYS, MAX_CONTRACTS, NEED_PER_RANK, ORIENTATIONS, ORIENTATION_CHANGE_COST, ORIENTATION_MIN_RANK, POLLUTION_MAX, PROJECTS,
   RENOVATE_RATE, RESOURCE_PRICES, SERVICES, SERVICE_IDS, SHARES, SHORTAGE, SPECIALTY_BONUS, STARTING_CASH, STARTING_POPULATION, START_GRANT, TAX_PER_RESIDENT, TERRITORY, TOURISM,
   TRADE_FEE_MIN, TRADE_FEE_RATE, WEAR_PER_DAY, type BranchFamily,
 } from "@/lib/game/config";
 import { cityRank } from "@/lib/game/engine";
+import { ASSETS, FAMILIES, familyOf } from "@/lib/market/universe";
 import { GUIDE } from "@/lib/game/guide";
 import { CITY_EVENTS, EVENTS, effectText } from "@/lib/game/events";
 import { BRANCH_COLOR, RESEARCH, RESEARCH_BY_ID } from "@/lib/game/research";
@@ -690,9 +691,18 @@ export default function WikiPage() {
             <Points items={[
               "Le bâtiment de l’entreprise apparaît sur la carte de la ville, avec son logo.",
               <>Le site tourne tant que vous gardez la participation de départ, <b>quel que soit le cours</b>. Si vous vendez en dessous, il passe en sommeil.</>,
+              <>Chaque site donne <b>deux choses</b> : l’effet de sa <b>famille</b> (emplois, revenus, énergie…) et un <b>bonus de secteur</b> qui lui est propre (★ dans la ville). Choisir quelle entreprise implanter, c’est choisir ce que votre ville gagne.</>,
             ]} />
-            <Table head={["Secteur de l’entreprise", "Site", "Emplois", "Revenu / j", "Autre effet"]}
-              rows={(Object.keys(BRANCH_EFFECTS) as BranchFamily[]).map((f) => { const e = BRANCH_EFFECTS[f]; return [f, e.label, num(e.jobs), `${num(e.revenue)} €`, e.energyProd ? `+${num(e.energyProd)} énergie` : e.serves ? `soigne ${num(e.serves)} habitants` : ""]; })} />
+            <H3>Effet de la famille</H3>
+            <Table head={["Famille", "Site", "Emplois", "Revenu / j", "Énergie", "Autre effet"]}
+              rows={(Object.keys(BRANCH_EFFECTS) as BranchFamily[]).map((f) => { const e = BRANCH_EFFECTS[f]; return [f, e.label, num(e.jobs), `${num(e.revenue)} €`, e.energyProd ? `produit ${num(e.energyProd)}` : e.energyUse ? `consomme ${num(e.energyUse)}` : "", e.serves ? `soigne ${num(e.serves)} habitants` : ""]; })} />
+            <H3>Bonus de secteur ★</H3>
+            <p>En plus de l’effet de sa famille. Les effets sur la ville (visiteurs, nouveaux habitants, exportations, vétusté, capital, satisfaction) s’ajoutent à ceux des bâtiments, <b>sous les mêmes plafonds</b> : il faut varier. Les autres ont leur propre plafond : énergie économisée {pct(BRANCH_PERK_CAPS.energySave)}, recherches {pct(BRANCH_PERK_CAPS.researchCut)} moins chères, frais de bourse {pct(BRANCH_PERK_CAPS.feeCut)} moins chers.</p>
+            <Table head={["Secteur", "Famille", "Bonus", "Exemples"]}
+              rows={FAMILIES.flatMap((f) => Object.keys(SECTOR_PERKS)
+                .filter((sector) => ASSETS.some((a) => a.kind === "stock" && a.sector === sector && familyOf(a) === f))
+                .map((sector) => [sector, f, SECTOR_PERKS[sector].label,
+                  ASSETS.filter((a) => a.kind === "stock" && a.sector === sector).slice(0, 3).map((a) => a.name).join(", ")]))} />
           </Sec>
 
           <Sec id="evenements" title="Événements de ville" brief="Une fois par semaine, un coup de pouce, une catastrophe… ou rien.">

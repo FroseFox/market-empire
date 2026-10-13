@@ -1,6 +1,6 @@
 // Moteur économique — pur (aucun accès au DOM ni au réseau), donc testable
 // et réutilisable tel quel côté serveur (fonction planifiée) plus tard.
-import {
+import { SECTOR_PERKS, BRANCH_PERK_CAPS, type BranchPerk,
   ACTIVE_RATIO, BUILDING_BY_ID, DAY_LENGTH_MINUTES, DEMOLISH_REFUND, ENERGY_PER_RESIDENT,
   EXPORT_RATIO, FOOD_PER_RESIDENT, MAINTENANCE_RATE, MAX_CATCHUP_DAYS, RESOURCE_PRICES, SHORTAGE,
   BRANCH_COST, BRANCH_EFFECTS, BRANCH_MIN_VALUE, CONTRACT_RATIO, FINANCE_FEE_FACTOR, HUB_DESK_COST, HUB_FEE_FACTOR,
@@ -251,6 +251,26 @@ export function activeBranches(state: Partial<Pick<GameState, "branches" | "hold
   return (state.branches ?? []).filter((b) => (state.holdings?.[b.symbol]?.qty ?? 0) >= b.minQty - 1e-9);
 }
 
+/** Bonus de secteur des entreprises implantées et actives, additionnés (plafonds propres appliqués). */
+export function branchPerks(state: Partial<Pick<GameState, "branches" | "holdings">>): Required<Omit<BranchPerk, "service" | "serves">> & { services: Partial<Record<ServiceId, number>> } {
+  const t = { visitors: 0, growthBoost: 0, exportBonus: 0, wearCut: 0, capitalBoost: 0, joy: 0, energySave: 0, researchCut: 0, feeCut: 0, foodProd: 0, pollution: 0, services: {} as Partial<Record<ServiceId, number>> };
+  for (const br of activeBranches(state)) {
+    const asset = ASSET_BY_SYMBOL[br.symbol];
+    const p = asset ? SECTOR_PERKS[asset.sector]?.perk : undefined;
+    if (!p) continue;
+    for (const k of ["visitors", "growthBoost", "exportBonus", "wearCut", "capitalBoost", "joy", "energySave", "researchCut", "feeCut", "foodProd", "pollution"] as const) t[k] += p[k] ?? 0;
+    if (p.service) t.services[p.service] = (t.services[p.service] ?? 0) + (p.serves ?? 0);
+  }
+  t.energySave = Math.min(t.energySave, BRANCH_PERK_CAPS.energySave);
+  t.researchCut = Math.min(t.researchCut, BRANCH_PERK_CAPS.researchCut);
+  t.feeCut = Math.min(t.feeCut, BRANCH_PERK_CAPS.feeCut);
+  return t;
+}
+
+/** Prix d'une recherche, après le bonus des entreprises de logiciels. */
+export const researchPrice = (state: Partial<Pick<GameState, "branches" | "holdings">>, cost: number) =>
+  cost > 0 ? Math.round(cost * (1 - branchPerks(state).researchCut)) : 0;
+
 export function computeCity(state: CityInput): CityStats {
   const capacity: Record<ServiceId, number> = { park: 0, school: 0, safety: 0, hospital: 0 };
   const specialty = state.country && PLAYABLE[state.country] ? countrySpecialty(state.country) : null;
@@ -289,6 +309,12 @@ export function computeCity(state: CityInput): CityStats {
     jobs += e.jobs; bRevenue += e.revenue; energyUse += e.energyUse ?? 0; energyProd += e.energyProd ?? 0; foodProd += e.foodProd ?? 0;
     if (e.service) capacity[e.service] += e.serves ?? 0;
   }
+  // Bonus de secteur : effets de ville (sous les plafonds des bâtiments), nourriture, pollution, équipements
+  const perks = branchPerks(state);
+  for (const key of FX_KEYS) fx[key] += perks[key];
+  foodProd += perks.foodProd;
+  emitted += perks.pollution;
+  for (const [svc, n] of Object.entries(perks.services) as [ServiceId, number][]) capacity[svc] += n;
   emitted *= orientation?.pollution ?? 1;
   energyProd *= orientation?.energy ?? 1;
   foodProd *= orientation?.food ?? 1;
@@ -311,6 +337,7 @@ export function computeCity(state: CityInput): CityStats {
     - (state.alliance?.blockadedBy ? BLOCKADE.targetLoss * (1 - researchFx(state, "trade_defense")) : 0) + (state.alliance?.blockading ? BLOCKADE.attackerGain : 0));
   const pop = Math.min(state.population, housing);
   energyUse += pop * ENERGY_PER_RESIDENT;
+  energyUse *= 1 - perks.energySave;
   const foodUse = pop * FOOD_PER_RESIDENT;
 
   const active = Math.round(pop * ACTIVE_RATIO);
@@ -739,7 +766,7 @@ const HUB_COVERS: Record<Hub["scope"], (a: Asset) => boolean> = {
   etf: (a) => a.kind === "etf",
   commodity: (a) => a.kind === "commodity",
 };
-type FeeInput = Partial<Pick<GameState, "country" | "hubs" | "projects" | "orientation" | "research">>;
+type FeeInput = Partial<Pick<GameState, "country" | "hubs" | "projects" | "orientation" | "research" | "branches" | "holdings">>;
 /** Le joueur a-t-il un bureau dans cette place ? (gratuit quand sa ville est dans le pays de la place) */
 export const hasDesk = (state: FeeInput, hub: Hub) => hub.country === state.country || !!state.hubs?.includes(hub.name);
 /** Place financière qui couvre un actif, s'il y en a une. */
@@ -755,7 +782,7 @@ export function feeFactor(state: FeeInput, symbol: string): number {
   if (hub && hasDesk(state, hub)) f *= HUB_FEE_FACTOR;
   for (const id of state.projects ?? []) { const p = PROJECT_BY_ID[id]; if (p?.perk.kind === "fees") f *= p.perk.factor; }
   if (state.orientation) f *= ORIENTATION_BY_ID[state.orientation]?.fees ?? 1;
-  return f * (1 - researchFx(state, "bank_fees"));
+  return f * (1 - researchFx(state, "bank_fees")) * (1 - branchPerks(state).feeCut);
 }
 
 /** Ouvre un bureau dans une place financière. */
@@ -1346,15 +1373,16 @@ export function doResearch(state: GameState, id: string, at: number): ActionResu
   if (hasResearch(state, id)) return { ok: false, error: "Déjà acquis." };
   const missing = n.requires.filter((r) => !hasResearch(state, r));
   if (missing.length) return { ok: false, error: `Nécessite d'abord : ${missing.map((r) => `« ${RESEARCH_BY_ID[r].name} »`).join(" et ")}.` };
-  if (n.cost > state.cash) return { ok: false, error: "Liquidités insuffisantes." };
+  const cost = researchPrice(state, n.cost);
+  if (cost > state.cash) return { ok: false, error: "Liquidités insuffisantes." };
   return {
     ok: true,
     state: {
       ...state,
-      cash: state.cash - n.cost,
+      cash: state.cash - cost,
       research: [...state.research, id],
-      today: spend(state, "research", n.cost),
-      transactions: addTx(state, { kind: "research", label: `Recherche : ${n.name}`, amount: -n.cost, at }),
+      today: spend(state, "research", cost),
+      transactions: addTx(state, { kind: "research", label: `Recherche : ${n.name}`, amount: -cost, at }),
     },
   };
 }
