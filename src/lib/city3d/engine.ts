@@ -189,11 +189,19 @@ export class CityEngine {
     this.renderer.toneMapping = THREE.NoToneMapping;
     this.reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
     this.scene.background = new THREE.Color(LAND);
-    // Halo des lampadaires : un dégradé rond, dessiné une fois
-    const halo = document.createElement("canvas"); halo.width = halo.height = 64;
-    const hx = halo.getContext("2d");
-    if (hx) { const gr = hx.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, "rgba(255,255,255,1)"); gr.addColorStop(1, "rgba(255,255,255,0)"); hx.fillStyle = gr; hx.fillRect(0, 0, 64, 64); }
-    this.glowMat.map = new THREE.CanvasTexture(halo);
+    // Halo des lampadaires : un dégradé rond, calculé une fois. Blanc pur partout, seule l'opacité varie.
+    // Avant, il était dessiné dans un canvas 2D : sur une vraie carte graphique, le navigateur « trame » les dégradés
+    // (±1 sur chaque couleur), et ce bruit, très amplifié là où le halo est presque transparent, faisait des pixels
+    // de toutes les couleurs sur la route sous les lampadaires.
+    const halo = new Uint8Array(64 * 64 * 4);
+    for (let j = 0; j < 64; j++) for (let i = 0; i < 64; i++) {
+      const d = Math.hypot(i + 0.5 - 32, j + 0.5 - 32) / 32, o = (j * 64 + i) * 4;
+      halo[o] = halo[o + 1] = halo[o + 2] = 255; halo[o + 3] = Math.round(255 * Math.max(0, 1 - d));
+    }
+    const haloTex = new THREE.DataTexture(halo, 64, 64, THREE.RGBAFormat);
+    haloTex.magFilter = THREE.LinearFilter; haloTex.minFilter = THREE.LinearMipmapLinearFilter; haloTex.generateMipmaps = true;
+    haloTex.needsUpdate = true;
+    this.glowMat.map = haloTex;
     this.sun.castShadow = true;
     const small = Math.min(window.innerWidth, window.innerHeight) < 700;
     this.sun.shadow.mapSize.set(small ? 1024 : 2048, small ? 1024 : 2048);
