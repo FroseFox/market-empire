@@ -134,6 +134,22 @@ export class CityEngine {
   private flakes: { ox: number; oz: number; y0: number; sp: number; ph: number }[] = []; private flakeMesh: THREE.InstancedMesh | null = null;
   /** Animation de l'événement de la semaine, et l'éclairage « de base » (jour/nuit) qu'elle module. */
   private ev: EventFx | null = null; private evT = 0;
+  /** Événement dont les shaders se préparent en arrière-plan (voir stageFx). `undefined` : rien en cours. */
+  private fxWant: string | null | undefined = undefined;
+  /** Shaders de la ville en préparation à l'ouverture : on attend qu'ils soient prêts pour dessiner (voir setCity). */
+  private warming = false;
+  /** Durée moyenne entre deux images de l'écran (ms) : sous 11 ms, écran 120 Hz ou plus. */
+  private tick = 16.7;
+
+  // ─── Ombres en cache (voir shadowPass) ───
+  /** Faux si un objet qui projette une ombre sort du cas simple (matériau double face, transparence découpée…) :
+   *  three.js calcule alors les ombres lui-même, comme avant. */
+  private cacheable = false;
+  /** Ombres de tout ce qui ne bouge pas, gardées tant que rien ne change. */
+  private staticRT: THREE.WebGLRenderTarget | null = null;
+  private shadowKey = ""; private staticVer = 0;
+  /** Même matériau que celui de three.js pour ses ombres (MeshDepthMaterial), face arrière comme lui pour un matériau à une face. */
+  private depthMat = new THREE.MeshDepthMaterial({ side: THREE.BackSide });
   private baseLight = { hemi: 1.5, sun: 2.9, hemiC: new THREE.Color(0xdfeaff), sunC: new THREE.Color(0xffe9c4) };
   /** Décor de saison de la mairie (selon la date du joueur), vérifié toutes les minutes. */
   private season: Season | null = seasonOf();
@@ -154,7 +170,7 @@ export class CityEngine {
   private rx = R2; private rz = -R2; private fx = R2; private fz = R2;
   // Boucle
   private raf = 0; private onScreen = true; private lastDraw = 0; private disposed = false;
-  private reduce = false; private lite = false; private slowFrames = 0; private prevT = 0; private told = false;
+  private reduce = false; private lite = false; private slowFrames = 0; private prevT = 0; private told = false; private warmed = false;
   /** Vue figée : le joueur préfère moins de mouvement, ou les graphismes légers sont actifs. */
   private get calm() { return this.reduce || this.lite; }
   private pts = new Map<number, { x: number; y: number }>();
@@ -234,6 +250,18 @@ export class CityEngine {
     this.layout();
     if (first) { this.framed = true; this.lastInitial = f.initialZoom; this.view = { zoom: this.startZoom(), ox: 0, oz: 0 }; this.applyView(); }
     this.applyLive();
+    // Première ouverture : les shaders (programmes de la carte graphique) se préparent sans bloquer la page,
+    // puis la ville est dessinée. Avant, la page entière gelait le temps de les préparer au premier dessin.
+    if (!this.warmed) {
+      this.warmed = true;
+      const compile = (this.renderer as { compileAsync?: THREE.WebGLRenderer["compileAsync"] }).compileAsync;
+      if (compile) {
+        this.warming = true;
+        const go = () => { if (!this.warming) return; this.warming = false; this.run(); };
+        try { void compile.call(this.renderer, this.scene, this.cam).then(go, go); } catch { this.warming = false; }
+        setTimeout(go, 2500); // filet : jamais plus de 2,5 s sans image
+      }
+    }
     this.run();
   }
 
@@ -509,6 +537,79 @@ export class CityEngine {
       });
       this.layerTiles.frustumCulled = false; this.layerTiles.renderOrder = 2; this.layerTiles.visible = false; this.world.add(this.layerTiles);
     }
+    this.tagCasters();
+  }
+
+  /** Range les objets qui projettent une ombre : calque 1 = ceux qui bougent à chaque image (voitures, piétons,
+   *  éoliennes, pièces animées), calque 2 = tout le reste. Les calques ne servent qu'au calcul des ombres :
+   *  tous les objets restent aussi sur le calque 0, celui de la caméra. */
+  private tagCasters() {
+    const moving = new Set<THREE.Object3D>([this.carMesh, this.bodyMesh, this.headMesh, this.spinMesh, ...this.parts.map((p) => p.mesh)].filter((o): o is THREE.InstancedMesh => !!o));
+    let ok = true;
+    this.scene.traverse((o) => {
+      o.layers.disable(1); o.layers.disable(2);
+      const m = o as THREE.Mesh;
+      if (!o.castShadow || (o as THREE.Light).isLight) return; // le soleil « projette » les ombres : ce n'est pas un objet
+      if (!m.isMesh) { ok = false; return; }
+      const mat = m.material as THREE.Material | THREE.Material[];
+      if (Array.isArray(mat) || mat.side !== THREE.FrontSide || mat.shadowSide !== null || mat.alphaTest > 0 || mat.alphaToCoverage
+        || (mat as THREE.MeshStandardMaterial).displacementMap || (mat as THREE.MeshStandardMaterial).wireframe || m.customDepthMaterial) ok = false;
+      o.layers.enable(moving.has(o) ? 1 : 2);
+    });
+    this.cacheable = ok;
+    this.staticVer++;
+  }
+
+  /** Ombres du soleil, à chaque image. three.js recalculait celles de TOUTE la ville à chaque image (près de la moitié
+   *  des triangles dessinés), alors que presque rien ne bouge. Ici :
+   *  - les ombres de ce qui ne bouge pas sont calculées une fois, puis gardées tant que la vue, le soleil et la ville
+   *    ne changent pas ;
+   *  - à chaque image, on repart de cette copie et on n'ajoute que les ombres de ce qui bouge.
+   *  Le résultat est exactement le même : la profondeur la plus proche du soleil, calculée par le même matériau
+   *  et les mêmes matrices que three.js. Seul ce qui sert à le calculer change. */
+  private shadowPass() {
+    const sm = this.renderer.shadowMap, sun = this.sun, sh = sun.shadow;
+    if (!this.cacheable || !sun.castShadow) { sm.autoUpdate = true; return; }
+    sm.autoUpdate = false; sm.needsUpdate = false;
+    sun.updateMatrixWorld(); sun.target.updateMatrixWorld();
+    sh.updateMatrices(sun);
+    const w = sh.mapSize.x, h = sh.mapSize.y;
+    const make = () => {
+      // Comme three.js (WebGLShadowMap) : profondeur 24 bits comparée à la lecture, filtrage linéaire
+      const rt = new THREE.WebGLRenderTarget(w, h);
+      const d = new THREE.DepthTexture(w, h, THREE.UnsignedIntType);
+      d.format = THREE.DepthFormat; d.compareFunction = THREE.LessEqualCompare; d.minFilter = THREE.LinearFilter; d.magFilter = THREE.LinearFilter;
+      rt.depthTexture = d;
+      return rt;
+    };
+    if (!sh.map || sh.map.width !== w || sh.map.height !== h) {
+      sh.map?.depthTexture?.dispose(); sh.map?.dispose();
+      sh.map = make(); sh.map.texture.name = sun.name + ".shadowMap"; sh.map.depthTexture!.name = sun.name + ".shadowMap";
+      this.renderer.initRenderTarget(sh.map as THREE.WebGLRenderTarget);
+      this.shadowKey = "";
+    }
+    if (!this.staticRT || this.staticRT.width !== w || this.staticRT.height !== h) {
+      this.staticRT?.depthTexture?.dispose(); this.staticRT?.dispose();
+      this.staticRT = make(); this.renderer.initRenderTarget(this.staticRT);
+      this.shadowKey = "";
+    }
+    const key = `${sh.matrix.elements.join(",")}|${this.staticVer}`;
+    if (key !== this.shadowKey) { this.depthPass(2, this.staticRT, true); this.shadowKey = key; }
+    this.renderer.copyTextureToTexture(this.staticRT.depthTexture!, sh.map.depthTexture!);
+    this.depthPass(1, sh.map as THREE.WebGLRenderTarget, false);
+  }
+
+  /** Dessine la profondeur des objets du calque `layer`, vue du soleil, dans `rt`. */
+  private depthPass(layer: number, rt: THREE.WebGLRenderTarget, clear: boolean) {
+    const r = this.renderer, sc = this.scene, cam = this.sun.shadow.camera;
+    const bg = sc.background, over = sc.overrideMaterial, auto = r.autoClear;
+    sc.background = null; sc.overrideMaterial = this.depthMat; r.autoClear = false;
+    cam.layers.set(layer);
+    r.setRenderTarget(rt);
+    if (clear) r.clear();
+    r.render(sc, cam);
+    r.setRenderTarget(null);
+    sc.background = bg; sc.overrideMaterial = over; r.autoClear = auto;
   }
 
   /** Mode construction : tout le quadrillage des rues et les carreaux libres en vert. */
@@ -529,7 +630,7 @@ export class CityEngine {
 
   private applyLive() {
     const l = this.live;
-    if ((l.event ?? null) !== (this.ev?.id ?? null)) this.setFx(l.event ?? null);
+    if ((l.event ?? null) !== (this.ev?.id ?? null)) this.stageFx(l.event ?? null);
     if (!!l.lite !== this.lite) {
       this.lite = !!l.lite;
       this.sun.castShadow = !this.lite;
@@ -603,6 +704,7 @@ export class CityEngine {
 
   private scaleInst(key: string, sy: number) {
     const it = this.inst.get(key); if (!it) return;
+    this.staticVer++; // ombres des bâtiments à refaire
     const w = sideOf(it.plot);
     if (sy === 1) this.partScale.delete(key); else this.partScale.set(key, sy);
     this.place(it.solid, it.index, ctr(it.plot, "x"), 0, ctr(it.plot, "y"), sy === 0 ? 0 : w, sy * tall(w), sy === 0 ? 0 : w);
@@ -824,20 +926,50 @@ export class CityEngine {
   }
 
   /** Met en place l'animation de l'événement de la semaine (ou l'enlève). */
-  private setFx(id: string | null) {
+  private newFx(id: string | null) {
+    return id && !this.frameOpts.compact ? new EventFx(id, this.plots, { x0: this.x0, x1: this.x1, y0: this.y0, y1: this.y1 }, this.calm) : null;
+  }
+  private setFx(id: string | null, ready?: EventFx | null) {
+    if (this.fxWant !== undefined && ready === undefined) this.fxWant = undefined; // remplace une préparation en cours
     if (this.ev) { this.scene.remove(this.ev.group); this.ev.dispose(); this.ev = null; }
     this.scene.fog = null;
-    if (id && !this.frameOpts.compact) {
-      this.ev = new EventFx(id, this.plots, { x0: this.x0, x1: this.x1, y0: this.y0, y1: this.y1 }, this.calm);
+    const ev = ready === undefined ? this.newFx(id) : ready;
+    if (ev) {
+      this.ev = ev;
       this.scene.add(this.ev.group);
       const f = this.ev.light.fog;
       if (f) this.scene.fog = new THREE.Fog(f.color, f.near, f.far);
     }
+    this.tagCasters();
     this.applyLight();
   }
 
+  /** Début ou fin d'un événement (neige, brouillard…) : ses shaders, et ceux de la ville avec ou sans brouillard,
+   *  se préparent en arrière-plan, puis l'événement s'affiche. Avant, la page gelait le temps de les recompiler.
+   *  Pendant la préparation, rien n'est dessiné avec l'état d'arrivée : l'image reste exactement la même. */
+  private stageFx(id: string | null) {
+    if (this.fxWant === id) return;
+    this.fxWant = id;
+    const ev = this.newFx(id);
+    const compile = (this.renderer as { compileAsync?: THREE.WebGLRenderer["compileAsync"] }).compileAsync;
+    const swap = () => {
+      if (this.disposed || this.fxWant !== id) { ev?.dispose(); return; }
+      this.fxWant = undefined; this.setFx(id, ev); this.draw();
+    };
+    if (!compile) { swap(); return; }
+    // État d'arrivée posé le temps de lancer la préparation, retiré aussitôt (aucune image dessinée entre-temps)
+    const fog = this.scene.fog, f = ev?.light.fog;
+    if (ev) this.scene.add(ev.group);
+    this.scene.fog = f ? new THREE.Fog(f.color, f.near, f.far) : null;
+    let ready: Promise<unknown>;
+    try { ready = compile.call(this.renderer, this.scene, this.cam); } catch { ready = Promise.resolve(); }
+    if (ev) this.scene.remove(ev.group);
+    this.scene.fog = fog;
+    void ready.then(swap, swap);
+  }
+
   private frame(t: number) {
-    if (this.disposed) return;
+    if (this.disposed || this.warming) return;
     if (this.az !== this.azGoal) {
       const d = this.azGoal - this.az;
       this.turnTo(Math.abs(d) < 0.004 ? this.azGoal : this.az + d * 0.2);
@@ -915,6 +1047,7 @@ export class CityEngine {
       });
       this.flakeMesh.instanceMatrix.needsUpdate = true;
     }
+    this.shadowPass();
     this.renderer.render(this.scene, this.cam);
   }
 
@@ -923,7 +1056,11 @@ export class CityEngine {
   private loop = (t: number) => {
     // Pleine fluidité tant que le joueur est sur le jeu. Fenêtre visible mais sans le focus (autre fenêtre ou
     // autre appli au premier plan) : 30 images par seconde suffisent. Onglet caché : la boucle est arrêtée (run).
-    if (document.hasFocus() || this.goal || this.az !== this.azGoal || this.pts.size > 0 || t < this.growUntil || t - this.lastDraw >= 33) { this.lastDraw = t; this.frame(t); }
+    // Écran 120 Hz ou plus : une image sur deux suffit (60 à 80 par seconde). Les animations suivent l'horloge :
+    // même vitesse, même image ; seulement deux fois moins de calcul sur ces écrans.
+    if (this.prevT) { const dt = t - this.prevT; if (dt > 0 && dt < 100) this.tick += (dt - this.tick) * 0.1; }
+    const due = this.tick >= 11 || t - this.lastDraw >= 12;
+    if ((due && (document.hasFocus() || this.goal || this.az !== this.azGoal || this.pts.size > 0 || t < this.growUntil)) || t - this.lastDraw >= 33) { this.lastDraw = t; this.frame(t); }
     // Mesure de fluidité : sous ~20 images par seconde pendant plusieurs secondes d'affilée, on prévient (une fois)
     if (document.hasFocus() && this.prevT) {
       const dt = t - this.prevT;
@@ -1029,6 +1166,8 @@ export class CityEngine {
     this.clearWorld(); this.overlay.replaceChildren();
     this.land.geometry.dispose(); (this.land.material as THREE.Material).dispose(); this.plane.dispose(); this.ring.geometry.dispose();
     this.glowMat.map?.dispose();
+    this.depthMat.dispose(); this.staticRT?.depthTexture?.dispose(); this.staticRT?.dispose();
+    this.sun.shadow.map?.depthTexture?.dispose(); this.sun.shadow.map?.dispose();
     for (const m of [this.gMat, this.bMat, this.litMat, this.ghostMat, this.fadeMat, this.bulbMat, this.glowMat, this.smokeMat, this.tintMat, this.hoverMat, this.selMat, this.ringMat, this.layerMat, this.outMat, this.flakeMat, ...this.festive.values()]) m.dispose();
     this.bulbGeo.dispose();
     if (this.ev) { this.scene.remove(this.ev.group); this.ev.dispose(); this.ev = null; }
