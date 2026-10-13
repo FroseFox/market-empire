@@ -19,6 +19,9 @@ import NotifBell from "@/components/NotifBell";
 import { startNotifs } from "@/lib/notifs";
 import { startSoundEvents } from "@/lib/soundEvents";
 import SoundButton from "@/components/SoundButton";
+import ChatButton from "@/components/ChatButton";
+import { startChat } from "@/lib/chat";
+import { useSound } from "@/lib/sound";
 import AuthGate, { Splash } from "@/components/AuthGate";
 import { DAY_MS } from "@/lib/game/engine";
 import { now as gameNow } from "@/lib/clock";
@@ -145,7 +148,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     startNotifs();
     startSoundEvents();
     if (STATIC_MODE) { startCloudSync(); startWorldSync(); return; }
-    initAuth().then(startOnline);
+    initAuth().then(() => { startOnline(); startChat(); });
   }, [hydrated]);
   const authStatus = useAuth((s) => s.status);
   const cloud = useGame((s) => s.cloud);
@@ -206,7 +209,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 <div className="leading-tight"><div className="text-[13px] font-semibold">{hydrated ? name : ""}</div><div className="text-[11px] text-muted">Investisseur</div></div>
               </div>
             ) : hydrated && <AccountMenu />}
-            {hydrated && <SoundButton />}
+            {/* Téléphone : le son se règle dans « Plus » (la place va au chat) */}
+            {hydrated && <div className="hidden sm:block"><SoundButton /></div>}
+            {hydrated && !STATIC_MODE && authStatus === "in" && <ChatButton />}
             {hydrated && <NotifBell />}
             <Link href="/ville" className="flex shrink-0 items-center gap-2 rounded-[12px] bg-success-soft px-2.5 sm:px-3 py-1.5">
               <div className="leading-tight text-right">
@@ -269,6 +274,7 @@ function MobileNav({ isActive, mode, quotesAt }: { isActive: (href: string) => b
               ))}
             </div>
             <ShowGuide />
+            <SoundRow />
             <InstallApp />
             <div className={`mt-3 flex items-center gap-2 rounded-[12px] px-3 py-2 text-[12px] ${mode === "simulé" ? "bg-warning-soft text-amber-700" : "bg-success-soft text-emerald-700"}`}>
               <span className={`h-2 w-2 rounded-full ${mode === "simulé" ? "bg-warning" : "bg-success"}`} />
@@ -291,5 +297,19 @@ function MobileNav({ isActive, mode, quotesAt }: { isActive: (href: string) => b
         </button>
       </nav>
     </>
+  );
+}
+
+/** Téléphone : couper ou remettre le son depuis « Plus » (le bouton de la barre du haut n'y a pas sa place). */
+function SoundRow() {
+  const { on, setOn } = useSound();
+  return (
+    <div className="mt-3 flex items-center justify-between rounded-[12px] bg-slate-50 px-3 py-2.5 text-[13px] font-semibold">
+      Sons du jeu
+      <button role="switch" aria-checked={on} aria-label="Activer les sons" data-sfx="none" onClick={() => setOn(!on)}
+        className={`relative h-6 w-11 rounded-full transition-colors ${on ? "bg-primary" : "bg-slate-300"}`}>
+        <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-[left] ${on ? "left-[22px]" : "left-0.5"}`} />
+      </button>
+    </div>
   );
 }
