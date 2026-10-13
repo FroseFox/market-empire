@@ -3,7 +3,8 @@
 # jamais y être lisibles. Elle est gardée 30 jours, dans l'onglet Actions (« Sauvegarde de la base »).
 #
 # Deux secrets à créer une fois dans GitHub (Settings › Secrets and variables › Actions) :
-#   SUPABASE_DB_PASSWORD : le mot de passe de la base (Supabase › Project Settings › Database › Reset database password)
+#   SUPABASE_DB_PASSWORD : le mot de passe du compte « backup_reader » (lecture seule), choisi par vous et activé une fois
+#     dans l'éditeur SQL de Supabase :  alter role backup_reader login password 'le-même-mot-de-passe';
 #   BACKUP_PASSPHRASE : une longue phrase secrète, à garder aussi ailleurs : sans elle, la copie est illisible
 # L'adresse de la base est construite ici (projet et région connus) : pas besoin de la copier depuis Supabase.
 # Tant que les secrets manquent, la sauvegarde échoue (croix rouge) : une coche verte veut toujours dire « copie faite ».
@@ -28,7 +29,8 @@ jobs:
       PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
       # Projet Supabase « Market Empire » (Francfort). Connexion par le « pooler » : GitHub n'a pas d'IPv6.
-      PGUSER: postgres.elpkixotuarcymalehjs
+      # Compte en lecture seule réservé à la sauvegarde (voir supabase/migrations/20261013b_backup_reader.sql)
+      PGUSER: backup_reader.elpkixotuarcymalehjs
       PGDATABASE: postgres
       PGPORT: "5432"
     steps:
@@ -63,13 +65,13 @@ jobs:
           echo "::add-mask::$PW"
           echo "PGPASSWORD=$PW" >> "$GITHUB_ENV"
           export PGPASSWORD="$PW" PGSSLMODE=require PGCONNECT_TIMEOUT=15
-          for h in aws-1-eu-central-1.pooler.supabase.com aws-0-eu-central-1.pooler.supabase.com; do
+          for h in aws-0-eu-central-1.pooler.supabase.com aws-1-eu-central-1.pooler.supabase.com; do
             if out=$(/usr/lib/postgresql/17/bin/psql -h "$h" -tAc "select 1" 2>&1); then
               echo "PGHOST=$h" >> "$GITHUB_ENV"; echo "PGSSLMODE=require" >> "$GITHUB_ENV"; echo "Serveur : $h"; exit 0
             fi
             echo "Essai $h : $out"
           done
-          echo "::error::Connexion impossible à la base. Si les essais disent « password authentication failed », le secret SUPABASE_DB_PASSWORD n'est pas le bon mot de passe (refaites « Reset database password » et recopiez-le)."
+          echo "::error::Connexion impossible à la base. Si les essais disent « password authentication failed », le secret SUPABASE_DB_PASSWORD n'est pas le mot de passe donné à backup_reader dans l'éditeur SQL de Supabase."
           exit 1
 
       # Les tables du jeu (structure et données) et les comptes des joueurs (données seulement)
