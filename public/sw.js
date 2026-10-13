@@ -31,8 +31,11 @@ self.addEventListener("push", (e) => {
   let d = {};
   try { d = e.data ? e.data.json() : {}; } catch { /* message illisible : notification générique */ }
   const text = (v) => (typeof v === "string" ? v.slice(0, 200) : "");
-  e.waitUntil(self.registration.showNotification(text(d.title) || "Market Empire", {
-    body: text(d.body), tag: text(d.tag) || undefined, icon: "icons/icon-192.png", badge: "icons/icon-192.png", data: { url: text(d.url) },
+  // Notifications courtes : une ligne de titre, une ou deux lignes de texte.
+  const cut = (v, n) => { const t = text(v).replace(/\s+/g, " ").trim(); return t.length > n ? t.slice(0, n - 1) + "…" : t; };
+  e.waitUntil(self.registration.showNotification(cut(d.title, 40) || "Market Empire", {
+    // badge : petite icône monochrome de la barre d'état (Android n'en garde que la silhouette).
+    body: cut(d.body, 90), tag: text(d.tag) || undefined, icon: "icons/icon-192.png", badge: "icons/badge-96.png", data: { url: text(d.url) },
   }));
 });
 
