@@ -4,6 +4,7 @@
 // `trade` / `build` côté serveur au lieu de modifier l'état localement.
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
+import { tabPaused } from "@/lib/tabLock";
 import * as E from "@/lib/game/engine";
 import { fetchQuotes } from "@/lib/market/client";
 import type { OrientationId } from "@/lib/game/config";
@@ -303,7 +304,8 @@ export const useGame = create<Store>()(
       // Stockage tolérant : si le navigateur refuse la sauvegarde, le jeu tourne quand même.
       storage: createJSONStorage(() => ({
         getItem: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
-        setItem: (k, v) => { try { localStorage.setItem(k, v); } catch { /* sauvegarde indisponible */ } },
+        // Onglet en pause (le jeu est ouvert dans un autre) : il n'écrase pas la partie de l'onglet actif
+        setItem: (k, v) => { if (tabPaused()) return; try { localStorage.setItem(k, v); } catch { /* sauvegarde indisponible */ } },
         removeItem: (k) => { try { localStorage.removeItem(k); } catch { /* idem */ } },
       })),
       version: 2,
