@@ -14,3 +14,19 @@ describe("plan de ville publié (visite)", () => {
     expect(plotsFromCity({ "house_tower*2": [9, 9], shop: [10, 10, 11, 11] })).toHaveLength(2);
   });
 });
+
+describe("plan compact des grandes villes", () => {
+  it("une carte de 48 × 48 pleine tient sous 16 Ko et se relit à l'identique", async () => {
+    const { compactCity, plotsFromCity, mapBounds, MAX_MAP_SIZE, isBuildable } = await import("./layout");
+    const { lo, hi } = mapBounds(MAX_MAP_SIZE);
+    const pl: Record<string, number[]> = {};
+    const ids = ["house_s", "house_m", "shop", "market", "farm_s", "power_s", "park", "school"];
+    let k = 0;
+    for (let x = lo; x < hi; x++) for (let y = lo; y < hi; y++) if (isBuildable(x, y, MAX_MAP_SIZE)) (pl[ids[k++ % ids.length]] ??= []).push(x, y);
+    const compact = compactCity(pl);
+    expect(JSON.stringify(compact).length).toBeLessThan(4_000);
+    const back = plotsFromCity(compact);
+    expect(back).toHaveLength(k);
+    expect(plotsFromCity(pl)).toEqual(back); // l'ancien format se relit toujours
+  });
+});

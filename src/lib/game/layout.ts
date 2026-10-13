@@ -111,15 +111,39 @@ export function layoutFrom(buildings: Record<string, number>, size = MAP_SIZE): 
 }
 
 /** Plan de ville publié → emplacements sûrs à dessiner (bâtiments connus, carreaux valides, sans doublon). */
+// ─── Plan publié pour les visites : format compact ───
+// Une coordonnée = un caractère (la carte la plus grande fait 48 carreaux de côté) : le plan d'une carte de 48 × 48
+// pleine tient en ~3 Ko au lieu de ~30 Ko en liste de nombres, sous la limite de 16 Ko du serveur (publish_city).
+const DIGITS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+const LOWEST = mapBounds(MAX_MAP_SIZE).lo;
+
+/** Plan de la ville (`pack(...).pl`) → format compact. Une liste qui sort de la carte reste telle quelle (relue pareil). */
+export function compactCity(pl: Record<string, number[]>): Record<string, string | number[]> {
+  const out: Record<string, string | number[]> = {};
+  for (const [key, xy] of Object.entries(pl)) {
+    const digits = xy.map((v) => DIGITS[v - LOWEST]);
+    out[key] = xy.every((v) => Number.isInteger(v) && v - LOWEST >= 0 && v - LOWEST < DIGITS.length) ? digits.join("") : xy;
+  }
+  return out;
+}
+
+/** Coordonnées d'un plan publié : format compact (texte) ou ancien format (liste de nombres). */
+function coords(xy: unknown): number[] | null {
+  if (Array.isArray(xy)) return xy.map(Number);
+  if (typeof xy !== "string") return null;
+  return [...xy].map((c) => { const i = DIGITS.indexOf(c); return i < 0 ? NaN : i + LOWEST; });
+}
+
 export function plotsFromCity(city: unknown): Plot[] {
   if (!city || typeof city !== "object") return [];
   const used = new Map<string, Plot>(), out: Plot[] = [];
-  for (const [key, xy] of Object.entries(city as Record<string, unknown>)) {
+  for (const [key, raw] of Object.entries(city as Record<string, unknown>)) {
     // Les bâtiments de plus d'un carreau sont publiés sous « type*côté » (voir pack.ts)
     const [id, side] = key.split("*");
     const s = side === undefined ? 1 : Number(side);
-    if (!BUILDING_BY_ID[id] || !Array.isArray(xy) || (s !== 1 && s !== 2 && s !== 3)) continue;
-    for (let i = 0; i + 1 < xy.length && out.length < 900; i += 2) {
+    const xy = coords(raw);
+    if (!BUILDING_BY_ID[id] || !xy || (s !== 1 && s !== 2 && s !== 3)) continue;
+    for (let i = 0; i + 1 < xy.length && out.length < MAX_MAP_SIZE * MAX_MAP_SIZE; i += 2) {
       const x = Number(xy[i]), y = Number(xy[i + 1]);
       if (!Number.isInteger(x) || !Number.isInteger(y) || !canPlace(used, x, y, s, MAX_MAP_SIZE)) continue;
       const p: Plot = s > 1 ? { id, x, y, s } : { id, x, y };
