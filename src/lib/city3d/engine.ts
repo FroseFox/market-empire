@@ -357,9 +357,10 @@ export class CityEngine {
     for (const [id, list] of byId) {
       const model = buildingModel(id);
       const solid = new THREE.InstancedMesh(model.solid, this.bMat, list.length);
-      solid.castShadow = true; solid.receiveShadow = true; solid.frustumCulled = false;
+      // Tri de visibilité : une série entièrement hors de l'écran (ou de la zone d'ombre du soleil) n'est pas dessinée.
+      // three.js calcule la sphère qui englobe toutes les instances ; on la remet à zéro quand un bâtiment bouge (scaleInst).
+      solid.castShadow = true; solid.receiveShadow = true;
       const lit = model.lit ? new THREE.InstancedMesh(model.lit, this.litMat, list.length) : null;
-      if (lit) lit.frustumCulled = false;
       list.forEach((p, i) => {
         const w = sideOf(p), h = tall(w), cx = ctr(p, "x"), cy = ctr(p, "y");
         this.place(solid, i, cx, 0, cy, w, h, w);
@@ -419,7 +420,7 @@ export class CityEngine {
             bulbs.push({ x: dx + l.at[0] * c + l.at[2] * sn, y: 0.016 + l.at[1], z: dz - l.at[0] * sn + l.at[2] * c, r: l.r, c: l.c });
           }
         });
-        dm.castShadow = true; dm.frustumCulled = false; this.world.add(dm);
+        dm.castShadow = true; this.world.add(dm);
       }
     }
     // Ampoules décoratives : une série par couleur
@@ -430,7 +431,7 @@ export class CityEngine {
       if (!mat) { mat = new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: 0.4, roughness: 0.4 }); this.festive.set(c, mat); }
       const bm = new THREE.InstancedMesh(this.bulbGeo, mat, list.length);
       list.forEach((b, i) => this.place(bm, i, b.x, b.y, b.z, b.r));
-      bm.frustumCulled = false; this.world.add(bm);
+      this.world.add(bm);
     }
     this.applyNight();
     // Neige qui tombe à Noël (pas en graphismes légers)
@@ -605,8 +606,8 @@ export class CityEngine {
     const w = sideOf(it.plot);
     if (sy === 1) this.partScale.delete(key); else this.partScale.set(key, sy);
     this.place(it.solid, it.index, ctr(it.plot, "x"), 0, ctr(it.plot, "y"), sy === 0 ? 0 : w, sy * tall(w), sy === 0 ? 0 : w);
-    it.solid.instanceMatrix.needsUpdate = true;
-    if (it.lit) { it.lit.setMatrixAt(it.index, this.m4); it.lit.instanceMatrix.needsUpdate = true; }
+    it.solid.instanceMatrix.needsUpdate = true; it.solid.boundingSphere = null;
+    if (it.lit) { it.lit.setMatrixAt(it.index, this.m4); it.lit.instanceMatrix.needsUpdate = true; it.lit.boundingSphere = null; }
   }
 
   private refreshHover() {
