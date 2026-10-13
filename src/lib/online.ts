@@ -20,6 +20,8 @@ import { countryPreference } from "@/lib/world/countries";
 import { openingMove } from "@/lib/syncRule";
 import { now, setServerTime } from "@/lib/clock";
 import { PSEUDO_ERRORS, pseudoProblem, tidyPseudo } from "@/lib/pseudo";
+import { TERMS_VERSION, acceptTerms, termsAccepted } from "@/lib/legal";
+import { rebaseNotifs } from "@/lib/notifs";
 
 const LINK_KEY = "market-empire-linked";
 const SYNC_KEY = "market-empire-synced";
@@ -35,7 +37,16 @@ export type OnlinePhase = "idle" | "connecting" | "new" | "ready" | "error";
 /** Pays (territoire) du joueur connecté, et étape d'ouverture du compte. */
 /** `tester` = compte de test désigné dans la base : il peut activer le mode test (Ville › Options). */
 /** `name` : pseudo public du joueur, tel que le serveur le connaît (`null` tant qu'il n'a pas été lu). */
-export const useOnline = create<{ country: string | null; phase: OnlinePhase; tester: boolean; name: string | null }>(() => ({ country: null, phase: "idle", tester: false, name: null }));
+/** `terms` : version des conditions d'utilisation acceptée par ce compte (sur n'importe quel appareil) ;
+ *  `undefined` tant qu'elle n'a pas été lue, `null` si jamais acceptée ou illisible. */
+export const useOnline = create<{ country: string | null; phase: OnlinePhase; tester: boolean; name: string | null; terms?: string | null }>(() => ({ country: null, phase: "idle", tester: false, name: null }));
+
+/** Le joueur accepte les conditions : retenu sur l'appareil ET sur son compte (plus redemandé ailleurs). */
+export function acceptTermsEverywhere() {
+  acceptTerms();
+  useOnline.setState({ terms: TERMS_VERSION });
+  if (active) void rpc("accept_terms", { p_version: TERMS_VERSION }).catch(() => {});
+}
 
 function figures() {
   const s = useGame.getState();
@@ -103,7 +114,9 @@ async function pull(uid: string) {
   if (active !== uid) return;
   if (!rows?.[0]?.data) throw new Error("sauvegarde illisible");
   const at = Number(rows[0].saved_at);
-  useGame.setState({ game: E.normalize(unpack(rows[0].data)), savedAt: at });
+  const game = E.normalize(unpack(rows[0].data));
+  rebaseNotifs(game); // déjà signalé sur l'autre appareil : pas de « Nouveau rang » ni d'objectif en double ici
+  useGame.setState({ game, savedAt: at });
   setSynced(uid, at);
   dirty = false; lastSent = "";
   useGame.getState().sync();
@@ -409,6 +422,14 @@ function finish(uid: string, name: string) {
   void publishIncome();
   void syncShares();
   void syncAlliance();
+  // Conditions d'utilisation : acceptées sur un autre appareil ? Alors inutile de les redemander ici (et inversement).
+  void restAsUser<{ terms_version: string | null }[]>(`player_prefs?select=terms_version&id=eq.${uid}&limit=1`).then((r) => {
+    if (active !== uid) return;
+    const server = r ? r[0]?.terms_version ?? null : null;
+    if (server !== TERMS_VERSION && termsAccepted()) { acceptTermsEverywhere(); return; }
+    if (server === TERMS_VERSION) acceptTerms();
+    useOnline.setState({ terms: server });
+  }).catch(() => { if (active === uid) useOnline.setState({ terms: null }); });
   // Compte de test : sa partie est toujours en mode test (argent et capital sans limite, tout débloqué)
   void restAsUser<{ tester: boolean; name: string | null }[]>(`players?select=tester,name&id=eq.${uid}&limit=1`).then((r) => {
     if (active !== uid) return;
@@ -524,7 +545,7 @@ export function retryOnline() {
 
 /** Jouer quand même : la partie reste sur l'appareil, rien n'est envoyé au serveur avant la prochaine connexion. */
 export function playOffline() {
-  useOnline.setState({ phase: "ready" });
+  useOnline.setState((s) => ({ phase: "ready", terms: s.terms === undefined ? null : s.terms }));
 }
 
 // ─── Filet de sécurité : une partie effacée par « Recommencer » reste récupérable ───
@@ -574,7 +595,7 @@ function disconnect() {
   lastCity = "";
   lastOffer = "";
   lastIncome = "";
-  useOnline.setState({ country: null, phase: "idle", tester: false, name: null });
+  useOnline.setState({ country: null, phase: "idle", tester: false, name: null, terms: undefined });
   setCloud("local");
 }
 

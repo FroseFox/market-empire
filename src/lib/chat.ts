@@ -13,6 +13,7 @@ import { useGame } from "@/store/game";
 import { mentions, mergeMessages, type ChatMessage } from "./chatList";
 import { useOnline } from "@/lib/online";
 import { useNotifs } from "@/lib/notifs";
+import { usePanel } from "@/lib/panels";
 export { fresh, mentionChoices, mentionQuery, mentions, mergeMessages, splitMentions, type ChatMessage } from "./chatList";
 export type Room = "global" | "alliance";
 
@@ -78,8 +79,40 @@ export const roomId = (room: Room): string | null => (room === "global" ? "globa
 type Row = { id: number; author: string; name: string; body: string; created_at: string };
 const toMsg = (r: Row): ChatMessage => ({ id: Number(r.id), author: r.author, name: r.name, body: r.body, at: Date.parse(r.created_at) || Date.now() });
 
+// Dernier message lu : gardé sur l'appareil ET sur le compte (player_prefs.chat_seen). Sans ça, un autre appareil
+// affichait comme « nouveaux » des messages déjà lus ailleurs (et renvoyait les anciennes mentions).
 const seen = (): number => { try { return Number(localStorage.getItem(SEEN_KEY)) || 0; } catch { return 0; } };
-const setSeen = (id: number) => { try { if (id > seen()) localStorage.setItem(SEEN_KEY, String(id)); } catch { /* stockage indisponible */ } };
+let sentSeen = 0, seenTimer: ReturnType<typeof setTimeout> | null = null;
+const setSeen = (id: number) => {
+  try { if (id > seen()) localStorage.setItem(SEEN_KEY, String(id)); } catch { /* stockage indisponible */ }
+  // Vers le compte : regroupé (une écriture au plus toutes les 10 s), seulement s'il a avancé
+  if (id > sentSeen && !seenTimer) seenTimer = setTimeout(() => {
+    seenTimer = null;
+    const v = seen();
+    if (v > sentSeen && useAuth.getState().status === "in") { sentSeen = v; void rpc("set_chat_seen", { p_id: v }).catch(() => { sentSeen = 0; }); }
+  }, 10_000);
+};
+
+/** Reprend le dernier message lu sur le compte. Compte qui n'a jamais rien lu, sur un appareil neuf : tout ce qui existe
+ *  déjà compte comme lu (seuls les messages à venir sont « nouveaux »). Prêt une fois par compte. */
+let seenReady: Promise<void> | null = null;
+function loadSeen(): Promise<void> {
+  const id = useAuth.getState().user?.id;
+  if (!id) return Promise.resolve();
+  if (!seenReady) seenReady = (async () => {
+    const r = await restAsUser<{ chat_seen: number }[]>(`player_prefs?select=chat_seen&id=eq.${id}&limit=1`).catch(() => null);
+    if (!r) { seenReady = null; return; } // serveur muet : on réessaiera
+    let server = Number(r[0]?.chat_seen) || 0;
+    if (!server && !seen()) {
+      const last = await restAsUser<{ id: number }[]>("chat_messages?select=id&order=id.desc&limit=1").catch(() => null);
+      server = Number(last?.[0]?.id) || 0;
+    }
+    sentSeen = Math.max(sentSeen, Number(r[0]?.chat_seen) || 0);
+    if (server > seen()) { try { localStorage.setItem(SEEN_KEY, String(server)); } catch { /* stockage indisponible */ } }
+    if (seen() > sentSeen) setSeen(seen()); // l'appareil était en avance : le compte le rattrape
+  })();
+  return seenReady;
+}
 
 /** Messages que j'ai signalés : ils ne réapparaissent pas chez moi au prochain chargement. */
 const HIDE_KEY = "market-empire-chat-hidden";
@@ -93,6 +126,7 @@ const lastId = (room: Room) => useChat.getState().rooms[room].at(-1)?.id ?? 0;
 
 /** Lit les nouveaux messages du salon (ou les derniers à la première lecture). `false` si le serveur ne répond pas. */
 async function load(room: Room): Promise<boolean> {
+  await loadSeen();
   const id = roomId(room);
   if (!id) return true;
   if (room === "alliance" && id !== allianceShown) {
@@ -114,6 +148,7 @@ async function load(room: Room): Promise<boolean> {
 
 /** Pastille : y a-t-il des messages d'autres joueurs plus récents que le dernier lu ? */
 async function checkUnread() {
+  await loadSeen();
   const me = useAuth.getState().user?.id;
   const ids = ["global", roomId("alliance")].filter(Boolean).join(",");
   const after = seen();
@@ -162,7 +197,7 @@ export function startChat() {
   useAuth.subscribe((a, b) => {
     if (a.user?.id !== b.user?.id) {
       // Autre compte : le temps réel est rouvert avec ses droits à lui
-      watch?.close(); watch = null; namesAt = 0;
+      watch?.close(); watch = null; namesAt = 0; seenReady = null; sentSeen = 0;
       useChat.setState({ rooms: { global: [], alliance: [] }, moderator: false, unread: 0 }); void readModerator();
     }
     syncWatch();
@@ -178,8 +213,14 @@ async function readModerator() {
   useChat.setState({ moderator: !!r?.[0]?.moderator });
 }
 
+// Un autre panneau s'ouvre (notifications, compte…) : le chat se ferme
+usePanel.subscribe((p) => { if (p.id !== "chat" && useChat.getState().open) openChat(false); });
+
 export function openChat(open: boolean) {
   useChat.setState({ open });
+  // Un seul panneau à la fois : ouvrir le chat ferme les notifications, le menu du compte…
+  if (open) usePanel.setState({ id: "chat" });
+  else if (usePanel.getState().id === "chat") usePanel.setState({ id: null });
   if (open) void loadNames();
   if (open) { ticks = 0; tick(); } else syncWatch();
 }

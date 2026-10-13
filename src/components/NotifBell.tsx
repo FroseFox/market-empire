@@ -2,6 +2,7 @@
 // Cloche de la barre du haut : les dernières notifications du jeu.
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { usePopover } from "@/lib/panels";
 import { Bell, BellRing } from "lucide-react";
 import { useNotifs } from "@/lib/notifs";
 import { disablePush, enablePush, usePush } from "@/lib/push";
@@ -19,7 +20,7 @@ export default function NotifBell() {
   const push = usePush();
   const signedIn = useAuth((s) => s.status === "in");
   const [pushError, setPushError] = useState<string | null>(null);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = usePopover("notifs");
   const [now, setNow] = useState(0);
   const box = useRef<HTMLDivElement>(null);
   const unread = list.filter((n) => !n.read).length;
