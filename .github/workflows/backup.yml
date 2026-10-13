@@ -6,7 +6,7 @@
 #   SUPABASE_DB_PASSWORD : le mot de passe de la base (Supabase › Project Settings › Database › Reset database password)
 #   BACKUP_PASSPHRASE : une longue phrase secrète, à garder aussi ailleurs : sans elle, la copie est illisible
 # L'adresse de la base est construite ici (projet et région connus) : pas besoin de la copier depuis Supabase.
-# Tant que les secrets manquent, la sauvegarde ne fait rien et le dit.
+# Tant que les secrets manquent, la sauvegarde échoue (croix rouge) : une coche verte veut toujours dire « copie faite ».
 #
 # Restaurer : télécharger l'archive, puis
 #   gpg --decrypt market-empire-AAAA-MM-JJ.sql.gz.gpg | gunzip > sauvegarde.sql
@@ -36,8 +36,9 @@ jobs:
         id: config
         run: |
           if [ -z "$PGPASSWORD" ] || [ -z "$BACKUP_PASSPHRASE" ]; then
-            echo "::warning::Sauvegarde non configurée : ajoutez les secrets SUPABASE_DB_PASSWORD et BACKUP_PASSPHRASE."
-            echo "ready=false" >> "$GITHUB_OUTPUT"
+            [ -z "$PGPASSWORD" ] && echo "::error::Secret manquant : SUPABASE_DB_PASSWORD (Settings › Secrets and variables › Actions › Repository secrets)."
+            [ -z "$BACKUP_PASSPHRASE" ] && echo "::error::Secret manquant : BACKUP_PASSPHRASE (Settings › Secrets and variables › Actions › Repository secrets)."
+            exit 1
           else
             echo "ready=true" >> "$GITHUB_OUTPUT"
           fi
