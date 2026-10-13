@@ -70,6 +70,9 @@ interface Store {
   notify: (text: string, kind?: "ok" | "error") => void;
 }
 
+/** Hors ligne, on n'achète ni ne vend : le cours du moment est inconnu (et un vieux cours serait une triche facile). */
+const noPrice = () => (typeof navigator !== "undefined" && !navigator.onLine ? "Hors ligne : la Bourse a besoin du réseau. Votre ville, elle, continue." : "Prix indisponible, réessayez.");
+
 async function fetchPrice(symbol: string): Promise<number | null> {
   try {
     const j = await fetchQuotes([symbol]);
@@ -125,7 +128,7 @@ export const useGame = create<Store>()(
       // Le prix d'exécution est toujours redemandé au serveur au moment de l'ordre.
       buy: async (symbol, amount) => {
         const price = await fetchPrice(symbol);
-        if (!price) { get().notify("Prix indisponible, réessayez.", "error"); return false; }
+        if (!price) { get().notify(noPrice(), "error"); return false; }
         const qty = E.sharesFor(amount * E.cityLeverage(get().game, symbol), price);
         if (qty <= 0) { get().notify("Montant trop faible pour ce cours.", "error"); return false; }
         const r = E.buy(get().game, symbol, qty, price, now());
@@ -137,7 +140,7 @@ export const useGame = create<Store>()(
       },
       sell: async (symbol, amount, all = false) => {
         const price = await fetchPrice(symbol);
-        if (!price) { get().notify("Prix indisponible, réessayez.", "error"); return false; }
+        if (!price) { get().notify(noPrice(), "error"); return false; }
         const h = get().game.holdings[symbol];
         const held = h?.qty ?? 0, value = h ? E.holdingValue(h, price) : 0;
         // Tout vendre, ou un montant qui couvre toute la ligne : on vend exactement ce qui est détenu (pas de reliquat)
