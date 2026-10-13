@@ -34,7 +34,8 @@ export type OnlinePhase = "idle" | "connecting" | "new" | "ready" | "error";
 /** Pays (territoire) du joueur connecté, et étape d'ouverture du compte. */
 /** `tester` = compte de test désigné dans la base : il peut activer le mode test (Ville › Options). */
 /** `name` : pseudo public du joueur, tel que le serveur le connaît (`null` tant qu'il n'a pas été lu). */
-export const useOnline = create<{ country: string | null; phase: OnlinePhase; tester: boolean; name: string | null }>(() => ({ country: null, phase: "idle", tester: false, name: null }));
+/** `offline` : le serveur est injoignable, on joue sur la partie de l'appareil ; elle sera envoyée au retour du réseau. */
+export const useOnline = create<{ country: string | null; phase: OnlinePhase; tester: boolean; name: string | null; offline: boolean }>(() => ({ country: null, phase: "idle", tester: false, name: null, offline: false }));
 
 function figures() {
   const s = useGame.getState();
@@ -175,6 +176,11 @@ async function flush(keepalive = false) {
         adoptCountry();
         useGame.getState().notify("Sauvegarde refusée par le serveur : votre dernière partie en ligne a été reprise", "error");
       } catch { dirty = true; setCloud("error"); }
+    } else if (!navigator.onLine) {
+      // Réseau coupé en pleine partie : on continue hors ligne, l'envoi reprendra au retour du réseau
+      dirty = true;
+      setCloud("local");
+      useOnline.setState({ offline: true });
     } else {
       dirty = true;
       setCloud("error");
@@ -386,6 +392,7 @@ export async function contributeAlliance(amount: number): Promise<boolean> {
 /** Le compte est ouvert : on mémorise l'appareil et on sauvegarde à chaque changement. */
 function finish(uid: string, name: string) {
   try { localStorage.setItem(LINK_KEY, uid); } catch { /* stockage indisponible */ }
+  useOnline.setState({ offline: false });
   // Le pseudo du serveur fait foi (lu juste après) ; le nom du compte ne sert qu'en attendant, pour une partie sans nom
   setPlayerName(useOnline.getState().name ?? (useGame.getState().game.playerName ? "" : name));
   unsubGame?.();
@@ -417,10 +424,11 @@ function finish(uid: string, name: string) {
   }).catch(() => {});
 }
 
-async function connect(uid: string, name: string) {
+/** `silent` : reconnexion au retour du réseau, pendant que le joueur joue (pas d'écran de chargement). */
+async function connect(uid: string, name: string, silent = false) {
   active = uid;
   setCloud("syncing");
-  useOnline.setState({ phase: "connecting" });
+  if (!silent) useOnline.setState({ phase: "connecting" });
   try {
     // Crée le profil du joueur à sa première connexion (nom et avatar lus depuis Discord) et lui attribue un pays
     // Plusieurs villes par pays : `join_world_v2` place aussi les joueurs quand il ne reste aucun pays vide.
@@ -468,6 +476,15 @@ async function connect(uid: string, name: string) {
     useOnline.setState({ phase: "new" });
   } catch {
     if (active !== uid) return;
+    // Sans réseau, sur l'appareil où l'on joue d'habitude à ce compte : la partie continue ici, envoyée au retour du réseau.
+    // (Sur un autre appareil, la partie locale n'est pas forcément la sienne : on garde l'écran d'erreur.)
+    let linked = false;
+    try { linked = localStorage.getItem(LINK_KEY) === uid; } catch { /* stockage indisponible */ }
+    if (silent || (linked && !navigator.onLine)) {
+      setCloud("local");
+      useOnline.setState({ phase: "ready", offline: true });
+      return;
+    }
     setCloud("error");
     useOnline.setState({ phase: "error" });
   }
@@ -521,7 +538,16 @@ export function retryOnline() {
 
 /** Jouer quand même : la partie reste sur l'appareil, rien n'est envoyé au serveur avant la prochaine connexion. */
 export function playOffline() {
-  useOnline.setState({ phase: "ready" });
+  setCloud("local");
+  useOnline.setState({ phase: "ready", offline: true });
+}
+
+/** Retour du réseau après une partie hors ligne : on se reconnecte sans interrompre le jeu.
+ *  La partie jouée hors ligne est envoyée (ou, si un autre appareil a joué entre-temps, c'est la sienne qui est reprise). */
+function backOnline() {
+  const user = useAuth.getState().user;
+  if (!user || !useOnline.getState().offline || useOnline.getState().phase !== "ready") return;
+  void connect(user.id, user.name, true);
 }
 
 // ─── Filet de sécurité : une partie effacée par « Recommencer » reste récupérable ───
@@ -571,7 +597,7 @@ function disconnect() {
   lastCity = "";
   lastOffer = "";
   lastIncome = "";
-  useOnline.setState({ country: null, phase: "idle", tester: false, name: null });
+  useOnline.setState({ country: null, phase: "idle", tester: false, name: null, offline: false });
   setCloud("local");
 }
 
@@ -593,4 +619,5 @@ export function startOnline() {
   document.addEventListener("visibilitychange", () => { if (document.hidden) leave(); else void refresh(); });
   window.addEventListener("pagehide", leave);
   window.addEventListener("focus", () => void refresh());
+  window.addEventListener("online", backOnline);
 }
