@@ -22,7 +22,7 @@ const NEAR: Record<string, string[]> = {
   niveau: ["rang"], grade: ["rang"], joueur: ["ville", "classement"], ami: ["alliance"], equipe: ["alliance"], clan: ["alliance"], guilde: ["alliance"],
   attaque: ["blocus", "guerre"], attaquer: ["blocus", "guerre"], defense: ["bouclier"], proteger: ["bouclier"],
   catastrophe: ["evenement"], bonheur: ["satisfaction"], content: ["satisfaction"], chomage: ["emploi"], travail: ["emploi"], job: ["emploi"],
-  save: ["sauvegarde"], notif: ["notification"], telephone: ["appli"], mobile: ["appli"], app: ["appli"], telecharger: ["appli"], installation: ["appli"],
+  boost: ["bonus"], perk: ["bonus"], save: ["sauvegarde"], notif: ["notification"], telephone: ["appli"], mobile: ["appli"], app: ["appli"], telecharger: ["appli"], installation: ["appli"],
   crypto: ["cryptomonnaie"], bitcoin: ["cryptomonnaie"], vendre: ["vente"], acheter: ["achat"], detruire: ["demolir", "demolition"], supprimer: ["demolir", "demolition"],
   agrandir: ["terrain", "territoire"], carte: ["monde", "pays"], echange: ["commerce", "contrat"], trade: ["commerce", "contrat"],
 };

@@ -15,7 +15,7 @@ import CompanyLogo, { companyBadge } from "@/components/CompanyLogo";
 import { cityMarkers } from "@/lib/game/markers";
 import { useMedia } from "@/lib/useMedia";
 import { capitalCost, computeCity, landUse, activeBranches, branchAt, branchCost, buildPreview, featureOpen, mapSize, nextTerritory, orientationCost, branchLimit, buildingAudit, forecast, goalStatuses, hasResearch, isTileFree, prestige, renovateCost, upgradeOffer, type CityStats } from "@/lib/game/engine";
-import { BRANCH_EFFECTS, BRANCH_MIN_VALUE, FEATURES, FORECAST_DAYS, LAND_ALMOST_FULL, ORIENTATIONS, ORIENTATION_BY_ID, PROJECTS } from "@/lib/game/config";
+import { BRANCH_EFFECTS, BRANCH_MIN_VALUE, SECTOR_PERKS, FEATURES, FORECAST_DAYS, LAND_ALMOST_FULL, ORIENTATIONS, ORIENTATION_BY_ID, PROJECTS } from "@/lib/game/config";
 import { specialtyText } from "@/lib/world/countries";
 import { ASSET_BY_SYMBOL, familyOf } from "@/lib/market/universe";
 import { footprint, plotAt, type Plot } from "@/lib/game/layout";
@@ -367,6 +367,8 @@ function Firms() {
     .filter((c) => c.asset?.kind === "stock" && !mine.some((b) => b.symbol === c.asset.symbol))
     .sort((a, b) => b.value - a.value);
   const effect = (symbol: string) => BRANCH_EFFECTS[familyOf(ASSET_BY_SYMBOL[symbol])];
+  /** Bonus du secteur de l'entreprise (en plus de l'effet de sa famille). */
+  const perk = (symbol: string) => SECTOR_PERKS[ASSET_BY_SYMBOL[symbol]?.sector ?? ""]?.label;
   const line = (symbol: string) => {
     const e = effect(symbol);
     return [`${num(e.jobs)} emplois`, `+${num(e.revenue)} €/j`, e.energyProd ? `+${num(e.energyProd)} énergie` : "", e.serves ? `soigne ${num(e.serves)} hab.` : ""].filter(Boolean).join(" · ");
@@ -387,6 +389,7 @@ function Firms() {
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-[13px] font-semibold">{a?.name ?? b.symbol} <span className="font-normal text-muted">· {effect(b.symbol).label}</span></div>
                   <div className={`text-[11px] ${on ? "text-muted" : "text-danger"}`}>{on ? line(b.symbol) : "En sommeil : vous ne détenez plus la participation de départ"}</div>
+                  {perk(b.symbol) && <div className={`text-[11px] font-medium ${on ? "text-emerald-700" : "text-muted line-through"}`}>★ {perk(b.symbol)}</div>}
                 </div>
                 <ConfirmButton onConfirm={() => closeBranch(b.symbol)} confirmLabel="Confirmer" className="shrink-0 text-[11px] font-semibold text-danger hover:underline">Fermer</ConfirmButton>
               </li>
@@ -406,6 +409,7 @@ function Firms() {
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-[13px] font-medium">{asset.name} <span className="text-muted">· {compactEur(value)} détenus</span></div>
                     <div className="text-[11px] text-muted">{effect(asset.symbol).label} : {line(asset.symbol)}</div>
+                    {perk(asset.symbol) && <div className="text-[11px] font-medium text-emerald-700">★ {asset.sector} · {perk(asset.symbol)}</div>}
                   </div>
                   <Button onClick={() => openBranch(asset.symbol)} disabled={!enough || full || cost > game.cash} className="shrink-0 !px-3"
                     title={!enough ? `Participation inférieure à ${compactEur(BRANCH_MIN_VALUE)}` : full ? "Limite atteinte pour ce rang de ville" : cost > game.cash ? "Liquidités insuffisantes" : undefined}>
@@ -810,7 +814,11 @@ function SelectedPanel({ plot, city, confirmDemolish, alert, onFix, onUpgrade, o
       )}
       {firmAsset && (() => {
         const e = BRANCH_EFFECTS[familyOf(firmAsset)], on = activeBranches(game).some((x) => x.symbol === firmAsset.symbol);
-        return <p className={`text-[12px] ${on ? "text-muted" : "text-danger"}`}>{on ? `${num(e.jobs)} emplois · +${num(e.revenue)} €/j. Le site tourne tant que vous gardez votre participation ; il se ferme depuis le bouton Entreprises.` : "En sommeil : vous ne détenez plus la participation de départ."}</p>;
+        const bonus = SECTOR_PERKS[firmAsset.sector]?.label;
+        return <>
+          <p className={`text-[12px] ${on ? "text-muted" : "text-danger"}`}>{on ? `${num(e.jobs)} emplois · +${num(e.revenue)} €/j. Le site tourne tant que vous gardez votre participation ; il se ferme depuis le bouton Entreprises.` : "En sommeil : vous ne détenez plus la participation de départ."}</p>
+          {bonus && <p className={`mt-1 text-[12px] font-medium ${on ? "text-emerald-700" : "text-muted line-through"}`}>★ {firmAsset.sector} : {bonus}</p>}
+        </>;
       })()}
       {b.buildable === false && !firm && <p className="mt-2.5 text-[12px] text-muted">Bâtiment d&apos;origine : il peut être déplacé mais pas démoli.</p>}
       {confirmDemolish ? (

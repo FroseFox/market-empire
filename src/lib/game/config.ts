@@ -346,6 +346,61 @@ export const BRANCH_EFFECTS: Record<BranchFamily, BranchEffect> = {
   "Énergie et matières": { label: "Site énergétique", jobs: 60, revenue: 300, energyProd: 350 },
 };
 
+/** Bonus propre au secteur de l'entreprise, en plus de l'effet de sa famille : chaque implantation devient un choix.
+ *  Les effets de ville (visiteurs, croissance, exportations, vétusté, capital, satisfaction) s'ajoutent à ceux des
+ *  bâtiments, sous les mêmes plafonds (CITY_EFFECT_CAPS). Aucun ne dépend du cours de l'action. */
+export interface BranchPerk {
+  visitors?: number; growthBoost?: number; exportBonus?: number; wearCut?: number; capitalBoost?: number; joy?: number;
+  /** Énergie consommée par toute la ville : −5 % = 0,05. */
+  energySave?: number;
+  /** Prix des recherches : −10 % = 0,1. */
+  researchCut?: number;
+  /** Frais de bourse : −20 % = 0,2. */
+  feeCut?: number;
+  foodProd?: number;
+  pollution?: number;
+  service?: ServiceId; serves?: number;
+}
+export interface SectorPerk { label: string; perk: BranchPerk }
+export const SECTOR_PERKS: Record<string, SectorPerk> = {
+  // Tech
+  "Technologie": { label: "Géant du numérique : un peu de tout", perk: { growthBoost: 0.02, visitors: 0.02, joy: 0.005 } },
+  "Semi-conducteurs": { label: "Puces efficaces : la ville consomme moins d'énergie", perk: { energySave: 0.05 } },
+  "Logiciels": { label: "Outils d'analyse : recherches moins chères", perk: { researchCut: 0.1 } },
+  "Électronique": { label: "Capteurs connectés : la ville vieillit moins vite", perk: { wearCut: 0.1 } },
+  "Jeux vidéo": { label: "Loisirs : habitants plus heureux", perk: { joy: 0.015 } },
+  "Médias": { label: "La ville fait parler d'elle : plus de visiteurs", perk: { visitors: 0.05 } },
+  "Télécoms": { label: "Ville connectée : plus de nouveaux habitants", perk: { growthBoost: 0.05 } },
+  // Finance
+  "Banque": { label: "Plus de capital produit par vos placements", perk: { capitalBoost: 0.08 } },
+  "Assurance": { label: "Sinistres couverts : la ville vieillit moins vite", perk: { wearCut: 0.08 } },
+  "Paiements": { label: "Frais de bourse réduits", perk: { feeCut: 0.2 } },
+  // Consommation
+  "Commerce en ligne": { label: "Logistique : vos surplus s'exportent mieux", perk: { exportBonus: 0.02 } },
+  "Distribution": { label: "Chaîne d'approvisionnement : nourriture en plus", perk: { foodProd: 80 } },
+  "Restauration": { label: "Bonnes tables : plus de visiteurs", perk: { visitors: 0.04 } },
+  "Habillement": { label: "Boutiques : habitants plus heureux", perk: { joy: 0.01 } },
+  "Boissons": { label: "Marque connue : plus de visiteurs", perk: { visitors: 0.03 } },
+  "Consommation": { label: "Produits du quotidien : habitants plus heureux", perk: { joy: 0.01 } },
+  "Luxe": { label: "Vitrine de prestige : beaucoup plus de visiteurs", perk: { visitors: 0.06 } },
+  "Tourisme": { label: "Voyagistes : afflux de visiteurs", perk: { visitors: 0.08 } },
+  // Santé
+  "Santé": { label: "Ville en bonne santé : plus de nouveaux habitants", perk: { growthBoost: 0.05 } },
+  // Industrie
+  "Automobile": { label: "Mobilité : plus de nouveaux habitants", perk: { growthBoost: 0.04 } },
+  "Aéronautique": { label: "Liaisons aériennes : plus de visiteurs", perk: { visitors: 0.06 } },
+  "Défense": { label: "Sécurité : protège 3 000 habitants", perk: { service: "safety", serves: 3_000 } },
+  "Industrie": { label: "Exportations mieux payées, mais pollue", perk: { exportBonus: 0.03, pollution: 20 } },
+  "Transport": { label: "Réseau de transport : habitants et visiteurs", perk: { growthBoost: 0.03, visitors: 0.03 } },
+  "Construction": { label: "Chantiers d'entretien : la ville vieillit moins vite", perk: { wearCut: 0.1 } },
+  "Chimie": { label: "Engrais : nourriture en plus, mais pollue", perk: { foodProd: 120, pollution: 15 } },
+  // Énergie et matières
+  "Énergie": { label: "Production d'énergie (voir la famille)", perk: {} },
+  "Mines": { label: "Matières premières exportées, mais pollue", perk: { exportBonus: 0.03, pollution: 15 } },
+};
+/** Plafonds des bonus d'entreprises qui n'existent pas chez les bâtiments. */
+export const BRANCH_PERK_CAPS = { energySave: 0.2, researchCut: 0.3, feeCut: 0.4 };
+
 // ─── Spécialités des pays ─────────────────────────────────────
 export type Specialty = "energy" | "agri" | "industry" | "commerce" | "services" | "finance";
 export const SPECIALTY_LABEL: Record<Specialty, string> = {
