@@ -12,8 +12,7 @@ begin
   return new;
 end $$;
 
-drop trigger if exists players_touch on public.players;
-create trigger players_touch before update on public.players
+create or replace trigger players_touch before update on public.players
   for each row when (old.* is distinct from new.*) execute function public.players_touch();
 
 -- 2. Chat : les nouveaux messages arrivent par le temps réel de Supabase au lieu d'une question toutes les 4 s.
