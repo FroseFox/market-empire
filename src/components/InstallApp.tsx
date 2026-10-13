@@ -6,7 +6,7 @@
 // Rien ne s'affiche si le jeu tourne déjà comme une appli, ou sur un ordinateur dont le navigateur ne sait pas installer.
 import { useState, useSyncExternalStore } from "react";
 import { Download, MoreVertical, Share } from "lucide-react";
-import { STATIC_MODE } from "@/lib/market/client";
+import { BASE_PATH, STATIC_MODE } from "@/lib/market/client";
 
 interface InstallPrompt extends Event { prompt: () => Promise<void>; userChoice: Promise<{ outcome: "accepted" | "dismissed" }> }
 
@@ -17,6 +17,12 @@ if (typeof window !== "undefined") {
   // L'invitation peut arriver avant l'affichage du bouton : on l'attrape dès le chargement
   window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); prompt = e as InstallPrompt; tell(); });
   window.addEventListener("appinstalled", () => { prompt = null; tell(); });
+  // Sans service worker, Chrome ne lance jamais son invitation : on l'enregistre dès l'ouverture
+  // (avant, il ne l'était qu'en activant les notifications, d'où « pas de bouton Installer » chez certains).
+  if (!STATIC_MODE && "serviceWorker" in navigator) {
+    const register = () => { navigator.serviceWorker.register(`${BASE_PATH}/sw.js`, { scope: `${BASE_PATH}/` }).catch(() => {}); };
+    if (document.readyState === "complete") register(); else window.addEventListener("load", register, { once: true });
+  }
 }
 const subscribe = (cb: () => void) => { listeners.add(cb); return () => { listeners.delete(cb); }; };
 
@@ -60,7 +66,8 @@ export default function InstallApp({ dark = false }: { dark?: boolean }) {
         <ol className={`mt-2 space-y-1 rounded-[12px] px-3 py-2.5 text-[12px] leading-snug ${dark ? "bg-white/5 text-slate-300" : "bg-slate-50 text-ink"}`}>
           <li>1. Ouvrez le jeu dans Chrome : pas depuis Discord, ni en navigation privée.</li>
           <li className="flex items-start gap-1.5">2. Touchez le menu <MoreVertical size={13} className="mt-0.5 shrink-0" /> en haut à droite.</li>
-          <li>3. Choisissez « Ajouter à l&apos;écran d&apos;accueil », puis « Installer ».</li>
+          <li>3. Choisissez « Installer l&apos;application » ou « Ajouter à l&apos;écran d&apos;accueil », puis « Installer ».</li>
+          <li>Sur Samsung, si le lien s&apos;ouvre dans Samsung Internet : menu ☰ en bas, puis « Ajouter page à » › « Écran d&apos;accueil ».</li>
         </ol>
       )}
       {mode === "ios-other" && help && (
