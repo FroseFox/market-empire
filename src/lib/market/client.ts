@@ -48,7 +48,7 @@ export async function fetchQuotes(symbols?: string[]): Promise<{ mode: string; u
   if (STATIC_MODE) return { mode: "simulé", updatedAt: now, quotes: list.map((s) => localQuote(s, now)) };
   const rows = await rest<{ symbol: string; price: string | number; change_1d: string | number | null; updated_at: string }[]>(
     "asset_prices?select=symbol,price,change_1d,updated_at");
-  // Serveur injoignable (hors ligne) : surtout pas de cours inventés, on garde les derniers connus
+  // Serveur injoignable : surtout pas de cours inventés à la place des vrais, on garde les derniers connus
   if (rows === null) throw new Error("cours injoignables");
   const real = new Map((rows ?? [])
     .filter((r) => Number(r.price) > 0)

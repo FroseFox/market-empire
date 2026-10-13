@@ -1,16 +1,17 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
-  BarChart3, BookOpen, Building2, Cloud, CloudOff, FlaskConical, Globe2, LineChart, Network, Newspaper, Wallet, Plus, Clock, LayoutGrid, X, WifiOff,
+  BarChart3, BookOpen, Building2, Cloud, CloudOff, FlaskConical, Globe2, LineChart, Network, Newspaper, Wallet, Plus, Clock, LayoutGrid, X,
 } from "lucide-react";
 import { useGame } from "@/store/game";
 import { fetchQuotes, STATIC_MODE } from "@/lib/market/client";
 import { startCloudSync } from "@/lib/cloud";
 import { startWorldSync } from "@/lib/world/players";
 import { initAuth, useAuth } from "@/lib/auth";
-import { startOnline, useOnline } from "@/lib/online";
+import { retryOnline, startOnline, useOnline } from "@/lib/online";
+import NoNetwork, { useNetwork } from "@/components/NoNetwork";
 import AccountMenu from "@/components/AccountMenu";
 import InstallApp from "@/components/InstallApp";
 import Guide, { ShowGuide } from "@/components/Guide";
@@ -151,7 +152,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     initAuth().then(() => { startOnline(); startChat(); });
   }, [hydrated]);
   const authStatus = useAuth((s) => s.status);
-  const offline = useOnline((s) => s.offline);
+  // Pas de réseau : écran dédié. Au retour du réseau, la partie en ligne est rechargée si elle n'avait pas pu l'être.
+  const network = useNetwork();
+  // Seulement au retour du réseau (pas en boucle quand c'est le serveur qui ne répond pas)
+  const wasOff = useRef(false);
+  useEffect(() => {
+    if (!network) { wasOff.current = true; return; }
+    if (wasOff.current && useOnline.getState().phase === "error") retryOnline();
+    wasOff.current = false;
+  }, [network]);
   const cloud = useGame((s) => s.cloud);
   const cash = useGame((s) => s.game.cash);
   const capital = useGame((s) => s.game.capital ?? 0);
@@ -166,6 +175,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   // Informations légales : lisibles sans compte, hors du cadre du jeu
   if (path.startsWith("/legal")) return <>{children}</>;
   // Site publié : pas de jeu sans compte Discord (la page Claude, elle, a sa propre identité)
+  if (!STATIC_MODE && !network) return <NoNetwork />;
   if (!STATIC_MODE && !hydrated) return <Splash text="Chargement de votre empire…" />;
   const shell = (
     <div className="min-h-screen flex">
@@ -197,7 +207,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <div className="hidden sm:block lg:hidden"><Logo /></div>
           {hydrated && <NextDay />}
           <div className="ml-auto flex min-w-0 items-center gap-1.5 sm:gap-3">
-            {hydrated && offline && <span title="Pas de réseau : la ville continue et la partie reste sur cet appareil. Elle sera envoyée dès le retour du réseau. La Bourse, les alliances et les échanges attendent le réseau." aria-label="Hors ligne" className="inline-flex shrink-0 items-center gap-1 rounded-full bg-slate-200 px-2 sm:px-2.5 py-1 text-[11px] font-semibold text-slate-700"><WifiOff size={13} /><span className="hidden sm:inline">Hors ligne</span></span>}
             {hydrated && sandbox && <Link href="/ville" title="Mode test actif : argent et capital sans limite. Il se quitte dans Ville › Options." className="inline-flex shrink-0 items-center rounded-full bg-amber-400 px-2.5 py-1 text-[11px] font-bold text-amber-950">Mode test</Link>}
             <span className={`hidden sm:inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium ${mode === "simulé" ? "bg-warning-soft text-amber-700" : "bg-success-soft text-emerald-700"}`}
               title={mode === "simulé" ? "Cours simulés : aucune source de cours configurée" : `Cours réels, rafraîchis une fois par heure. Dernière mise à jour : ${new Date(quotesAt).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}`}>
