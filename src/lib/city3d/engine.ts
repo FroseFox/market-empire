@@ -140,6 +140,16 @@ export class CityEngine {
   private warming = false;
   /** Durée moyenne entre deux images de l'écran (ms) : sous 11 ms, écran 120 Hz ou plus. */
   private tick = 16.7;
+
+  // ─── Ombres en cache (voir shadowPass) ───
+  /** Faux si un objet qui projette une ombre sort du cas simple (matériau double face, transparence découpée…) :
+   *  three.js calcule alors les ombres lui-même, comme avant. */
+  private cacheable = false;
+  /** Ombres de tout ce qui ne bouge pas, gardées tant que rien ne change. */
+  private staticRT: THREE.WebGLRenderTarget | null = null;
+  private shadowKey = ""; private staticVer = 0;
+  /** Même matériau que celui de three.js pour ses ombres (MeshDepthMaterial), face arrière comme lui pour un matériau à une face. */
+  private depthMat = new THREE.MeshDepthMaterial({ side: THREE.BackSide });
   private baseLight = { hemi: 1.5, sun: 2.9, hemiC: new THREE.Color(0xdfeaff), sunC: new THREE.Color(0xffe9c4) };
   /** Décor de saison de la mairie (selon la date du joueur), vérifié toutes les minutes. */
   private season: Season | null = seasonOf();
@@ -527,6 +537,79 @@ export class CityEngine {
       });
       this.layerTiles.frustumCulled = false; this.layerTiles.renderOrder = 2; this.layerTiles.visible = false; this.world.add(this.layerTiles);
     }
+    this.tagCasters();
+  }
+
+  /** Range les objets qui projettent une ombre : calque 1 = ceux qui bougent à chaque image (voitures, piétons,
+   *  éoliennes, pièces animées), calque 2 = tout le reste. Les calques ne servent qu'au calcul des ombres :
+   *  tous les objets restent aussi sur le calque 0, celui de la caméra. */
+  private tagCasters() {
+    const moving = new Set<THREE.Object3D>([this.carMesh, this.bodyMesh, this.headMesh, this.spinMesh, ...this.parts.map((p) => p.mesh)].filter((o): o is THREE.InstancedMesh => !!o));
+    let ok = true;
+    this.scene.traverse((o) => {
+      o.layers.disable(1); o.layers.disable(2);
+      const m = o as THREE.Mesh;
+      if (!o.castShadow || (o as THREE.Light).isLight) return; // le soleil « projette » les ombres : ce n'est pas un objet
+      if (!m.isMesh) { ok = false; return; }
+      const mat = m.material as THREE.Material | THREE.Material[];
+      if (Array.isArray(mat) || mat.side !== THREE.FrontSide || mat.shadowSide !== null || mat.alphaTest > 0 || mat.alphaToCoverage
+        || (mat as THREE.MeshStandardMaterial).displacementMap || (mat as THREE.MeshStandardMaterial).wireframe || m.customDepthMaterial) ok = false;
+      o.layers.enable(moving.has(o) ? 1 : 2);
+    });
+    this.cacheable = ok;
+    this.staticVer++;
+  }
+
+  /** Ombres du soleil, à chaque image. three.js recalculait celles de TOUTE la ville à chaque image (près de la moitié
+   *  des triangles dessinés), alors que presque rien ne bouge. Ici :
+   *  - les ombres de ce qui ne bouge pas sont calculées une fois, puis gardées tant que la vue, le soleil et la ville
+   *    ne changent pas ;
+   *  - à chaque image, on repart de cette copie et on n'ajoute que les ombres de ce qui bouge.
+   *  Le résultat est exactement le même : la profondeur la plus proche du soleil, calculée par le même matériau
+   *  et les mêmes matrices que three.js. Seul ce qui sert à le calculer change. */
+  private shadowPass() {
+    const sm = this.renderer.shadowMap, sun = this.sun, sh = sun.shadow;
+    if (!this.cacheable || !sun.castShadow) { sm.autoUpdate = true; return; }
+    sm.autoUpdate = false; sm.needsUpdate = false;
+    sun.updateMatrixWorld(); sun.target.updateMatrixWorld();
+    sh.updateMatrices(sun);
+    const w = sh.mapSize.x, h = sh.mapSize.y;
+    const make = () => {
+      // Comme three.js (WebGLShadowMap) : profondeur 24 bits comparée à la lecture, filtrage linéaire
+      const rt = new THREE.WebGLRenderTarget(w, h);
+      const d = new THREE.DepthTexture(w, h, THREE.UnsignedIntType);
+      d.format = THREE.DepthFormat; d.compareFunction = THREE.LessEqualCompare; d.minFilter = THREE.LinearFilter; d.magFilter = THREE.LinearFilter;
+      rt.depthTexture = d;
+      return rt;
+    };
+    if (!sh.map || sh.map.width !== w || sh.map.height !== h) {
+      sh.map?.depthTexture?.dispose(); sh.map?.dispose();
+      sh.map = make(); sh.map.texture.name = sun.name + ".shadowMap"; sh.map.depthTexture!.name = sun.name + ".shadowMap";
+      this.renderer.initRenderTarget(sh.map as THREE.WebGLRenderTarget);
+      this.shadowKey = "";
+    }
+    if (!this.staticRT || this.staticRT.width !== w || this.staticRT.height !== h) {
+      this.staticRT?.depthTexture?.dispose(); this.staticRT?.dispose();
+      this.staticRT = make(); this.renderer.initRenderTarget(this.staticRT);
+      this.shadowKey = "";
+    }
+    const key = `${sh.matrix.elements.join(",")}|${this.staticVer}`;
+    if (key !== this.shadowKey) { this.depthPass(2, this.staticRT, true); this.shadowKey = key; }
+    this.renderer.copyTextureToTexture(this.staticRT.depthTexture!, sh.map.depthTexture!);
+    this.depthPass(1, sh.map as THREE.WebGLRenderTarget, false);
+  }
+
+  /** Dessine la profondeur des objets du calque `layer`, vue du soleil, dans `rt`. */
+  private depthPass(layer: number, rt: THREE.WebGLRenderTarget, clear: boolean) {
+    const r = this.renderer, sc = this.scene, cam = this.sun.shadow.camera;
+    const bg = sc.background, over = sc.overrideMaterial, auto = r.autoClear;
+    sc.background = null; sc.overrideMaterial = this.depthMat; r.autoClear = false;
+    cam.layers.set(layer);
+    r.setRenderTarget(rt);
+    if (clear) r.clear();
+    r.render(sc, cam);
+    r.setRenderTarget(null);
+    sc.background = bg; sc.overrideMaterial = over; r.autoClear = auto;
   }
 
   /** Mode construction : tout le quadrillage des rues et les carreaux libres en vert. */
@@ -621,6 +704,7 @@ export class CityEngine {
 
   private scaleInst(key: string, sy: number) {
     const it = this.inst.get(key); if (!it) return;
+    this.staticVer++; // ombres des bâtiments à refaire
     const w = sideOf(it.plot);
     if (sy === 1) this.partScale.delete(key); else this.partScale.set(key, sy);
     this.place(it.solid, it.index, ctr(it.plot, "x"), 0, ctr(it.plot, "y"), sy === 0 ? 0 : w, sy * tall(w), sy === 0 ? 0 : w);
@@ -856,6 +940,7 @@ export class CityEngine {
       const f = this.ev.light.fog;
       if (f) this.scene.fog = new THREE.Fog(f.color, f.near, f.far);
     }
+    this.tagCasters();
     this.applyLight();
   }
 
@@ -962,6 +1047,7 @@ export class CityEngine {
       });
       this.flakeMesh.instanceMatrix.needsUpdate = true;
     }
+    this.shadowPass();
     this.renderer.render(this.scene, this.cam);
   }
 
@@ -1080,6 +1166,8 @@ export class CityEngine {
     this.clearWorld(); this.overlay.replaceChildren();
     this.land.geometry.dispose(); (this.land.material as THREE.Material).dispose(); this.plane.dispose(); this.ring.geometry.dispose();
     this.glowMat.map?.dispose();
+    this.depthMat.dispose(); this.staticRT?.depthTexture?.dispose(); this.staticRT?.dispose();
+    this.sun.shadow.map?.depthTexture?.dispose(); this.sun.shadow.map?.dispose();
     for (const m of [this.gMat, this.bMat, this.litMat, this.ghostMat, this.fadeMat, this.bulbMat, this.glowMat, this.smokeMat, this.tintMat, this.hoverMat, this.selMat, this.ringMat, this.layerMat, this.outMat, this.flakeMat, ...this.festive.values()]) m.dispose();
     this.bulbGeo.dispose();
     if (this.ev) { this.scene.remove(this.ev.group); this.ev.dispose(); this.ev = null; }
