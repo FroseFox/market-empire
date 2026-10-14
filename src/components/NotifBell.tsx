@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { usePopover } from "@/lib/panels";
 import { Bell, BellRing } from "lucide-react";
 import { useNotifs } from "@/lib/notifs";
-import { disablePush, enablePush, usePush } from "@/lib/push";
+import { disablePush, enablePush, testPush, usePush } from "@/lib/push";
 import { useAuth } from "@/lib/auth";
 import { openChat, switchRoom } from "@/lib/chat";
 
@@ -74,10 +74,14 @@ export default function NotifBell() {
           {signedIn && push.state !== "unsupported" ? (
             <div className="border-t border-line px-4 py-3 text-[12px] text-muted">
               {push.state === "on" ? (
-                <div className="flex items-start gap-2">
-                  <span className="min-w-0 flex-1"><b className="font-semibold text-ink">Notifications activées sur cet appareil</b>, même quand le jeu est fermé : ville pleine, contrat signé, parts achetées, blocus, mention dans le chat.</span>
-                  <button disabled={push.busy} onClick={() => void disablePush()} className="shrink-0 font-semibold text-muted hover:text-ink hover:underline">Désactiver</button>
-                </div>
+                <>
+                  <div className="flex items-start gap-2">
+                    <span className="min-w-0 flex-1"><b className="font-semibold text-ink">Notifications activées sur cet appareil</b>, même quand le jeu est fermé : ville pleine, contrat signé, parts achetées, blocus, mention dans le chat.</span>
+                    <button disabled={push.busy} onClick={() => void disablePush()} className="shrink-0 font-semibold text-muted hover:text-ink hover:underline">Désactiver</button>
+                  </div>
+                  <button disabled={push.busy} onClick={async () => setPushError(await testPush())} className="mt-1.5 font-semibold text-primary hover:underline">Envoyer une notification de test</button>
+                  {pushError && <p className="mt-1 text-[11px]">{pushError}</p>}
+                </>
               ) : push.state === "ios" ? (
                 <>Sur iPhone ou iPad : installez d&apos;abord le jeu sur l&apos;écran d&apos;accueil (bouton Partager, puis « Sur l&apos;écran d&apos;accueil »), ouvrez-le de là et revenez ici pour activer les notifications.</>
               ) : push.state === "denied" ? (
