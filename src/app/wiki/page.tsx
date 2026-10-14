@@ -1,6 +1,8 @@
 "use client";
 // Wiki du jeu. Tous les chiffres viennent de la configuration (lib/game/config) : la page reste juste quand l'équilibrage change.
 // Les briques visuelles sont dans components/wiki (rubriques, encadrés, schémas, petites simulations).
+import { DAILY } from "@/lib/game/daily";
+import { WORLD_UNITS } from "@/lib/worldGoal";
 import Link from "next/link";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import {
@@ -676,6 +678,21 @@ export default function WikiPage() {
             <H3>Territoire</H3>
             <p>La ville démarre sur une petite carte. Quand le terrain est plein, on ne peut plus construire : il faut acheter l’agrandissement suivant (Ville, bouton Objectifs), qui ajoute 4 carreaux de chaque côté. Le territoire acheté compte dans le patrimoine.</p>
             <Table head={["Carte", "Prix", "Rang requis"]} rows={TERRITORY.map((t) => [`${t.size} × ${t.size} carreaux`, t.cost ? compactEur(t.cost) : "départ", CITY_RANKS[t.minRank].name])} />
+            <H3>Missions du jour et série</H3>
+            <p>Chaque jour à minuit (heure de Paris), {DAILY.missions} missions sont tirées d’après votre ville : construire, gagner des habitants, monter la satisfaction, débloquer une recherche, revenir quelques heures plus tard… Jamais d’achat ou de vente en bourse. Elles se trouvent sur l’accueil et dans Ville › Objectifs.</p>
+            <Facts items={[
+              { label: "Une mission", value: `${DAILY.missionUnits} × la base`, sub: "la base = le flux net d’un jour de ville" },
+              { label: "Les trois", value: `+ ${DAILY.bonusUnits} × la base`, sub: "bonus en plus", tint: "green" },
+              { label: "Base", value: `${compactEur(DAILY.unitMin)} à ${compactEur(DAILY.unitMax)}`, sub: "fixée au tirage du jour" },
+              { label: "Cadeau de série", value: `×1 à ×${DAILY.giftMax}`, sub: `+${Math.round(DAILY.giftStep * 100)} % par jour d’affilée` },
+            ]} />
+            <Points items={[
+              <>La <b>série</b> compte les jours d’affilée où vous ouvrez le jeu. Un jour manqué la remet à 1.</>,
+              <>Tous les {DAILY.jokerEvery} jours de série, vous gagnez un <b>joker</b> (un au plus) : il pardonne un seul jour manqué.</>,
+              <>Notifications activées : un rappel arrive le lendemain à 19 h si vous n’avez pas encore ouvert le jeu.</>,
+            ]} />
+            <H3>Objectif commun de la semaine</H3>
+            <p>Tous les joueurs ensemble, du lundi au dimanche minuit (heure de Paris) : gagner des habitants, construire des bâtiments ou faire grandir le patrimoine, à tour de rôle. La cible suit le nombre de joueurs actifs et la taille de leurs villes : elle reste à portée à 5 joueurs comme à 200. Chaque joueur qui a fait avancer l’objectif touche <b>{WORLD_UNITS} fois la base</b> des missions du jour, à réclamer dans Monde ou sur l’accueil, jusqu’à la fin de la semaine suivante.</p>
             <H3>Objectifs (subvention versée une fois)</H3>
             <Table head={["Objectif", "Condition", "Subvention"]} rows={GOALS.map((g) => [g.label, g.minPop ? `avec au moins ${num(g.minPop)} habitants` : "", compactEur(g.reward)])} />
             <H3>Grands projets (comptés dans le patrimoine)</H3>

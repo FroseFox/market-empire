@@ -9,6 +9,7 @@ import { BASE_PATH, STATIC_MODE } from "@/lib/market/client";
 import { useGame } from "@/store/game";
 import * as E from "@/lib/game/engine";
 import { cityFullReminder } from "@/lib/pushPlan";
+import { streakReminder } from "@/lib/game/daily";
 
 /** unsupported : navigateur sans notifications ; ios : iPhone/iPad où le jeu n'est pas encore installé sur l'écran d'accueil. */
 export type PushState = "unsupported" | "ios" | "off" | "on" | "denied";
@@ -114,17 +115,29 @@ export async function disablePush() {
       await sub.unsubscribe().catch(() => {});
     }
   } catch { /* rien à retirer */ }
-  linked = null; lastPlan = undefined;
+  linked = null; lastPlan = undefined; lastStreak = undefined;
   usePush.setState({ state: Notification.permission === "denied" ? "denied" : "off" });
 }
 
 // Dernier rappel envoyé au serveur (date, ou null = annulé) : on ne le renvoie que s'il a bougé de plus de 10 minutes
 let lastPlan: number | null | undefined;
+let lastStreak: string | undefined;
+/** Rappel « série » : le lendemain à 19 h (repoussé à chaque ouverture du jeu). */
+async function syncStreak() {
+  const plan = streakReminder(useGame.getState().game.daily);
+  const key = plan ? `${plan.at}|${plan.title}` : "none";
+  if (key === lastStreak) return;
+  try {
+    await rpc<boolean>("push_remind", { p_kind: "streak", p_at: plan ? new Date(plan.at).toISOString() : null, p_title: plan?.title ?? "", p_body: plan?.body ?? "" });
+    lastStreak = key;
+  } catch { /* prochaine sauvegarde */ }
+}
 /** Programme (ou annule) le rappel « ville pleine » d'après la partie en cours. Appelé après chaque sauvegarde en ligne. */
 export async function syncReminder() {
   if (usePush.getState().state !== "on" || !useAuth.getState().user) return;
   const g = useGame.getState().game;
   if (g.sandbox) return;
+  void syncStreak();
   const r = cityFullReminder(g, E.computeCity(g));
   const at = r?.at ?? null;
   if (lastPlan !== undefined && (at === lastPlan || (at !== null && lastPlan !== null && Math.abs(at - lastPlan) < 600_000))) return;

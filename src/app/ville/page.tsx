@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
+import DailyMissions from "@/components/DailyMissions";
 import {
   BarChart3, ArrowUpCircle, Briefcase, CircleAlert, CloudLightning, FlaskConical, TriangleAlert, Copy, Undo2, Building2, Ellipsis, Handshake, Sparkles, Wrench, Factory, FastForward, Hammer, Home, Landmark, LayoutList, Lock, MousePointerClick, Move, Pencil, RotateCcw, Smile, Store, Target, Trash2, Trees, TrendingUp, Trophy, Users, Wheat, X, Zap,
 } from "lucide-react";
@@ -455,6 +456,10 @@ function Progression({ city, population, goals, onClaim }: { city: CityStats; po
   const sorted = [...goals].sort((a, b) => order(a) - order(b));
   return (
     <div className="space-y-4">
+      <div className="border-b border-line pb-3">
+        <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted">Missions du jour</div>
+        <DailyMissions compact />
+      </div>
       <div>
         <div className="flex items-baseline justify-between gap-3">
           <span className="flex items-center gap-1.5 text-[15px] font-semibold"><Trophy size={15} className="text-primary" />{rank.name}</span>
