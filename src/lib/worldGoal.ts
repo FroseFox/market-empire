@@ -16,8 +16,10 @@ export type WorldKind = "population" | "buildings" | "net_worth";
 export interface WorldGoal { id: number; kind: WorldKind; target: number; progress: number; mine: number }
 export interface WorldStatus extends WorldGoal { players: number; contributors: number; ends: string; claimed: boolean; previous: WorldGoal | null }
 
-/** Récompense : 10 fois la base des missions du jour. */
-export const WORLD_UNITS = 10;
+/** Récompense : 3 fois la base des missions du jour. */
+export const WORLD_UNITS = 3;
+/** Part d'un joueur comptée au plus (fraction de la cible) : il faut au moins trois joueurs. */
+export const WORLD_CAP = 0.4;
 export const worldReward = () => WORLD_UNITS * rewardUnit(computeCity(useGame.getState().game));
 
 export function worldText(kind: WorldKind, target: number): string {

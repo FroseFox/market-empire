@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Users } from "lucide-react";
 import { Button, Progress } from "@/components/ui";
-import { claimWorldGoal, loadWorldGoal, useWorldGoal, worldAmount, worldReward, worldText } from "@/lib/worldGoal";
+import { WORLD_CAP, claimWorldGoal, loadWorldGoal, useWorldGoal, worldAmount, worldReward, worldText } from "@/lib/worldGoal";
 import { useAuth } from "@/lib/auth";
 import { compactEur, num } from "@/lib/format";
 
@@ -42,7 +42,7 @@ export default function WorldGoal() {
         <Progress value={Math.min(1, st.progress / st.target)} tone={reached ? "bg-success" : "bg-primary"} />
         <div className="mt-1 flex flex-wrap justify-between gap-x-3 text-[11px] text-muted tabular">
           <span>{worldAmount(st.kind, st.progress)} / {worldAmount(st.kind, st.target)}{reached ? " · atteint !" : ""}</span>
-          <span className="inline-flex items-center gap-1"><Users size={12} />{num(st.contributors)} joueur{st.contributors > 1 ? "s ont" : " a"} participé · votre part : {worldAmount(st.kind, st.mine)}</span>
+          <span className="inline-flex items-center gap-1"><Users size={12} />{num(st.contributors)} joueur{st.contributors > 1 ? "s ont" : " a"} participé · votre part : {worldAmount(st.kind, Math.min(st.mine, st.target * WORLD_CAP))}{st.mine > st.target * WORLD_CAP ? " (maximum)" : ""}</span>
         </div>
       </div>
       <div className="flex items-center justify-between gap-3 rounded-[10px] bg-slate-50 px-3 py-2">
@@ -52,7 +52,7 @@ export default function WorldGoal() {
           : reached ? <span className="text-[11px] text-muted">Participez pour la toucher</span> : null}
       </div>
       {msg && <p className="text-[12px] text-muted">{msg}</p>}
-      <p className="text-[11px] text-muted">Tous les joueurs ensemble, du lundi au dimanche. La cible suit le nombre de joueurs actifs ({num(st.players)} cette semaine) : chacun compte. Il suffit d&apos;y avoir contribué pour toucher la récompense, jusqu&apos;à la fin de la semaine suivante.</p>
+      <p className="text-[11px] text-muted">Tous les joueurs ensemble, du lundi au dimanche. La cible suit le nombre de joueurs actifs ({num(st.players)} cette semaine). La part d&apos;un joueur compte au plus pour {Math.round(WORLD_CAP * 100)} % de la cible : impossible seul, il faut s&apos;y mettre à plusieurs. Il suffit d&apos;y avoir contribué pour toucher la récompense, jusqu&apos;à la fin de la semaine suivante.</p>
     </div>
   );
 }
