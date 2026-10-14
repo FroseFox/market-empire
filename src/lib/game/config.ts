@@ -398,6 +398,27 @@ export const SECTOR_PERKS: Record<string, SectorPerk> = {
   "Énergie": { label: "Production d'énergie (voir la famille)", perk: {} },
   "Mines": { label: "Matières premières exportées, mais pollue", perk: { exportBonus: 0.03, pollution: 15 } },
 };
+/** Effet chiffré d'un bonus d'entreprise, tel que le jeu l'applique (« +5 % de visiteurs »…). */
+export function perkEffects(p: BranchPerk): string[] {
+  const n = (v: number) => (Math.round(v * 10) / 10).toLocaleString("fr-FR");
+  const pc = (v: number) => `${n(v * 100)} %`;
+  const out: string[] = [];
+  if (p.visitors) out.push(`+${pc(p.visitors)} de visiteurs`);
+  if (p.growthBoost) out.push(`+${pc(p.growthBoost)} de nouveaux habitants`);
+  if (p.joy) out.push(`+${n(p.joy * 100)} pt de satisfaction`);
+  if (p.exportBonus) out.push(`+${n(p.exportBonus * 100)} pts sur le prix des exportations`);
+  if (p.wearCut) out.push(`vétusté −${pc(p.wearCut)}`);
+  if (p.capitalBoost) out.push(`+${pc(p.capitalBoost)} de capital`);
+  if (p.energySave) out.push(`énergie consommée −${pc(p.energySave)}`);
+  if (p.researchCut) out.push(`recherches −${pc(p.researchCut)}`);
+  if (p.feeCut) out.push(`frais de bourse −${pc(p.feeCut)}`);
+  if (p.foodProd) out.push(`+${n(p.foodProd)} de nourriture / jour`);
+  if (p.service && p.serves) out.push(`${SERVICE_WORD[p.service]} pour ${p.serves.toLocaleString("fr-FR")} habitants`);
+  if (p.pollution) out.push(`pollution +${n(p.pollution)}`);
+  return out;
+}
+const SERVICE_WORD: Record<ServiceId, string> = { park: "espaces verts", school: "écoles", safety: "sécurité", hospital: "soins" };
+
 /** Plafonds des bonus d'entreprises qui n'existent pas chez les bâtiments. */
 export const BRANCH_PERK_CAPS = { energySave: 0.2, researchCut: 0.3, feeCut: 0.4 };
 
