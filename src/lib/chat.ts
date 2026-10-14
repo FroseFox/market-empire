@@ -93,8 +93,9 @@ const setSeen = (id: number) => {
   }, 10_000);
 };
 
-/** Reprend le dernier message lu sur le compte. Compte qui n'a jamais rien lu, sur un appareil neuf : tout ce qui existe
- *  déjà compte comme lu (seuls les messages à venir sont « nouveaux »). Prêt une fois par compte. */
+/** Reprend le dernier message lu sur le compte. Compte qui n'a jamais rien lu, sur un appareil neuf : les messages de plus
+ *  de 15 minutes comptent comme lus. Les plus récents restent « nouveaux » : une mention qui vient d'arriver n'est pas
+ *  avalée parce que le joueur ouvre le jeu sur un appareil neuf (ou une appli réinstallée). Prêt une fois par compte. */
 let seenReady: Promise<void> | null = null;
 function loadSeen(): Promise<void> {
   const id = useAuth.getState().user?.id;
@@ -104,7 +105,8 @@ function loadSeen(): Promise<void> {
     if (!r) { seenReady = null; return; } // serveur muet : on réessaiera
     let server = Number(r[0]?.chat_seen) || 0;
     if (!server && !seen()) {
-      const last = await restAsUser<{ id: number }[]>("chat_messages?select=id&order=id.desc&limit=1").catch(() => null);
+      const before = new Date(Date.now() - 15 * 60_000).toISOString();
+      const last = await restAsUser<{ id: number }[]>(`chat_messages?select=id&created_at=lt.${before}&order=id.desc&limit=1`).catch(() => null);
       server = Number(last?.[0]?.id) || 0;
     }
     sentSeen = Math.max(sentSeen, Number(r[0]?.chat_seen) || 0);
@@ -182,9 +184,10 @@ function tick() {
   if (typeof document !== "undefined" && document.hidden) return;
   if (useAuth.getState().status !== "in") return;
   const s = useChat.getState();
-  // Temps réel actif : simple contrôle toutes les 32 s ; sinon, relecture toutes les 4 s
+  // Temps réel actif : simple contrôle toutes les 32 s ; sinon, relecture toutes les 4 s.
+  // Chat fermé : nouveaux messages (et mentions) cherchés toutes les 20 s (une toute petite requête).
   if (s.open) { if (!watch?.live || ticks % 8 === 0) readOpenRoom(); }
-  else if (ticks % 15 === 0) void checkUnread();
+  else if (ticks % 5 === 0) void checkUnread();
   ticks++;
 }
 

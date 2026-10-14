@@ -29,19 +29,58 @@ async function send(sub: PushSubscription): Promise<boolean> {
   return !!(await rpc<boolean>("push_subscribe", { p_endpoint: j.endpoint, p_p256dh: j.keys.p256dh, p_auth: j.keys.auth }));
 }
 
+/** Même clé ? (l'abonnement a été fait avec la clé actuelle du serveur) */
+function sameKey(sub: PushSubscription, key: string) {
+  const k = sub.options?.applicationServerKey;
+  if (!k) return true; // navigateur qui ne la donne pas : on suppose que oui
+  const a = new Uint8Array(k), b = unb64u(key);
+  return a.length === b.length && a.every((v, i) => v === b[i]);
+}
+
+/** Abonnement de l'appareil, refait s'il le faut. Les notifications sont déjà autorisées : rien n'est demandé au joueur.
+ *  Sans ça, un appareil qui avait perdu son abonnement (appli réinstallée, abonnement renouvelé par le navigateur…)
+ *  ne recevait plus rien, sans que personne ne s'en aperçoive : le serveur écrivait encore à l'ancienne adresse. */
+async function ensureSubscription(): Promise<PushSubscription | null> {
+  const key = await rpc<string | null>("push_public_key", {});
+  if (!key) return null;
+  const reg = (await navigator.serviceWorker.getRegistration(`${BASE_PATH}/`)) ?? (await worker());
+  await navigator.serviceWorker.ready;
+  let sub = await reg.pushManager.getSubscription();
+  if (sub && !sameKey(sub, key)) { await sub.unsubscribe().catch(() => {}); sub = null; }
+  return sub ?? reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: unb64u(key) });
+}
+
 let linked: string | null = null;
-/** À l'ouverture et à chaque changement de compte : retrouve l'abonnement de l'appareil et le rattache au compte connecté. */
+/** À l'ouverture et à chaque changement de compte : retrouve (ou refait) l'abonnement de l'appareil et le rattache au compte. */
 export async function initPush() {
   if (typeof window === "undefined") return;
   if (!supported()) { usePush.setState({ state: iosNotInstalled() ? "ios" : "unsupported" }); return; }
   if (Notification.permission === "denied") { usePush.setState({ state: "denied" }); return; }
   try {
-    const reg = await navigator.serviceWorker.getRegistration(`${BASE_PATH}/`);
-    const sub = Notification.permission === "granted" ? await reg?.pushManager.getSubscription() : null;
-    usePush.setState({ state: sub ? "on" : "off" });
     const uid = useAuth.getState().user?.id ?? null;
-    if (sub && uid && linked !== uid) { linked = uid; lastPlan = undefined; void send(sub).then(() => syncReminder()).catch(() => { linked = null; }); }
-  } catch { usePush.setState({ state: "off" }); }
+    if (Notification.permission !== "granted") { usePush.setState({ state: "off" }); return; }
+    if (!uid) {
+      const reg = await navigator.serviceWorker.getRegistration(`${BASE_PATH}/`);
+      usePush.setState({ state: (await reg?.pushManager.getSubscription()) ? "on" : "off" });
+      return;
+    }
+    if (linked === uid) return;
+    linked = uid;
+    const sub = await ensureSubscription();
+    if (!sub || !(await send(sub))) { linked = null; usePush.setState({ state: "off" }); return; }
+    usePush.setState({ state: "on" });
+    lastPlan = undefined; void syncReminder();
+  } catch { linked = null; usePush.setState({ state: "off" }); }
+}
+
+/** Notification de test vers tous les appareils du joueur. Renvoie le message à afficher. */
+export async function testPush(): Promise<string> {
+  try {
+    const n = await rpc<number>("push_test", {});
+    if (n < 0) return "Un test est déjà parti il y a moins d'une minute.";
+    if (!n) return "Aucun appareil abonné.";
+    return `Envoyée à ${n} appareil${n > 1 ? "s" : ""} : elle arrive dans la minute. Si un appareil ne la reçoit pas, désactivez puis réactivez les notifications dessus.`;
+  } catch { return "Le serveur n'a pas répondu."; }
 }
 
 /** Active les notifications sur cet appareil. Renvoie `null` si c'est fait, sinon le message à afficher. */
@@ -52,11 +91,9 @@ export async function enablePush(): Promise<string | null> {
   try {
     const p = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
     if (p !== "granted") { usePush.setState({ state: p === "denied" ? "denied" : "off" }); return p === "denied" ? "Notifications bloquées : autorisez-les dans les réglages du navigateur." : null; }
-    const key = await rpc<string | null>("push_public_key", {});
-    if (!key) return "Le serveur n'est pas prêt, réessayez dans un instant.";
-    const reg = await worker();
-    await navigator.serviceWorker.ready;
-    const sub = (await reg.pushManager.getSubscription()) ?? (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: unb64u(key) }));
+    await worker();
+    const sub = await ensureSubscription();
+    if (!sub) return "Le serveur n'est pas prêt, réessayez dans un instant.";
     if (!(await send(sub))) { await sub.unsubscribe().catch(() => {}); return "Abonnement refusé par le serveur."; }
     linked = useAuth.getState().user?.id ?? null;
     usePush.setState({ state: "on" });
