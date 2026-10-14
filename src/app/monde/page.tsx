@@ -8,6 +8,8 @@ import CityVisit from "@/components/CityVisit";
 import TradePanel from "@/components/TradePanel";
 import ShareMarket from "@/components/ShareMarket";
 import AlliancePanel from "@/components/AlliancePanel";
+import WorldGoal from "@/components/WorldGoal";
+import { useWorldGoal } from "@/lib/worldGoal";
 import { useGame } from "@/store/game";
 import { featureOpen, hasDesk } from "@/lib/game/engine";
 import { CITIES_PER_COUNTRY, CITY_RANKS, FEATURES } from "@/lib/game/config";
@@ -29,6 +31,7 @@ export default function WorldPage() {
   const { game, netWorth, city, portfolio, portfolioCost } = useDerived();
   const world = useWorld();
   const [tab, setTab] = useState<Tab>("Carte");
+  const hasWorldGoal = useWorldGoal((s) => !!s.status);
   const [sort, setSort] = useState<Sort>("Patrimoine");
   const [rows, setRows] = useState(100); // lignes du classement affichées
 
@@ -101,6 +104,9 @@ export default function WorldPage() {
       <PageHeader icon={Globe2} title="Monde" subtitle="Carte des pays, villes des joueurs et classement">
         <Segmented options={(featureOpen(game, "trade") ? ["Carte", "Commerce", "Bourse", "Alliances", "Classement"] : ["Carte", "Bourse", "Alliances", "Classement"]) as Tab[]} value={tab} onChange={setTab} />
       </PageHeader>
+
+      {/* Objectif commun de la semaine : visible sur tous les onglets du Monde */}
+      <Card title="Objectif commun de la semaine" icon={Users} className={hasWorldGoal ? "mb-4" : "hidden"}><WorldGoal /></Card>
 
       <div className="grid gap-2 sm:gap-4 grid-cols-3 mb-4">
         <Stat icon={MapPin} label="Votre pays" value={mine ? countryName(mine.country) : "—"}

@@ -2,7 +2,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import {
-  AlertTriangle, BarChart3, Building2, CheckCircle2, Coins, Globe2, Info, Landmark, Scale, Target, TrendingUp, Zap, Wheat, Sparkles, Flame,
+  AlertTriangle, BarChart3, Building2, CheckCircle2, Coins, Globe2, Info, Landmark, Scale, Target, TrendingUp, Zap, Wheat, Sparkles, Flame, Users,
 } from "lucide-react";
 import { useDerived } from "@/store/game";
 import { Card, Delta, PageHeader, Progress, Segmented, StatCard } from "@/components/ui";
@@ -11,6 +11,8 @@ import IsoCity from "@/components/City3D";
 import { computeAlerts, computeObjectives, nextActions, type AlertLevel } from "@/lib/game/insights";
 import Robot from "@/components/Robot";
 import DailyMissions from "@/components/DailyMissions";
+import WorldGoal from "@/components/WorldGoal";
+import { useWorldGoal } from "@/lib/worldGoal";
 import { compactEur, eur, num, pctPlain, signedEur, tone } from "@/lib/format";
 import { DAY_LENGTH_MINUTES } from "@/lib/game/config";
 import { CITY_RANKS } from "@/lib/game/config";
@@ -87,7 +89,10 @@ export default function EconomyPage() {
       )}
 
       {/* Missions du jour et série : ce qui fait revenir chaque jour */}
-      <Card title="Missions du jour" icon={Flame} className="mb-4"><DailyMissions /></Card>
+      <div className="mb-4 grid gap-4 xl:grid-cols-2">
+        <Card title="Missions du jour" icon={Flame}><DailyMissions /></Card>
+        <WorldGoalCard />
+      </div>
 
       {/* Chiffres clés */}
       <div className="grid gap-3 sm:gap-4 grid-cols-2 xl:grid-cols-4 mb-4">
@@ -281,4 +286,10 @@ function Resource({ icon: Icon, label, prod, use }: { icon: typeof Zap; label: s
       <div className={`font-bold tabular ${tone(bal)}`}>{bal >= 0 ? "+" : "−"}{num(Math.abs(bal))}</div>
     </div>
   );
+}
+
+/** Objectif commun de la semaine (absent tant que le serveur n'a pas répondu, et hors ligne). */
+function WorldGoalCard() {
+  const has = useWorldGoal((s) => !!s.status);
+  return <Card title="Objectif commun de la semaine" icon={Users} className={has ? "" : "hidden"}><WorldGoal /></Card>;
 }

@@ -2,6 +2,7 @@
 // Wiki du jeu. Tous les chiffres viennent de la configuration (lib/game/config) : la page reste juste quand l'équilibrage change.
 // Les briques visuelles sont dans components/wiki (rubriques, encadrés, schémas, petites simulations).
 import { DAILY } from "@/lib/game/daily";
+import { WORLD_UNITS } from "@/lib/worldGoal";
 import Link from "next/link";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import {
@@ -690,6 +691,8 @@ export default function WikiPage() {
               <>Tous les {DAILY.jokerEvery} jours de série, vous gagnez un <b>joker</b> (un au plus) : il pardonne un seul jour manqué.</>,
               <>Notifications activées : un rappel arrive le lendemain à 19 h si vous n’avez pas encore ouvert le jeu.</>,
             ]} />
+            <H3>Objectif commun de la semaine</H3>
+            <p>Tous les joueurs ensemble, du lundi au dimanche minuit (heure de Paris) : gagner des habitants, construire des bâtiments ou faire grandir le patrimoine, à tour de rôle. La cible suit le nombre de joueurs actifs et la taille de leurs villes : elle reste à portée à 5 joueurs comme à 200. Chaque joueur qui a fait avancer l’objectif touche <b>{WORLD_UNITS} fois la base</b> des missions du jour, à réclamer dans Monde ou sur l’accueil, jusqu’à la fin de la semaine suivante.</p>
             <H3>Objectifs (subvention versée une fois)</H3>
             <Table head={["Objectif", "Condition", "Subvention"]} rows={GOALS.map((g) => [g.label, g.minPop ? `avec au moins ${num(g.minPop)} habitants` : "", compactEur(g.reward)])} />
             <H3>Grands projets (comptés dans le patrimoine)</H3>
