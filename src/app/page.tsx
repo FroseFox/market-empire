@@ -2,7 +2,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import {
-  AlertTriangle, BarChart3, Building2, CheckCircle2, Coins, Globe2, Info, Landmark, Scale, Target, TrendingUp, Zap, Wheat, Sparkles,
+  AlertTriangle, BarChart3, Building2, CheckCircle2, Coins, Globe2, Info, Landmark, Scale, Target, TrendingUp, Zap, Wheat, Sparkles, Flame,
 } from "lucide-react";
 import { useDerived } from "@/store/game";
 import { Card, Delta, PageHeader, Progress, Segmented, StatCard } from "@/components/ui";
@@ -10,6 +10,7 @@ import { IncomeBars, WealthChart } from "@/components/charts";
 import IsoCity from "@/components/City3D";
 import { computeAlerts, computeObjectives, nextActions, type AlertLevel } from "@/lib/game/insights";
 import Robot from "@/components/Robot";
+import DailyMissions from "@/components/DailyMissions";
 import { compactEur, eur, num, pctPlain, signedEur, tone } from "@/lib/format";
 import { DAY_LENGTH_MINUTES } from "@/lib/game/config";
 import { CITY_RANKS } from "@/lib/game/config";
@@ -84,6 +85,9 @@ export default function EconomyPage() {
           </ol>
         </section>
       )}
+
+      {/* Missions du jour et série : ce qui fait revenir chaque jour */}
+      <Card title="Missions du jour" icon={Flame} className="mb-4"><DailyMissions /></Card>
 
       {/* Chiffres clés */}
       <div className="grid gap-3 sm:gap-4 grid-cols-2 xl:grid-cols-4 mb-4">

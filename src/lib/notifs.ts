@@ -12,6 +12,7 @@ import { ASSET_BY_SYMBOL } from "@/lib/market/universe";
 import { play } from "@/lib/sound";
 import { useAuth } from "@/lib/auth";
 import { initPush } from "@/lib/push";
+import { missionStatuses, missionText } from "@/lib/game/daily";
 
 export interface Notif { id: string; at: number; title: string; text: string; href: string; tone: "good" | "bad" | "info"; read: boolean }
 /** Variation sur un jour à partir de laquelle un actif détenu est signalé. */
@@ -90,6 +91,10 @@ export function startNotifs() {
       // Nouvelle partie : on repart de zéro sans rien signaler
       if (s.game.createdAt !== g.createdAt) { rebase!(s.game); return; }
       g = s.game; city = E.computeCity(g);
+      // Mission du jour réussie : récompense à encaisser
+      if (g.daily) for (const st of missionStatuses(g, city)) {
+        if (st.done && !st.mission.claimed) push({ id: `mission-${g.daily.date}-${st.index}`, tone: "good", title: "Mission du jour réussie", text: `${missionText(st.mission)} : ${fmt(st.mission.reward)} €`, href: "/" });
+      }
       for (const st of E.goalStatuses(g, city)) {
         if (!st.done || known.has(st.goal.id)) continue;
         known.add(st.goal.id);

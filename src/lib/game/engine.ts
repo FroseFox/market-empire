@@ -16,6 +16,7 @@ import { HUBS, HUB_BY_NAME, PLAYABLE, countryBonus, countryPrice, countrySpecial
 import { ASSET_BY_SYMBOL, familyOf, regionOf, type Asset } from "../market/universe";
 import { RESEARCH_BY_ID, RETIRED_RESEARCH, STARTING_RESEARCH, researchFx } from "./research";
 import { EVENTS, EVENT_BY_ID, effectText, eventStrength, pickEvent, scaledEffect, type CityEvent, type CityEventDef } from "./events";
+import type { DailyState } from "./daily";
 
 /** Ligne du portefeuille. `qty` = titres détenus (mise × levier), `debt` = part prêtée par la Banque de la ville.
  *  Ce que la ligne vaut pour le joueur : `qty × cours − debt` (voir holdingValue). */
@@ -120,6 +121,8 @@ export interface GameState {
   /** Événement de ville en cours (ou le dernier), et dernière semaine pour laquelle le jeu a décidé. */
   event?: CityEvent;
   eventWeek?: number;
+  /** Missions du jour et série de jours de connexion (voir daily.ts). */
+  daily?: DailyState;
   /** Mode test (comptes de test uniquement) : `saved` = la vraie partie, mise de côté pour pouvoir y revenir. */
   sandbox?: { saved: unknown };
   /** Ancien système (positions à levier séparées) : converti en lignes du portefeuille au chargement. */
@@ -507,6 +510,11 @@ export function claimGoal(state: GameState, id: string, at: number): ActionResul
       transactions: addTx(state, { kind: "reward", label: `Subvention : ${st.goal.label}`, amount: st.goal.reward, at }),
     },
   };
+}
+
+/** Récompense versée d'un coup (missions du jour, objectif commun…) : comptée dans le flux de la ville, comme une subvention. */
+export function grant(state: GameState, amount: number, label: string, at: number): GameState {
+  return { ...state, cash: round2(state.cash + amount), today: spend(state, "extra", amount), transactions: addTx(state, { kind: "reward", label, amount, at }) };
 }
 
 // ─── Monde ────────────────────────────────────────────────────

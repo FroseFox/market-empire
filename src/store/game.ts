@@ -6,6 +6,7 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { tabPaused } from "@/lib/tabLock";
 import * as E from "@/lib/game/engine";
+import * as D from "@/lib/game/daily";
 import { fetchQuotes } from "@/lib/market/client";
 import type { OrientationId } from "@/lib/game/config";
 import { pack, unpack } from "@/lib/game/pack";
@@ -52,6 +53,10 @@ interface Store {
   research: (id: string) => boolean;
   renameCity: (name: string) => boolean;
   claimGoal: (id: string) => boolean;
+  /** Missions du jour : encaisse une mission réussie, le bonus des trois, le cadeau de la série. */
+  claimMission: (index: number) => boolean;
+  claimDailyBonus: () => boolean;
+  claimGift: () => boolean;
   upgrade: (tile: { x: number; y: number }) => boolean;
   openBranch: (symbol: string) => boolean;
   closeBranch: (symbol: string) => void;
@@ -120,6 +125,9 @@ export const useGame = create<Store>()(
         const { state, days } = E.catchUp(get().game, now(), get().prices());
         // Retour après plusieurs jours : on garde de quoi raconter ce qui s'est passé
         if (days > 0) { set({ game: state, ...(days >= 3 ? { absence: E.absenceReport(get().game, state) } : {}) }); get().settle(); }
+        // Nouveau jour (minuit à Paris) : missions du jour et série de connexions
+        const fresh = D.refreshDaily(get().game, D.parisDate(now()));
+        if (fresh !== get().game) set({ game: fresh });
         return days;
       },
 
@@ -182,6 +190,27 @@ export const useGame = create<Store>()(
         if (!r.ok) { get().notify(r.error, "error"); return false; }
         set({ game: r.state });
         get().notify("Ville renommée");
+        return true;
+      },
+      claimMission: (index) => {
+        const r = D.claimMission(get().game, index, now());
+        if (!r.ok) { get().notify(r.error, "error"); return false; }
+        set({ game: r.state });
+        get().notify("Mission réussie : récompense encaissée");
+        return true;
+      },
+      claimDailyBonus: () => {
+        const r = D.claimBonus(get().game, now());
+        if (!r.ok) { get().notify(r.error, "error"); return false; }
+        set({ game: r.state });
+        get().notify("Bonus des missions encaissé");
+        return true;
+      },
+      claimGift: () => {
+        const r = D.claimGift(get().game, now());
+        if (!r.ok) { get().notify(r.error, "error"); return false; }
+        set({ game: r.state });
+        get().notify("Cadeau du jour encaissé");
         return true;
       },
       claimGoal: (id) => {
