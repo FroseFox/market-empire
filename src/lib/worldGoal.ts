@@ -6,9 +6,9 @@ import { create } from "zustand";
 import { rpc, useAuth } from "@/lib/auth";
 import { STATIC_MODE } from "@/lib/market/client";
 import { useGame } from "@/store/game";
-import { computeCity, grant } from "@/lib/game/engine";
+import { computeCity } from "@/lib/game/engine";
+import { syncLedger } from "@/lib/online";
 import { rewardUnit } from "@/lib/game/daily";
-import { now } from "@/lib/clock";
 import { compactEur, num } from "@/lib/format";
 import { useNotifs } from "@/lib/notifs";
 
@@ -52,11 +52,11 @@ export async function loadWorldGoal(force = false) {
 export async function claimWorldGoal(goal: WorldGoal): Promise<string> {
   useWorldGoal.setState({ busy: true });
   try {
-    const ok = await rpc<boolean>("world_goal_claim", { p_id: goal.id });
-    if (!ok) return "Récompense indisponible (déjà réclamée, ou objectif pas atteint).";
+    // La récompense est inscrite au registre du serveur en même temps que la réclamation (jamais perdue)
     const amount = worldReward();
-    const g = useGame.getState().game;
-    useGame.setState({ game: grant(g, amount, `Objectif commun : ${worldText(goal.kind, goal.target)}`, now()) });
+    const ok = await rpc<boolean>("world_goal_claim_l", { p_id: goal.id, p_amount: amount, p_label: `Objectif commun : ${worldText(goal.kind, goal.target)}` });
+    if (!ok) return "Récompense indisponible (déjà réclamée, ou objectif pas atteint).";
+    await syncLedger();
     return `+${compactEur(amount)} encaissés : bravo à tous !`;
   } catch { return "Le serveur n'a pas répondu, réessayez."; }
   finally { useWorldGoal.setState({ busy: false }); await loadWorldGoal(true); }

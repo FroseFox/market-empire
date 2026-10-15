@@ -121,6 +121,8 @@ export interface GameState {
   /** Événement de ville en cours (ou le dernier), et dernière semaine pour laquelle le jeu a décidé. */
   event?: CityEvent;
   eventWeek?: number;
+  /** Registre des mouvements d'argent du serveur : numéro de la dernière ligne appliquée (voir applyLedger). */
+  ledger?: number;
   /** Grille de la ville (voir GRID_VERSION) : absente = ancienne grille, à convertir. */
   grid?: number;
   /** Missions du jour et série de jours de connexion (voir daily.ts). */
@@ -1063,6 +1065,24 @@ export function setShares(state: GameState, server: ShareState, at: number): Gam
 /** Débite ce que le serveur a facturé pour un achat de parts ou un rachat (le serveur a déjà enregistré l'opération). */
 export function payShares(state: GameState, cost: number, label: string, at: number): GameState {
   return { ...state, cash: round2(state.cash - cost), transactions: addTx(state, { kind: "buy", label, amount: -cost, at }) };
+}
+
+/** Ligne du registre du serveur (player_ledger) : un mouvement d'argent décidé par le serveur. */
+export interface LedgerRow { id: number; amount: number | string; label: string; kind: "shares" | "alliance" | "reward" }
+/** Applique les lignes du registre pas encore appliquées, une seule fois chacune (le numéro de la dernière est retenu).
+ *  Une partie reprise d'un autre appareil, ou d'avant une sauvegarde refusée, rattrape exactement ce qui lui manque. */
+export function applyLedger(state: GameState, rows: LedgerRow[], at: number): GameState {
+  const start = state.ledger ?? 0;
+  let s = state, head = start;
+  for (const r of [...rows].sort((a, b) => a.id - b.id)) {
+    if (r.id <= head) continue;
+    const amount = Number(r.amount) || 0;
+    if (r.kind === "reward") s = grant(s, amount, r.label, at);
+    else if (r.kind === "alliance") s = payAlliance(s, -amount, r.label, at);
+    else s = payShares(s, -amount, r.label, at);
+    head = r.id;
+  }
+  return head === start ? state : { ...s, ledger: head };
 }
 
 /** Remplace la liste des contrats par celle du serveur. */

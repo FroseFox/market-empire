@@ -122,6 +122,7 @@ async function pull(uid: string) {
   const game = E.normalize(unpack(rows[0].data));
   rebaseNotifs(game); // déjà signalé sur l'autre appareil : pas de « Nouveau rang » ni d'objectif en double ici
   useGame.setState({ game, savedAt: at });
+  void syncLedger(); // ce que cette partie n'avait pas encore appliqué du registre
   setSynced(uid, at);
   base = at;
   dirty = false; lastSent = "";
@@ -179,7 +180,7 @@ async function flush(keepalive = false) {
       // On retient la date réellement enregistrée (relue sur le serveur quand la page reste ouverte)
       const stored = keepalive ? sentAt : await serverAt().catch(() => undefined);
       if (active === uid) { base = typeof stored === "number" ? stored : sentAt; setSynced(uid, base); }
-      if (!keepalive) { void publishCity(data.pl); void publishOffer(); void publishIncome(); void syncShares(); void syncAlliance(); void import("@/lib/push").then((m) => m.syncReminder()).catch(() => {}); }
+      if (!keepalive) { void publishCity(data.pl); void publishOffer(); void publishIncome(); void syncShares(); void syncAlliance(); void syncLedger(); void import("@/lib/push").then((m) => m.syncReminder()).catch(() => {}); }
     }
   } catch (e) {
     if (isConflict(e) && active === uid) {
@@ -305,26 +306,52 @@ export async function syncShares(): Promise<boolean> {
   return true;
 }
 
+// ─── Registre des mouvements d'argent (serveur → partie) ───
+/** Partie qui n'a encore rien appliqué (nouvelle, ou d'avant le registre) : elle part de la dernière ligne existante. */
+async function ensureLedger(): Promise<boolean> {
+  if (useGame.getState().game.ledger !== undefined) return true;
+  const uid = active;
+  const head = await rpc<number>("ledger_head", {}).catch(() => null);
+  if (head === null || active !== uid) return false;
+  const g = useGame.getState().game;
+  if (g.ledger === undefined) useGame.setState({ game: { ...g, ledger: Number(head) || 0 } });
+  return true;
+}
+/** Applique les mouvements d'argent du serveur pas encore appliqués à cette partie. */
+export async function syncLedger() {
+  const uid = active;
+  if (!uid || !(await ensureLedger())) return;
+  const head = useGame.getState().game.ledger ?? 0;
+  const rows = await restAsUser<E.LedgerRow[]>(`player_ledger?select=id,amount,label,kind&id=gt.${head}&order=id.asc&limit=200`);
+  if (!rows?.length || active !== uid) return;
+  const g = useGame.getState().game, next = E.applyLedger(g, rows, Date.now());
+  if (next !== g) useGame.setState({ game: next });
+}
+
 /** Achète des parts d'une ville, `maxCost` au plus. Renvoie le prix payé, ou `null` si le serveur a refusé
  *  (plus assez de parts en vente, prix monté entre-temps). Lève une erreur si le serveur ne répond pas. */
 export async function buyCityShares(city: string, name: string, qty: number, maxCost: number): Promise<number | null> {
   if (!useGame.getState().game.shares && !(await syncShares())) throw new Error("bourse des villes indisponible");
-  const cost = Number(await rpc<number | null>("buy_city_shares", { p_city: city, p_qty: Math.floor(qty), p_max_cost: Math.floor(maxCost) })) || 0;
-  if (cost > 0) useGame.setState({ game: E.payShares(useGame.getState().game, cost, `Bourse des villes : ${Math.floor(qty)} parts de ${name}`, Date.now()) });
+  if (!(await ensureLedger())) throw new Error("serveur indisponible");
+  // Le prix est retiré par le registre du serveur, en même temps que les parts sont données (jamais l'un sans l'autre)
+  const cost = Number(await rpc<number | null>("buy_city_shares_l", { p_city: city, p_qty: Math.floor(qty), p_max_cost: Math.floor(maxCost), p_label: `Bourse des villes : ${Math.floor(qty)} parts de ${name}` })) || 0;
+  await syncLedger();
   await syncShares();
   return cost > 0 ? cost : null;
 }
 /** Guerre économique : rachat hostile des parts restantes d'une ville dont on détient déjà une bonne part. Mêmes retours que l'achat. */
 export async function hostileBid(city: string, name: string, maxCost: number): Promise<number | null> {
-  const cost = Number(await rpc<number | null>("hostile_bid", { p_city: city, p_max_cost: Math.floor(maxCost) })) || 0;
-  if (cost > 0) useGame.setState({ game: E.payShares(useGame.getState().game, cost, `Bourse des villes : rachat hostile de ${name}`, Date.now()) });
+  if (!(await ensureLedger())) throw new Error("serveur indisponible");
+  const cost = Number(await rpc<number | null>("hostile_bid_l", { p_city: city, p_max_cost: Math.floor(maxCost), p_label: `Bourse des villes : rachat hostile de ${name}` })) || 0;
+  await syncLedger();
   await syncShares();
   return cost > 0 ? cost : null;
 }
 /** Rachète des parts de sa propre ville à un actionnaire, au prix du jour. Mêmes retours que l'achat. */
 export async function buybackCityShares(holder: string, name: string, qty: number, maxCost: number): Promise<number | null> {
-  const cost = Number(await rpc<number | null>("buyback_city_shares", { p_holder: holder, p_qty: Math.floor(qty), p_max_cost: Math.floor(maxCost) })) || 0;
-  if (cost > 0) useGame.setState({ game: E.payShares(useGame.getState().game, cost, `Bourse des villes : rachat de ${Math.floor(qty)} parts à ${name}`, Date.now()) });
+  if (!(await ensureLedger())) throw new Error("serveur indisponible");
+  const cost = Number(await rpc<number | null>("buyback_city_shares_l", { p_holder: holder, p_qty: Math.floor(qty), p_max_cost: Math.floor(maxCost), p_label: `Bourse des villes : rachat de ${Math.floor(qty)} parts à ${name}` })) || 0;
+  await syncLedger();
   await syncShares();
   return cost > 0 ? cost : null;
 }
@@ -371,12 +398,13 @@ export async function syncAlliance(): Promise<boolean> {
   if (next !== g) useGame.setState({ game: next });
   return true;
 }
-const pay = (cost: number, label: string) => useGame.setState({ game: E.payAlliance(useGame.getState().game, cost, label, Date.now()) });
-
-/** Fonde une alliance (le prix est débité une fois le serveur d'accord). `false` = refusé : nom ou sigle déjà pris ou invalide. */
+/** Fonde une alliance (le prix est débité par le registre du serveur). `false` = refusé : nom ou sigle déjà pris ou invalide.
+ *  `cost` : affiché par l'appelant, le serveur applique le même (ALLIANCE.cost). */
 export async function createAlliance(name: string, tag: string, cost: number): Promise<boolean> {
-  const id = await rpc<string | null>("create_alliance", { p_name: name, p_tag: tag });
-  if (id) pay(cost, `Alliance fondée : ${name.trim()}`);
+  void cost;
+  if (!(await ensureLedger())) return false;
+  const id = await rpc<string | null>("create_alliance_l", { p_name: name, p_tag: tag });
+  await syncLedger();
   await syncAlliance();
   return !!id;
 }
@@ -398,8 +426,9 @@ export async function declareBlockade(target: string): Promise<boolean> {
 }
 /** Verse de l'argent à la caisse commune : il ne se retire pas. `false` = refusé. */
 export async function contributeAlliance(amount: number): Promise<boolean> {
-  const total = await rpc<number | null>("contribute_alliance", { p_amount: Math.floor(amount) });
-  if (total !== null && total !== undefined) pay(Math.floor(amount), "Versement à la caisse de l'alliance");
+  if (!(await ensureLedger())) return false;
+  const total = await rpc<number | null>("contribute_alliance_l", { p_amount: Math.floor(amount) });
+  await syncLedger();
   await syncAlliance();
   return total !== null && total !== undefined;
 }
@@ -427,6 +456,7 @@ function finish(uid: string, name: string) {
   void publishIncome();
   void syncShares();
   void syncAlliance();
+  void syncLedger();
   // Conditions d'utilisation : acceptées sur un autre appareil ? Alors inutile de les redemander ici (et inversement).
   void restAsUser<{ terms_version: string | null }[]>(`player_prefs?select=terms_version&id=eq.${uid}&limit=1`).then((r) => {
     if (active !== uid) return;
