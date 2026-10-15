@@ -1,4 +1,5 @@
 "use client";
+import { APP_VERSION } from "@/lib/version";
 // Entrée du jeu sur le site publié : il faut un compte (Discord, ou Google s'il est activé dans Supabase).
 //   déconnecté          → écran de connexion
 //   première connexion  → création du compte (nom de la ville)
@@ -44,7 +45,7 @@ function Frame({ children }: { children: React.ReactNode }) {
             ))}
           </ul>
         </div>
-        <div className="text-[11px] text-slate-500">Prototype v0.1</div>
+        <div className="text-[11px] text-slate-500">Bêta v{APP_VERSION}</div>
       </aside>
       <main className="flex flex-col items-center justify-center px-5 py-10">
         <div className="mb-8 lg:hidden"><Logo /></div>
