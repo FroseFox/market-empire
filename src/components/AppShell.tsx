@@ -14,6 +14,7 @@ import { retryOnline, startOnline, useOnline } from "@/lib/online";
 import { usePopover } from "@/lib/panels";
 import { claimTab, useTab } from "@/lib/tabLock";
 import TabPaused from "@/components/TabPaused";
+import UpdateBanner from "@/components/UpdateBanner";
 import NoNetwork, { useNetwork } from "@/components/NoNetwork";
 import AccountMenu from "@/components/AccountMenu";
 import InstallApp from "@/components/InstallApp";
@@ -249,6 +250,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             </Link>
           </div>
         </header>
+        {hydrated && <UpdateBanner />}
 
         {/* La ville occupe tout l'écran (pas de marges) ; les autres pages gardent leur colonne centrée */}
         <main className={path.startsWith("/ville") ? "flex-1 min-w-0" : "flex-1 px-4 md:px-8 py-6 pb-24 lg:pb-8 max-w-[1440px] w-full mx-auto"}>

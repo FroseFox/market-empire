@@ -45,3 +45,6 @@ web-static/dist
 # Données générées par scripts/build-data.ts
 public/data/
 
+
+# version publiée (écrite par next.config.ts)
+/public/version.json
