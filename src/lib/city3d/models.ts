@@ -1476,6 +1476,26 @@ export function buildingModel(id: string): Model {
   return m;
 }
 
+/** Le modèle de ce bâtiment est-il déjà prêt ? */
+export const modelReady = (id: string) => cache.has(id);
+/** Prépare des modèles de bâtiments sans figer la page : quelques-uns à chaque moment libre du navigateur.
+ *  Fabriquer tous les modèles d'une grande ville d'un coup bloquait la page une à deux secondes à l'ouverture de la ville. */
+export function warmBuildings(ids: string[], done?: () => void) {
+  const todo = [...new Set(ids)].filter((id) => !cache.has(id));
+  type Idle = (cb: (d: { timeRemaining(): number }) => void, o?: { timeout: number }) => number;
+  const idle = (globalThis as { requestIdleCallback?: Idle }).requestIdleCallback;
+  const step = (d?: { timeRemaining(): number }) => {
+    // Au moins un modèle à chaque passage : appelé « en retard » (navigateur très occupé), il n'a plus de temps libre
+    // annoncé, et sans ça il se replanifiait sans jamais rien faire.
+    const t0 = performance.now();
+    do buildingModel(todo.shift()!);
+    while (todo.length && (d ? d.timeRemaining() > 3 : performance.now() - t0 < 8));
+    if (todo.length) next(); else done?.();
+  };
+  const next = () => (idle ? idle(step, { timeout: 200 }) : setTimeout(() => step(), 0));
+  if (todo.length) next(); else done?.();
+}
+
 /** Allure des arbres selon la saison : feuillage d'automne (trois teintes), neige, fleurs de printemps. */
 export type TreeLook = "" | "autumn0" | "autumn1" | "autumn2" | "snow" | "blossom";
 const LOOK: Record<Exclude<TreeLook, "">, { leaves?: [number, number]; pine?: [number, number]; snow?: boolean }> = {

@@ -9,7 +9,7 @@ import { canPlace, footprint, isBuildable, isRoad, mapBounds, MAP_SIZE, MAX_MAP_
 import { CAT_COLOR, MARKER_COLOR, markerTip, nightFactor, type CityMarker, type CityMode, type CitySign, type Light, type MarkerKind } from "@/components/IsoCity";
 import { SEASON_LABEL, seasonOf, type Season } from "@/lib/game/season";
 import { EventFx } from "./eventFx";
-import { buildingModel, propModel, streetDecor, treeModel, type Motion, type TreeLook, type V3 } from "./models";
+import { buildingModel, modelReady, propModel, streetDecor, treeModel, warmBuildings, type Motion, type TreeLook, type V3 } from "./models";
 
 export interface CityTip { left: number; top: number; title: string; text: string; warn?: boolean }
 export interface CityFrame { height: number | "fill"; compact: boolean; interactive: boolean; initialZoom: number; padTop: number; padBottom: number }
@@ -232,6 +232,23 @@ export class CityEngine {
 
   // ─── Plan de la ville ───
   setCity(plots: Plot[], mapSize: number, f: CityFrame) {
+    // Modèles pas encore prêts (première ouverture d'une grande ville) : on les prépare par petits morceaux, sans figer
+    // la page, puis on construit. La ville s'affiche au même moment qu'avant, mais la page reste fluide pendant ce temps.
+    const season = seasonOf();
+    const missing = [...new Set(plots.map((p) => (p.id === "townhall" && season ? `townhall@${season}` : p.id)))].filter((id) => !modelReady(id));
+    if (missing.length > 2) {
+      this.pendingCity = [plots, mapSize, f];
+      if (!this.warmingModels) {
+        this.warmingModels = true;
+        warmBuildings(missing, () => {
+          this.warmingModels = false;
+          const p = this.pendingCity; this.pendingCity = null;
+          if (p && !this.disposed) this.setCity(...p);
+        });
+      }
+      return;
+    }
+    this.pendingCity = null;
     this.plots = plots; this.mapSize = mapSize; this.frameOpts = f;
     this.listen(!f.compact);
     const now = performance.now();
@@ -289,6 +306,7 @@ export class CityEngine {
       if ((o as THREE.InstancedMesh).isInstancedMesh) (o as THREE.InstancedMesh).dispose();
     });
     this.world.clear();
+    this.cullRecs.clear();
     this.inst.clear(); this.puffs = []; this.spins = []; this.cars = []; this.walkers = []; this.parts = []; this.partScale.clear();
     this.puffMesh = this.spinMesh = this.carMesh = this.bodyMesh = this.headMesh = this.glow = this.layerTiles = null;
     this.modeGrid = null; this.hidden = null; this.flakeMesh = null; this.flakes = [];
@@ -299,7 +317,82 @@ export class CityEngine {
   }
   private place(mesh: THREE.InstancedMesh, i: number, x: number, y: number, z: number, sx = 1, sy = sx, sz = sx, ry = 0) {
     this.e.set(0, ry, 0); this.q.setFromEuler(this.e);
-    this.m4.compose(this.v.set(x, y, z), this.q, this.s.set(sx, sy, sz)); mesh.setMatrixAt(i, this.m4);
+    this.m4.compose(this.v.set(x, y, z), this.q, this.s.set(sx, sy, sz)); this.setInst(mesh, i, this.m4);
+  }
+
+  // ─── Tri de visibilité, exemplaire par exemplaire ───
+  // Une série d'instances (tous les bâtiments d'un type, tous les arbres d'une sorte…) est dessinée d'un bloc : three.js ne
+  // sait que la garder ou l'écarter en entier. Avec une grande ville, presque tout était dessiné, même hors de l'écran.
+  // Ici, avant chaque image où la vue a changé, chaque série ne garde que ses exemplaires visibles à l'écran OU dans la zone
+  // d'ombre du soleil (un bâtiment juste hors de l'écran peut y projeter son ombre). Les exemplaires écartés ne touchent
+  // aucun pixel : l'image est exactement la même. Mêmes séries, même nombre de dessins ; seulement moins de triangles.
+  // Les objets animés (voitures, passants, pièces mobiles…, frustumCulled = false) ne sont pas concernés.
+  private pendingCity: [Plot[], number, CityFrame] | null = null; private warmingModels = false;
+  private cullRecs = new Map<THREE.InstancedMesh, { n: number; all: Float32Array; colors: Float32Array | null; c: Float32Array; r: Float32Array }>();
+  private cullKey = "";
+  private fMain = new THREE.Frustum(); private fShadow = new THREE.Frustum(); private sph = new THREE.Sphere(); private pm = new THREE.Matrix4();
+
+  /** Écrit la matrice d'un exemplaire : dans la série elle-même, ou dans sa copie complète si la série est triée. */
+  private setInst(mesh: THREE.InstancedMesh, i: number, m: THREE.Matrix4) {
+    const rec = this.cullRecs.get(mesh);
+    if (!rec) { mesh.setMatrixAt(i, m); return; }
+    m.toArray(rec.all, i * 16);
+    this.cullSphere(mesh, rec, i);
+    this.cullKey = ""; // à refaire avant la prochaine image
+  }
+  /** Sphère qui contient l'exemplaire `i` (sphère du modèle, déplacée et agrandie comme lui) : jamais trop petite. */
+  private cullSphere(mesh: THREE.InstancedMesh, rec: { all: Float32Array; c: Float32Array; r: Float32Array }, i: number) {
+    const e = rec.all, o = i * 16, bs = mesh.geometry.boundingSphere!, c = bs.center;
+    rec.c[i * 3] = e[o] * c.x + e[o + 4] * c.y + e[o + 8] * c.z + e[o + 12];
+    rec.c[i * 3 + 1] = e[o + 1] * c.x + e[o + 5] * c.y + e[o + 9] * c.z + e[o + 13];
+    rec.c[i * 3 + 2] = e[o + 2] * c.x + e[o + 6] * c.y + e[o + 10] * c.z + e[o + 14];
+    const sc = Math.max(Math.hypot(e[o], e[o + 1], e[o + 2]), Math.hypot(e[o + 4], e[o + 5], e[o + 6]), Math.hypot(e[o + 8], e[o + 9], e[o + 10]));
+    rec.r[i] = bs.radius * sc * 1.0001 + 1e-4;
+  }
+  /** Après la construction de la ville : chaque série fixe garde une copie complète de ses exemplaires. */
+  private manageAll() {
+    this.cullRecs.clear();
+    this.world.traverse((o) => {
+      const m = o as THREE.InstancedMesh;
+      if (!m.isInstancedMesh || m.frustumCulled === false) return;
+      if (!m.geometry.boundingSphere) m.geometry.computeBoundingSphere();
+      const n = m.count;
+      const rec = { n, all: (m.instanceMatrix.array as Float32Array).slice(0, n * 16), colors: m.instanceColor ? (m.instanceColor.array as Float32Array).slice(0, n * 3) : null, c: new Float32Array(n * 3), r: new Float32Array(n) };
+      for (let i = 0; i < n; i++) this.cullSphere(m, rec, i);
+      this.cullRecs.set(m, rec);
+    });
+    this.cullKey = "";
+  }
+  /** Garde dans chaque série les exemplaires visibles (écran ou zone d'ombre). Rien à faire si la vue n'a pas bougé. */
+  private cull() {
+    if (!this.cullRecs.size) return;
+    const cam = this.cam, sun = this.sun, shadow = sun.castShadow;
+    cam.updateMatrixWorld();
+    this.pm.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+    if (shadow) { sun.updateMatrixWorld(); sun.target.updateMatrixWorld(); sun.shadow.updateMatrices(sun); }
+    const key = `${this.pm.elements.join(",")}|${shadow ? sun.shadow.matrix.elements.join(",") : "-"}`;
+    if (key === this.cullKey) return;
+    this.cullKey = key;
+    this.fMain.setFromProjectionMatrix(this.pm);
+    if (shadow) this.fShadow.copy(sun.shadow.getFrustum());
+    for (const [m, rec] of this.cullRecs) {
+      const dst = m.instanceMatrix.array as Float32Array, dc = m.instanceColor ? (m.instanceColor.array as Float32Array) : null;
+      const caster = shadow && m.castShadow;
+      let k = 0;
+      for (let i = 0; i < rec.n; i++) {
+        this.sph.center.set(rec.c[i * 3], rec.c[i * 3 + 1], rec.c[i * 3 + 2]); this.sph.radius = rec.r[i];
+        if (!this.fMain.intersectsSphere(this.sph) && !(caster && this.fShadow.intersectsSphere(this.sph))) continue;
+        dst.set(rec.all.subarray(i * 16, i * 16 + 16), k * 16);
+        if (dc && rec.colors) dc.set(rec.colors.subarray(i * 3, i * 3 + 3), k * 3);
+        k++;
+      }
+      m.count = k;
+      // Série sans aucun exemplaire visible : pas de dessin du tout (le halo des lampadaires a sa propre visibilité, jour/nuit)
+      if (m !== this.glow) m.visible = k > 0;
+      m.instanceMatrix.needsUpdate = true;
+      if (m.instanceColor) m.instanceColor.needsUpdate = true;
+      m.boundingSphere = null;
+    }
   }
 
   private rebuild() {
@@ -400,7 +493,7 @@ export class CityEngine {
       list.forEach((p, i) => {
         const w = sideOf(p), h = tall(w), cx = ctr(p, "x"), cy = ctr(p, "y");
         this.place(solid, i, cx, 0, cy, w, h, w);
-        if (lit) lit.setMatrixAt(i, this.m4);
+        if (lit) this.setInst(lit, i, this.m4);
         this.inst.set(keyOf(p), { solid, lit, index: i, plot: p });
         for (const s of model.smoke) for (let k = 0; k < 3; k++) this.puffs.push({ at: [cx + s[0] * w, s[1] * h, cy + s[2] * w], off: k / 3 + hash(p.x, p.y) });
         for (const r of model.rotors) this.spins.push({ at: [cx + r.at[0] * w, r.at[1] * h, cy + r.at[2] * w], size: r.size * w, off: hash(p.x * 3, p.y * 5) * 6 });
@@ -550,6 +643,7 @@ export class CityEngine {
       this.layerTiles.frustumCulled = false; this.layerTiles.renderOrder = 2; this.layerTiles.visible = false; this.world.add(this.layerTiles);
     }
     this.tagCasters();
+    this.manageAll();
   }
 
   /** Range les objets qui projettent une ombre : calque 1 = ceux qui bougent à chaque image (voitures, piétons,
@@ -720,8 +814,7 @@ export class CityEngine {
     const w = sideOf(it.plot);
     if (sy === 1) this.partScale.delete(key); else this.partScale.set(key, sy);
     this.place(it.solid, it.index, ctr(it.plot, "x"), 0, ctr(it.plot, "y"), sy === 0 ? 0 : w, sy * tall(w), sy === 0 ? 0 : w);
-    it.solid.instanceMatrix.needsUpdate = true; it.solid.boundingSphere = null;
-    if (it.lit) { it.lit.setMatrixAt(it.index, this.m4); it.lit.instanceMatrix.needsUpdate = true; it.lit.boundingSphere = null; }
+    if (it.lit) this.setInst(it.lit, it.index, this.m4);
   }
 
   private refreshHover() {
@@ -1059,6 +1152,7 @@ export class CityEngine {
       });
       this.flakeMesh.instanceMatrix.needsUpdate = true;
     }
+    this.cull();
     this.shadowPass();
     this.renderer.render(this.scene, this.cam);
   }

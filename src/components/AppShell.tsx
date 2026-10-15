@@ -164,6 +164,18 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     if (STATIC_MODE) { startCloudSync(); startWorldSync(); return; }
     initAuth().then(() => { startOnline(); startChat(); });
   }, [hydrated]);
+  // Modèles 3D des bâtiments de la ville préparés pendant les moments libres, dès l'ouverture du jeu :
+  // en arrivant sur la ville, tout est prêt (plus de gel d'une à deux secondes pour une grande ville).
+  useEffect(() => {
+    if (!hydrated) return;
+    const t = setTimeout(() => {
+      const ids = Object.keys(useGame.getState().game.buildings);
+      void Promise.all([import("@/lib/city3d/models"), import("@/lib/game/season")])
+        .then(([m, s]) => { const season = s.seasonOf(); m.warmBuildings(ids.map((id) => (id === "townhall" && season ? `townhall@${season}` : id))); })
+        .catch(() => { /* pas de 3D ici : rien à préparer */ });
+    }, 1500);
+    return () => clearTimeout(t);
+  }, [hydrated]);
   const authStatus = useAuth((s) => s.status);
   // Pas de réseau : écran dédié. Au retour du réseau, la partie en ligne est rechargée si elle n'avait pas pu l'être.
   const network = useNetwork();
