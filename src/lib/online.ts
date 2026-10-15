@@ -29,6 +29,16 @@ const LINK_KEY = "market-empire-linked";
 const SYNC_KEY = "market-empire-synced";
 export const MIN_GAP = 5 * 60_000;
 const DEBOUNCE = 30_000;
+/** Écart minimal entre deux écritures accepté par le serveur (save_game). */
+const SERVER_GAP = 10_000;
+/** Après une action (construction, achat, encaissement…), on enregistre au bout de quelques secondes : plus d'action
+ *  perdue parce qu'on a changé d'appareil juste après. Le reste du temps (les jours qui passent), toutes les 5 minutes. */
+const URGENT_DELAY = 3_000;
+let urgent = false, timerAt = 0;
+/** Cet appareil a des actions pas encore enregistrées en ligne (gardé sur l'appareil : survit à la fermeture et au hors-ligne). */
+const UNSYNCED_KEY = "market-empire-unsynced";
+const markUnsynced = (uid: string | null) => { try { if (uid) localStorage.setItem(UNSYNCED_KEY, uid); else localStorage.removeItem(UNSYNCED_KEY); } catch { /* stockage indisponible */ } };
+const unsyncedFor = (uid: string) => { try { return localStorage.getItem(UNSYNCED_KEY) === uid; } catch { return false; } };
 
 /** Où en est l'ouverture de la partie en ligne, une fois connecté avec Discord :
  *  - connecting : lecture du compte ;
@@ -122,6 +132,7 @@ async function pull(uid: string) {
   const game = E.normalize(unpack(rows[0].data));
   rebaseNotifs(game); // déjà signalé sur l'autre appareil : pas de « Nouveau rang » ni d'objectif en double ici
   useGame.setState({ game, savedAt: at });
+  markUnsynced(null);
   void syncLedger(); // ce que cette partie n'avait pas encore appliqué du registre
   setSynced(uid, at);
   base = at;
@@ -180,6 +191,8 @@ async function flush(keepalive = false) {
       // On retient la date réellement enregistrée (relue sur le serveur quand la page reste ouverte)
       const stored = keepalive ? sentAt : await serverAt().catch(() => undefined);
       if (active === uid) { base = typeof stored === "number" ? stored : sentAt; setSynced(uid, base); }
+      if (active === uid && !dirty) markUnsynced(null);
+      urgent = false;
       if (!keepalive) { void publishCity(data.pl); void publishOffer(); void publishIncome(); void syncShares(); void syncAlliance(); void syncLedger(); void import("@/lib/push").then((m) => m.syncReminder()).catch(() => {}); }
     }
   } catch (e) {
@@ -206,8 +219,12 @@ async function flush(keepalive = false) {
 }
 
 function schedule() {
-  if (timer || !active) return;
-  const wait = Math.max(DEBOUNCE, lastWrite + MIN_GAP - Date.now());
+  if (!active) return;
+  const wait = urgent ? Math.max(URGENT_DELAY, lastWrite + SERVER_GAP + 500 - Date.now()) : Math.max(DEBOUNCE, lastWrite + MIN_GAP - Date.now());
+  // Une action arrive alors qu'une écriture lointaine est prévue : on la rapproche
+  if (timer && Date.now() + wait >= timerAt) return;
+  if (timer) clearTimeout(timer);
+  timerAt = Date.now() + wait;
   timer = setTimeout(() => { timer = null; flush(); }, wait);
 }
 
@@ -445,6 +462,8 @@ function finish(uid: string, name: string) {
     // ordinaire, sans argent illimité, jusqu'au prochain rechargement de la page.
     if (useOnline.getState().tester && !s.game.sandbox) { useGame.setState({ game: E.enterSandbox(s.game, null) }); return; }
     dirty = true;
+    // Nouvelle opération dans le journal de la partie = une action du joueur (les jours qui passent n'en ajoutent pas)
+    if (s.game.transactions[0] !== p.game.transactions[0]) urgent = true;
     if (useGame.getState().cloud === "saved") setCloud("syncing");
     schedule();
   });
@@ -508,7 +527,16 @@ async function connect(uid: string, name: string) {
       // à chaque jour de ville rattrapé à l'ouverture, ce qui faisait écraser la vraie partie par celle de l'appareil.
       const move = openingMove({ linked: previous === uid, remoteAt, syncedAt: syncedAt(uid), localAt: local.savedAt });
       base = remoteAt; // « push » et « same » : l'appareil était à jour de cette sauvegarde ; « pull » la relit
-      if (move === "pull") {
+      // Les deux côtés ont bougé : cet appareil a des actions jamais enregistrées (hors ligne, ou fermé trop vite), et la
+      // partie en ligne a changé depuis (autre appareil). Avant, celle de l'appareil était perdue sans prévenir.
+      const both = move === "pull" && previous === uid && syncedAt(uid) !== null && unsyncedFor(uid);
+      const keepLocal = both && typeof window !== "undefined" && window.confirm(
+        "Votre partie a changé à deux endroits.\n\nCet appareil a des actions pas encore enregistrées en ligne, et votre partie en ligne a été jouée ailleurs depuis.\n\nOK : garder la partie de CET appareil (celle en ligne est remplacée).\nAnnuler : reprendre la partie en ligne (les actions de cet appareil sont perdues).");
+      if (keepLocal) {
+        dirty = true; urgent = true;
+        await flush();
+        if (active !== uid) return;
+      } else if (move === "pull") {
         await pull(uid);
         if (active !== uid) return;
       } else if (move === "push") {
@@ -614,7 +642,7 @@ export async function restoreBackup(): Promise<boolean> {
 export async function saveNow(): Promise<boolean> {
   if (!active || useOnline.getState().phase !== "ready") return true;
   for (let i = 0; i < 3 && dirty; i++) {
-    if (i > 0) await new Promise((r) => setTimeout(r, Math.min(21_000, Math.max(1_000, lastWrite + 21_000 - Date.now()))));
+    if (i > 0) await new Promise((r) => setTimeout(r, Math.min(SERVER_GAP + 1_000, Math.max(1_000, lastWrite + SERVER_GAP + 1_000 - Date.now()))));
     if (timer) { clearTimeout(timer); timer = null; }
     await flush();
   }
@@ -650,7 +678,20 @@ export function startOnline() {
   apply(useAuth.getState());
   useAuth.subscribe(apply);
   // Dernière sauvegarde en quittant ou en changeant d'onglet
-  const leave = () => { if (dirty && Date.now() - lastWrite > 20_000) flush(true); };
+  // Dernière sauvegarde en quittant. Trop tôt après la précédente (le serveur la refuserait) : on la retente dès que
+  // possible, tant que le navigateur laisse tourner la page (avant, elle était simplement abandonnée).
+  const leave = () => {
+    if (!dirty) return;
+    const left = lastWrite + SERVER_GAP + 300 - Date.now();
+    if (left <= 0) { void flush(true); return; }
+    if (timer) clearTimeout(timer);
+    timerAt = Date.now() + left;
+    timer = setTimeout(() => { timer = null; void flush(true); }, left);
+  };
+  // Actions faites sur cet appareil et pas encore en ligne (même hors ligne) : retenu sur l'appareil
+  useGame.subscribe((s, p) => {
+    if (s.game.transactions[0] !== p.game.transactions[0] && s.game.transactions.length >= p.game.transactions.length) markUnsynced(useAuth.getState().user?.id ?? null);
+  });
   document.addEventListener("visibilitychange", () => { if (document.hidden) leave(); else void refresh(); });
   window.addEventListener("pagehide", leave);
   window.addEventListener("focus", () => void refresh());
