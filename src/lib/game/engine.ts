@@ -6,12 +6,12 @@ import { SECTOR_PERKS, BRANCH_PERK_CAPS, type BranchPerk,
   BRANCH_COST, BRANCH_EFFECTS, BRANCH_MIN_VALUE, CONTRACT_RATIO, FINANCE_FEE_FACTOR, HUB_DESK_COST, HUB_FEE_FACTOR,
   NEED_PER_RANK, POLLUTION_FACTOR, POLLUTION_MAX, PRESTIGE_PER_GOAL, PRESTIGE_PER_RANK, PROJECTS, PROJECT_BY_ID,
   FEATURES, ORIENTATION_BY_ID, ORIENTATION_CHANGE_COST, ORIENTATION_MIN_RANK, type FeatureId, type OrientationId,
-  RENOVATE_RATE, TERRITORY, LAND_VERSION, WEAR_MAINTENANCE, WEAR_PER_DAY, WEAR_SATISFACTION,
+  RENOVATE_RATE, TERRITORY, LAND_VERSION, GRID_VERSION, WEAR_MAINTENANCE, WEAR_PER_DAY, WEAR_SATISFACTION,
   ALLIANCE, BANK, BLOCKADE, CAPITAL, CITY_EFFECT_CAPS, LEVERAGE, SANDBOX, SHARES, TOURISM, CITY_RANKS, FORECAST_DAYS, GOALS, UPGRADES, SERVICES, SERVICE_BONUS, SERVICE_IDS,
   STARTING_BUILDINGS, STARTING_CASH, STARTING_POPULATION, START_GRANT, TAX_PER_RESIDENT, TRADE_FEE_MIN, TRADE_FEE_RATE,
   type BuildingType, type Category, type Goal, type ServiceId, type Specialty,
 } from "./config";
-import { HALL_AT, buildableCount, canPlace, footprint, layoutFrom, mapBounds, newPlot, occupancy, placeTile, plotAt, sideOf, type Plot } from "./layout";
+import { HALL_AT, MAX_MAP_SIZE, buildableCount, canPlace, footprint, fromOldGrid, layoutFrom, mapBounds, newPlot, occupancy, placeTile, plotAt, sideOf, type Plot } from "./layout";
 import { HUBS, HUB_BY_NAME, PLAYABLE, countryBonus, countryPrice, countrySpecialty, type Hub } from "../world/countries";
 import { ASSET_BY_SYMBOL, familyOf, regionOf, type Asset } from "../market/universe";
 import { RESEARCH_BY_ID, RETIRED_RESEARCH, STARTING_RESEARCH, researchFx } from "./research";
@@ -121,6 +121,8 @@ export interface GameState {
   /** Événement de ville en cours (ou le dernier), et dernière semaine pour laquelle le jeu a décidé. */
   event?: CityEvent;
   eventWeek?: number;
+  /** Grille de la ville (voir GRID_VERSION) : absente = ancienne grille, à convertir. */
+  grid?: number;
   /** Missions du jour et série de jours de connexion (voir daily.ts). */
   daily?: DailyState;
   /** Mode test (comptes de test uniquement) : `saved` = la vraie partie, mise de côté pour pouvoir y revenir. */
@@ -171,6 +173,7 @@ export function newGame(now: number, playerName = "Celyan", cityName = "Nova Cit
     buildings: { ...STARTING_BUILDINGS },
     plots: layoutFrom(STARTING_BUILDINGS, TERRITORY[0].size),
     landV: LAND_VERSION,
+    grid: GRID_VERSION,
     holdings: {},
     bank: 0,
     capital: 0,
@@ -947,7 +950,7 @@ export function landUse(state: Pick<GameState, "plots"> & Partial<Pick<GameState
 /** Prochain agrandissement du territoire, s'il en reste un. */
 export const nextTerritory = (state: Partial<Pick<GameState, "territory">>) => TERRITORY[(state.territory ?? 0) + 1];
 
-/** Achète l'agrandissement suivant du territoire : la carte gagne 4 carreaux de chaque côté. */
+/** Achète l'agrandissement suivant du territoire : la carte gagne une rangée d'îlots de chaque côté. */
 export function expandTerritory(state: GameState, at: number): ActionResult {
   const next = nextTerritory(state);
   if (!next) return { ok: false, error: "Territoire déjà au maximum." };
@@ -1292,7 +1295,7 @@ function removePlot(plots: Plot[], id: string): Plot[] {
   return i < 0 ? plots : [...plots.slice(0, i), ...plots.slice(i + 1)];
 }
 
-/** Grande mairie : elle prend l'îlot du centre (3 × 3) et loge les 250 habitants du village d'origine, qui disparaît.
+/** Grande mairie : elle prend un îlot entier contre le centre (4 × 4) et loge les 250 habitants du village d'origine, qui disparaît.
  *  Ce qui occupait l'îlot est reposé ailleurs sur le territoire ; s'il n'y a vraiment plus de place, il est racheté à son prix.
  *  Ni habitant, ni emploi, ni euro de patrimoine n'est perdu. */
 export function bigHall(state: GameState): GameState {
@@ -1313,13 +1316,38 @@ export function bigHall(state: GameState): GameState {
   return { ...state, buildings, plots, cash: round2(cash) };
 }
 
+/** Ancienne grille → grille actuelle. Un bâtiment qui ne tient plus (cas rare) est reposé ailleurs, sinon remboursé. */
+export function toCurrentGrid(state: GameState): GameState {
+  if (!Array.isArray(state.plots)) return { ...state, grid: GRID_VERSION };
+  // Sur la plus grande carte : chaque îlot ancien a son équivalent dans la grille actuelle (le territoire suit, voir TERRITORY)
+  const size = MAX_MAP_SIZE, plots: Plot[] = [], used = new Map<string, Plot>();
+  const add = (p: Plot) => { plots.push(p); const s = sideOf(p); for (let dx = 0; dx < s; dx++) for (let dy = 0; dy < s; dy++) used.set(`${p.x + dx},${p.y + dy}`, p); };
+  const later: Plot[] = [];
+  for (const old of state.plots) {
+    const p = fromOldGrid(old);
+    if (canPlace(used, p.x, p.y, sideOf(p), size)) add(p); else later.push(p);
+  }
+  let cash = state.cash;
+  const buildings = { ...state.buildings };
+  for (const p of later) {
+    const t = placeTile(plots, p.id, size, sideOf(p));
+    if (t) { add({ ...p, x: t.x, y: t.y }); continue; }
+    buildings[p.id] = Math.max(0, (buildings[p.id] ?? 1) - 1);
+    if (!buildings[p.id]) delete buildings[p.id];
+    cash += BUILDING_BY_ID[p.id]?.cost ?? 0;
+  }
+  return { ...state, plots, buildings, cash: round2(cash), grid: GRID_VERSION };
+}
+
 /** Répare une sauvegarde : plan manquant ou incohérent avec les bâtiments. */
 export function normalize(input: GameState): GameState {
   let state = input;
+  // Parties d'avant les îlots de 4 × 4 : chaque bâtiment garde sa place dans son îlot (voir fromOldGrid)
+  if (state.grid !== GRID_VERSION) state = toCurrentGrid(state);
   // Parties d'avant le territoire à acheter : on garde ce qui a été payé (40 ou 48), sinon la plus petite carte
   // qui contient tout ce qui est déjà construit. Rien n'est démoli, et ces paliers offerts ne comptent pas dans le patrimoine.
   if (state.landV !== LAND_VERSION) {
-    const old = state.territory ?? 0, free = TERRITORY.findIndex((t) => t.size === 32);
+    const old = state.territory ?? 0, free = TERRITORY.findIndex((t) => t.size === 41);
     const fits = (size: number) => { const { lo, hi } = mapBounds(size); return state.plots.every((p) => p.x > lo && p.y > lo && p.x < hi - 1 && p.y < hi - 1); };
     const need = Array.isArray(state.plots) ? TERRITORY.findIndex((t) => fits(t.size)) : free;
     const territory = old >= 1 ? Math.min(old + free, TERRITORY.length - 1) : need < 0 ? free : Math.min(need, free);

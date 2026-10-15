@@ -507,11 +507,14 @@ describe("ordres en euros", () => {
   });
 });
 
+/** Plan de départ d'une partie de l'ancienne grille : petite mairie de 3 × 3 sur l'îlot du centre. */
+const OLD_START = [{ id: "townhall", x: 13, y: 13, s: 3 }];
+
 describe("territoire", () => {
   it("s'agrandit contre paiement, à partir d'un certain rang, et compte dans le patrimoine", () => {
     let g = { ...newGame(T0), cash: 15_000_000 };
-    expect(E.mapSize(g)).toBe(8);
-    expect(E.landUse(g)).toEqual({ used: 9 + g.plots.length - 1, total: 25 }); // la mairie occupe 9 carreaux
+    expect(E.mapSize(g)).toBe(11);
+    expect(E.landUse(g)).toEqual({ used: 16 + g.plots.length - 1, total: 64 }); // 4 îlots de 4 × 4 ; la mairie en occupe un
     expect(g.plots.every((p) => E.isTileFree({ plots: [], territory: 0 }, p.x, p.y))).toBe(true); // la ville de départ tient dans la petite carte
     expect(build(g, "house_s", T0, { x: 10, y: 13 }).ok).toBe(false);   // hors de la carte de départ
     expect(E.expandTerritory({ ...g, cash: 100 }, T0).ok).toBe(false);  // pas assez d'argent
@@ -519,33 +522,34 @@ describe("territoire", () => {
     const r = E.expandTerritory(g, T0);
     if (!r.ok) throw new Error(r.error);
     g = r.state;
-    expect(E.mapSize(g)).toBe(16);
+    expect(E.mapSize(g)).toBe(21);
     expect(g.cash + computeCity(g).assetValue).toBeCloseTo(worth, 2);
     const ok = build(g, "house_s", T0, { x: 10, y: 13 });
     expect(ok.ok).toBe(true);
-    expect(build(g, "house_s", T0, { x: 8, y: 13 }).ok).toBe(false);    // route de la nouvelle bordure
-    expect(build(g, "house_s", T0, { x: 6, y: 13 }).ok).toBe(false);    // au-delà du territoire acheté
+    expect(build(g, "house_s", T0, { x: 6, y: 13 }).ok).toBe(false);    // route de la nouvelle bordure
+    expect(build(g, "house_s", T0, { x: 5, y: 13 }).ok).toBe(false);    // au-delà du territoire acheté
     if (ok.ok) expect(normalize(ok.state)).toBe(ok.state);
     expect(E.expandTerritory(g, T0).ok).toBe(false);                    // palier suivant : réservé à un rang plus haut
     // Tous les paliers s'achètent l'un après l'autre jusqu'à la plus grande carte
     for (let i = 0; i < 6; i++) { const more = E.expandTerritory({ ...g, population: 600_000, cash: 1e9 }, T0); if (more.ok) g = more.state; }
-    expect(E.mapSize(g)).toBe(48);
+    expect(E.mapSize(g)).toBe(61);
     expect(E.nextTerritory(g)).toBeUndefined();
   });
   it("une ancienne partie garde ce qu'elle a construit et ce qu'elle a payé", () => {
-    const old = (over: object) => { const { landV: _v, ...g } = newGame(T0); void _v; return { ...g, ...over } as E.GameState; };
+    // Très ancienne partie : ni règles de territoire, ni grille actuelle (coordonnées de l'ancienne grille)
+    const old = (over: object) => { const { landV: _v, grid: _g, ...g } = newGame(T0); void _v; void _g; return { ...g, plots: OLD_START, ...over } as E.GameState; };
     // Petite ville d'avant : elle tient dans la carte de départ, elle devra acheter pour s'étendre
     const small = normalize(old({}));
-    expect(E.mapSize(small)).toBe(8);
-    // Ville étalée sur l'ancienne carte de 32 : elle la garde, rien n'est démoli, et ce terrain offert ne gonfle pas le patrimoine
-    const wide = old({ plots: [...newGame(T0).plots, { id: "house_s", x: 1, y: 1 }], buildings: { ...newGame(T0).buildings, house_s: (newGame(T0).buildings.house_s ?? 0) + 1 } });
+    expect(E.mapSize(small)).toBe(11);
+    // Ville étalée sur l'ancienne carte de 32 : elle garde l'équivalent (41), rien n'est démoli, et ce terrain offert ne gonfle pas le patrimoine
+    const wide = old({ plots: [...OLD_START, { id: "house_s", x: 1, y: 1 }], buildings: { ...newGame(T0).buildings, house_s: (newGame(T0).buildings.house_s ?? 0) + 1 } });
     const kept = normalize(wide);
-    expect(E.mapSize(kept)).toBe(32);
-    expect(kept.plots).toHaveLength(wide.plots.length);
+    expect(E.mapSize(kept)).toBe(41);
+    expect(kept.plots).toHaveLength(small.plots.length + 1);
     expect(computeCity(kept).assetValue).toBeCloseTo(computeCity({ ...wide, territory: 0 }).assetValue, 2);
     // Territoire payé avant (40 × 40) : conservé, et toujours compté à son prix
     const paid = normalize(old({ territory: 1 }));
-    expect(E.mapSize(paid)).toBe(40);
+    expect(E.mapSize(paid)).toBe(51);
     expect(computeCity(paid).assetValue - computeCity(small).assetValue).toBeCloseTo(2_000_000, 2);
     expect(normalize(kept)).toBe(kept);
   });
@@ -553,7 +557,7 @@ describe("territoire", () => {
     let g = { ...newGame(T0), cash: 1e9 };
     let n = 0;
     for (;;) { const r = build(g, "house_s", T0); if (!r.ok) { expect(r.error).toMatch(/Plus de place/); break; } g = r.state; n++; }
-    expect(g.plots.length).toBe(25 - 9 + 1); // la mairie occupe 9 carreaux à elle seule
+    expect(g.plots.length).toBe(64 - 16 + 1); // la mairie occupe un îlot de 16 carreaux à elle seule
     expect(g.buildings.house_s).toBe(n);
   });
 });
@@ -645,8 +649,9 @@ describe("lisibilité : fonctions ouvertes, aperçu, que faire maintenant", () =
 });
 
 describe("grande mairie", () => {
+  // Ancienne partie : coordonnées de l'ancienne grille (îlots de 3 × 3), petite mairie et village
   const legacy = (): E.GameState => ({
-    ...newGame(T0), territory: 1,
+    ...newGame(T0), territory: 1, grid: undefined,
     buildings: { village: 1, townhall: 1, shop: 2, house_s: 1, farm_s: 1, power_s: 1 },
     plots: [{ id: "village", x: 13, y: 13 }, { id: "townhall", x: 14, y: 13 }, { id: "shop", x: 15, y: 15 }, { id: "house_s", x: 13, y: 15 },
       { id: "shop", x: 17, y: 13 }, { id: "farm_s", x: 17, y: 17 }, { id: "power_s", x: 18, y: 17 }],
@@ -654,7 +659,7 @@ describe("grande mairie", () => {
 
   it("une nouvelle partie commence avec la mairie sur l'îlot du centre, sans village", () => {
     const g = newGame(T0);
-    expect(g.plots.find((p) => p.id === "townhall")).toEqual({ id: "townhall", x: 13, y: 13, s: 3 });
+    expect(g.plots.find((p) => p.id === "townhall")).toEqual({ id: "townhall", x: 12, y: 12, s: 4 });
     expect(g.buildings.village).toBeUndefined();
     expect(computeCity(g).housing).toBe(250);
   });
@@ -662,13 +667,13 @@ describe("grande mairie", () => {
   it("une ancienne partie est convertie sans rien perdre", () => {
     const old = legacy(), before = computeCity(old);
     const g = normalize(old);
-    expect(g.plots.filter((p) => p.id === "townhall")).toEqual([{ id: "townhall", x: 13, y: 13, s: 3 }]);
+    expect(g.plots.filter((p) => p.id === "townhall")).toEqual([{ id: "townhall", x: 12, y: 12, s: 4 }]);
     expect(g.plots.some((p) => p.id === "village")).toBe(false);
     expect(g.buildings.village).toBeUndefined();
     // Les deux bâtiments qui étaient sur l'îlot ont été reposés ailleurs
     expect(g.buildings.shop).toBe(2); expect(g.buildings.house_s).toBe(1);
     expect(g.plots.filter((p) => p.id === "shop").length).toBe(2);
-    expect(E.landUse(g).used).toBe(9 + 5);
+    expect(E.landUse(g).used).toBe(16 + 5);
     const after = computeCity(g);
     expect(after.housing).toBe(250 + 100); // les 250 logements du village sont dans la mairie, plus le petit quartier
     expect(after.jobs).toBe(before.jobs);
@@ -681,11 +686,12 @@ describe("grande mairie", () => {
     for (;;) { const r = build(g, "house_s", T0); if (!r.ok) break; g = r.state; }
     // Ancien plan : petite mairie et village, des quartiers sur le reste de l'îlot
     const hall = g.plots.find((p) => p.id === "townhall")!;
-    const old: E.GameState = { ...g, buildings: { ...g.buildings, village: 1, house_s: g.buildings.house_s + 7 },
-      plots: [...g.plots.filter((p) => p !== hall), { id: "townhall", x: 13, y: 13 }, { id: "village", x: 14, y: 13 },
-        ...[[15, 13], [13, 14], [14, 14], [15, 14], [13, 15], [14, 15], [15, 15]].map(([x, y]) => ({ id: "house_s", x, y }))] };
+    const block = [12, 13, 14, 15].flatMap((x) => [12, 13, 14, 15].map((y) => [x, y])).slice(2); // l'îlot de la mairie, sauf 2 carreaux
+    const old: E.GameState = { ...g, buildings: { ...g.buildings, village: 1, house_s: g.buildings.house_s + block.length },
+      plots: [...g.plots.filter((p) => p !== hall), { id: "townhall", x: 12, y: 12 }, { id: "village", x: 12, y: 13 },
+        ...block.map(([x, y]) => ({ id: "house_s", x, y }))] };
     const n = normalize(old);
-    expect(n.buildings.house_s).toBe(old.buildings.house_s - 7);
-    expect(n.cash).toBe(old.cash + 7 * 20_000);
+    expect(n.buildings.house_s).toBe(old.buildings.house_s - block.length);
+    expect(n.cash).toBe(old.cash + block.length * 20_000);
   });
 });
