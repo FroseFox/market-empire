@@ -1,4 +1,5 @@
 "use client";
+import { APP_VERSION } from "@/lib/version";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -209,7 +210,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </nav>
         <div className="mt-auto"><ShowGuide dark /><InstallApp dark /></div>
         <div className="px-2 text-[11px] text-slate-500 leading-relaxed">
-          Construis · Investis · Domine<br />Prototype v0.1<br />
+          Construis · Investis · Domine<br />Bêta v{APP_VERSION}<br />
           <Link href="/legal" className="hover:text-slate-300 hover:underline">Informations légales</Link>
         </div>
       </aside>
