@@ -6,6 +6,9 @@ import { BASE_PATH } from "@/lib/market/client";
 /** Identifiant de cette version (commit publié) ; « dev » en local, où rien n'est vérifié. */
 export const BUILD = process.env.NEXT_PUBLIC_BUILD || "dev";
 
+/** Numéro de version affiché (ex. 0.9.116 : 116e publication). */
+export const APP_VERSION = process.env.NEXT_PUBLIC_VERSION || "dev";
+
 export const useVersion = create<{ outdated: boolean }>(() => ({ outdated: false }));
 
 let last = 0;
