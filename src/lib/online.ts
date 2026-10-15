@@ -17,6 +17,7 @@ import { compactCity } from "@/lib/game/layout";
 import { useGame } from "@/store/game";
 import { restAsUser, rpc, useAuth } from "@/lib/auth";
 import { STATIC_MODE } from "@/lib/market/client";
+import { BUILD } from "@/lib/version";
 import { countryPreference } from "@/lib/world/countries";
 import { openingMove } from "@/lib/syncRule";
 import { now, setServerTime } from "@/lib/clock";
@@ -185,7 +186,7 @@ async function flush(keepalive = false) {
     if (body === lastSent) { writing = false; setCloud("saved"); return; }
     const sentAt = s.savedAt || Date.now();
     const ok = await rpc<boolean>("save_game", { p_data: data, p_saved_at: sentAt, ...fig, p_base: base ?? syncedAt(uid) }, { keepalive });
-    if (ok === false) { dirty = true; schedule(); } // le serveur limite à une écriture toutes les 20 s
+    if (ok === false) { dirty = true; schedule(); } // le serveur limite à une écriture toutes les 10 s
     else {
       lastWrite = Date.now(); lastSent = body; setCloud("saved");
       // On retient la date réellement enregistrée (relue sur le serveur quand la page reste ouverte)
@@ -204,7 +205,10 @@ async function flush(keepalive = false) {
         useGame.getState().notify("Partie mise à jour depuis votre autre appareil");
       } catch { dirty = true; setCloud("error"); }
     } else if (isRefusal(e) && active === uid) {
-      // Partie impossible : on reprend celle du serveur, la dernière qu'il a acceptée
+      // Partie impossible : on le note sur le serveur (pour comprendre un refus injuste), puis on reprend sa partie,
+      // la dernière qu'il a acceptée
+      const fig = figures(), reason = /refus:\w+/.exec((e as Error).message)?.[0] ?? "refus";
+      void rpc("save_refused", { p_reason: reason, p_day: fig.p_day, p_worth: fig.p_net_worth, p_population: fig.p_population, p_version: BUILD }).catch(() => {});
       try {
         await pull(uid);
         adoptCountry();
@@ -637,7 +641,7 @@ export async function restoreBackup(): Promise<boolean> {
 }
 
 /** Enregistre tout de suite ce qui ne l'est pas encore (avant de changer de compte, par exemple).
- *  Le serveur n'accepte qu'une écriture toutes les 20 secondes : s'il refuse, on attend son feu vert et on réessaie.
+ *  Le serveur n'accepte qu'une écriture toutes les 10 secondes : s'il refuse, on attend son feu vert et on réessaie.
  *  Renvoie `false` si la partie n'a pas pu être enregistrée. */
 export async function saveNow(): Promise<boolean> {
   if (!active || useOnline.getState().phase !== "ready") return true;
