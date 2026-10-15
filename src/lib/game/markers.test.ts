@@ -55,7 +55,15 @@ describe("pastilles de la ville", () => {
   });
 
   it("ville sans problème : aucune pastille", () => {
-    const t = town(["village", "house_s", "shop", "farm_s", "power_s"], 250);
+    const t = town(["village", "house_s", "shop", "shop", "farm_s", "power_s"], 250);
     expect(t.markers).toEqual([]);
+  });
+
+  it("chômage : sur les quartiers d'habitation, avec le nombre de chômeurs", () => {
+    const t = town(["village", "house_s", "shop", "farm_s", "power_s"], 250);
+    const ids = at(t, "jobs");
+    expect(ids.length).toBeGreaterThan(0);
+    for (const id of ids) expect(BUILDING_BY_ID[id].housing).toBeGreaterThan(0);
+    expect(t.markers.find((m) => m.kind === "jobs")!.label).toMatch(/Chômage 20 % : 30 habitants sans emploi/);
   });
 });
