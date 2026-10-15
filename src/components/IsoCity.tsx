@@ -54,13 +54,13 @@ type Pt = [number, number];
 interface Item { depth: number; ax: number; ay: number; draw: (t: number) => void }
 
 /** Indicateur affiché au-dessus d'un bâtiment (manque d'énergie, logements pleins…). */
-export type MarkerKind = "energy" | "food" | "full" | "staff" | "service";
+export type MarkerKind = "energy" | "food" | "full" | "staff" | "jobs" | "service";
 export interface CityMarker { x: number; y: number; kind: MarkerKind; label: string }
 /** Gravité d'un indicateur : « bad » coûte de l'argent chaque jour (rouge), « warn » freine la ville (orange). */
-export const MARKER_LEVEL: Record<MarkerKind, "bad" | "warn"> = { energy: "bad", food: "bad", full: "warn", staff: "warn", service: "warn" };
+export const MARKER_LEVEL: Record<MarkerKind, "bad" | "warn"> = { energy: "bad", food: "bad", full: "warn", staff: "warn", jobs: "warn", service: "warn" };
 /** Texte d'infobulle d'un indicateur, précédé de sa gravité. */
 export const markerTip = (m: CityMarker) => `${MARKER_LEVEL[m.kind] === "bad" ? "Problème" : "À surveiller"} · ${m.label}`;
-export const MARKER_COLOR: Record<MarkerKind, string> = { energy: "#EF4444", food: "#EF4444", full: "#F59E0B", staff: "#F59E0B", service: "#F59E0B" };
+export const MARKER_COLOR: Record<MarkerKind, string> = { energy: "#EF4444", food: "#EF4444", full: "#F59E0B", staff: "#F59E0B", jobs: "#F59E0B", service: "#F59E0B" };
 /** Hauteur approximative des bâtiments (pour poser l'indicateur au-dessus du toit). */
 const TOP: Record<string, number> = {
   village: 24, house_s: 22, house_m: 40, house_l: 64, house_xl: 108, shop: 22, services: 56, townhall: 42,
@@ -1146,7 +1146,12 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
       if (mk.kind === "energy") P([[0.18, -0.62], [-0.38, 0.1], [-0.02, 0.1], [-0.18, 0.62], [0.38, -0.1], [0.02, -0.1]]);
       else if (mk.kind === "full") P([[-0.56, 0], [0, -0.55], [0.56, 0], [0.34, 0], [0.34, 0.46], [-0.34, 0.46], [-0.34, 0]]);
       else if (mk.kind === "service") { P([[-0.16, -0.58], [0.16, -0.58], [0.16, 0.58], [-0.16, 0.58]]); P([[-0.58, -0.16], [0.58, -0.16], [0.58, 0.16], [-0.58, 0.16]]); }
-      else if (mk.kind === "staff") {
+      else if (mk.kind === "jobs") {
+        // Mallette
+        g.fillRect(px - r * 0.55, py - r * 0.25, r * 1.1, r * 0.75);
+        g.lineWidth = Math.max(1.2, r * 0.12); g.strokeStyle = "#FFFFFF";
+        g.beginPath(); g.moveTo(px - r * 0.22, py - r * 0.25); g.lineTo(px - r * 0.22, py - r * 0.44); g.lineTo(px + r * 0.22, py - r * 0.44); g.lineTo(px + r * 0.22, py - r * 0.25); g.stroke();
+      } else if (mk.kind === "staff") {
         g.beginPath(); g.arc(px, py - r * 0.24, r * 0.24, 0, Math.PI * 2); g.fill();
         g.beginPath(); g.ellipse(px, py + r * 0.52, r * 0.44, r * 0.38, 0, Math.PI, 0); g.closePath(); g.fill();
       } else {

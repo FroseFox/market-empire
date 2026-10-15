@@ -1288,6 +1288,7 @@ function markerSvg(kind: MarkerKind): string {
   const icon = kind === "energy" ? pts([[0.18, -0.62], [-0.38, 0.1], [-0.02, 0.1], [-0.18, 0.62], [0.38, -0.1], [0.02, -0.1]])
     : kind === "full" ? pts([[-0.56, 0], [0, -0.55], [0.56, 0], [0.34, 0], [0.34, 0.46], [-0.34, 0.46], [-0.34, 0]])
     : kind === "service" ? pts([[-0.16, -0.58], [0.16, -0.58], [0.16, 0.58], [-0.16, 0.58]]) + pts([[-0.58, -0.16], [0.58, -0.16], [0.58, 0.16], [-0.58, 0.16]])
+    : kind === "jobs" ? `<rect x="-0.55" y="-0.25" width="1.1" height="0.75" rx="0.1" fill="#fff"/><path d="M-0.22 -0.25V-0.44H0.22V-0.25" stroke="#fff" stroke-width="0.12" fill="none"/>`
     : kind === "staff" ? `<circle cx="0" cy="-0.24" r="0.24" fill="#fff"/><path d="M-0.44 0.52a0.44 0.38 0 0 1 0.88 0z" fill="#fff"/>`
     : `<path d="M0 0.58V-0.55M0 0.2l-0.32-0.26M0 0.2l0.32-0.26M0-0.08l-0.32-0.26M0-0.08l0.32-0.26M0-0.36l-0.32-0.26M0-0.36l0.32-0.26" stroke="#fff" stroke-width="0.14" stroke-linecap="round" fill="none"/>`;
   return `<svg viewBox="-1.15 -1.15 2.3 2.85" style="display:block;width:calc(var(--r) * 2.3);height:calc(var(--r) * 2.85);overflow:visible"><polygon points="-0.45,0.75 0.45,0.75 0,1.55" fill="${c}"/><circle cx="0" cy="0" r="1" fill="${c}" stroke="#fff" stroke-width="0.14"/>${icon}</svg>`;

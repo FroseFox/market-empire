@@ -8,7 +8,7 @@ import type { LucideIcon } from "lucide-react";
 import { useDerived, useGame } from "@/store/game";
 import { useAuth } from "@/lib/auth";
 import { BACKUP_DAYS, backupAt, restoreBackup, saveNow, useOnline } from "@/lib/online";
-import { BUILDINGS, BUILDING_BY_ID, CATEGORY_LABELS, CITY_RANKS, SERVICES, SERVICE_IDS, DEMOLISH_REFUND, EXPORT_RATIO, MAINTENANCE_RATE, RESOURCE_PRICES, type BuildingType, type Category } from "@/lib/game/config";
+import { ACTIVE_RATIO, BUILDINGS, BUILDING_BY_ID, CATEGORY_LABELS, CITY_RANKS, SERVICES, SERVICE_IDS, DEMOLISH_REFUND, EXPORT_RATIO, MAINTENANCE_RATE, RESOURCE_PRICES, type BuildingType, type Category } from "@/lib/game/config";
 import { Button, ConfirmButton, Progress, LockTag } from "@/components/ui";
 import IsoCity from "@/components/City3D";
 import { MARKER_LEVEL, type CityMarker, type CityMode, type CitySign, type MarkerKind } from "@/components/IsoCity";
@@ -42,6 +42,7 @@ const MARKER_FIX: Record<MarkerKind, { text: string; cat: Category; cta: string 
   food: { text: "Construisez une exploitation agricole pour nourrir vos habitants.", cat: "agriculture", cta: "Construire une exploitation" },
   full: { text: "Construisez des logements pour accueillir de nouveaux habitants.", cat: "housing", cta: "Construire des logements" },
   staff: { text: "Construisez des logements : de nouveaux habitants viendront occuper ces postes.", cat: "housing", cta: "Construire des logements" },
+  jobs: { text: "Construisez des bâtiments qui embauchent (commerces, bureaux, usines) : chaque poste créé occupe un chômeur.", cat: "commerce", cta: "Construire des commerces" },
   service: { text: "Construisez l'équipement public manquant pour satisfaire vos habitants.", cat: "public", cta: "Construire un équipement" },
 };
 /** Rouge : coûte de l'argent chaque jour. Orange : ne coûte rien, mais freine la ville. */
@@ -307,16 +308,17 @@ function Budget({ city }: { city: CityStats }) {
 function CityBars({ city, population, outlook }: { city: CityStats; population: number; outlook: ReturnType<typeof forecast> | null }) {
   const game = useGame((s) => s.game);
   const full = city.freeHousing === 0 && city.housing > 0;
-  const jobless = city.unemploymentRate > 0.08;
   return (
     <div className="space-y-2.5">
       <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">État de la ville</div>
       <Bar icon={Users} label="Logements" value={`${num(population)} / ${num(city.housing)}`} ratio={population / Math.max(1, city.housing)} tone={full ? "bg-warning" : "bg-success"} />
-      <Bar icon={Briefcase} label="Emplois" value={`chômage ${pctPlain(city.unemploymentRate)}`} ratio={city.employed / Math.max(1, city.jobs)} tone={jobless ? "bg-danger" : "bg-success"} />
+      {full ? <p className="-mt-1 text-[11px] text-amber-700">Plus aucune place libre : la population ne grandit plus. Construisez des logements.</p>
+        : city.housing > 0 && <p className="-mt-1 text-[11px] text-muted">{num(city.freeHousing)} places libres pour de nouveaux habitants.</p>}
+      <Jobs city={city} />
       <Bar icon={Smile} label="Satisfaction" value={pctPlain(city.satisfaction)} ratio={city.satisfaction} tone={city.satisfaction < 0.6 ? "bg-danger" : city.satisfaction < 0.75 ? "bg-warning" : "bg-success"} />
-      {city.factors.some((f) => f.value < 0) && (
+      {city.factors.some((f) => f.value <= -0.005) && (
         <ul className="space-y-0.5 text-[11px]">
-          {city.factors.filter((f) => f.value < 0).map((f) => (
+          {city.factors.filter((f) => f.value <= -0.005).map((f) => (
             <li key={f.label} className="flex justify-between gap-3"><span className="text-muted">{f.label}</span><span className="font-semibold tabular text-danger">−{Math.round(-f.value * 100)} pts</span></li>
           ))}
         </ul>
@@ -337,6 +339,53 @@ function CityBars({ city, population, outlook }: { city: CityStats; population: 
           <span className="text-right font-semibold tabular">{num(outlook.population)} hab. · <span className={tone(outlook.net)}>{signedEur(outlook.net)}/j</span></span>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Emplois : combien de travailleurs, combien de postes, ce qui manque et ce que ça coûte, et où sont les postes. */
+function Jobs({ city }: { city: CityStats }) {
+  const game = useGame((s) => s.game);
+  const [open, setOpen] = useState(false);
+  const staffing = city.jobs > 0 ? city.employed / city.jobs : 1;
+  const jobless = city.unemploymentRate >= 0.08, short = city.openJobs > 0 && staffing < 0.99, some = city.unemploymentRate >= 0.01;
+  // Revenus des bâtiments perdus faute de personnel (ils tournent au prorata des postes pourvus)
+  const lost = staffing > 0 && short ? city.income.buildings * (1 / staffing - 1) : 0;
+  const penalty = city.factors.find((f) => f.label === "Chômage")?.value ?? 0;
+  const needPeople = Math.ceil(city.openJobs / ACTIVE_RATIO);
+  // Où sont les postes : par type de bâtiment, puis les entreprises implantées
+  const bySector = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const [id, n] of Object.entries(game.buildings)) {
+      const b = BUILDING_BY_ID[id];
+      if (b?.jobs && n > 0) m.set(CATEGORY_LABELS[b.category], (m.get(CATEGORY_LABELS[b.category]) ?? 0) + b.jobs * n);
+    }
+    const firms = activeBranches(game).reduce((a, br) => a + (ASSET_BY_SYMBOL[br.symbol] ? BRANCH_EFFECTS[familyOf(ASSET_BY_SYMBOL[br.symbol])].jobs : 0), 0);
+    if (firms > 0) m.set("Entreprises", firms);
+    return [...m.entries()].sort((a, b) => b[1] - a[1]);
+  }, [game]);
+  return (
+    <div>
+      <Bar icon={Briefcase} label="Emplois" value={`${num(city.employed)} / ${num(city.jobs)}`} ratio={staffing} tone={jobless ? "bg-danger" : short ? "bg-warning" : "bg-success"} />
+      <div className={`mt-1.5 rounded-[8px] px-2 py-1.5 text-[11px] leading-snug ${jobless ? "bg-danger-soft text-red-800" : short ? "bg-warning-soft text-amber-800" : "bg-slate-50 text-muted"}`}>
+        {some && (
+          <p><b>{num(city.unemployed)} chômeurs</b> ({pctPlain(city.unemploymentRate)} des actifs) : il manque {num(city.unemployed)} postes.
+            {jobless && <> Construisez des bâtiments qui embauchent (commerces, industrie…).{penalty < 0 && ` Satisfaction −${Math.round(-penalty * 100)} pts, impôts en baisse.`}</>}</p>
+        )}
+        {short && (
+          <p className={some ? "mt-1" : ""}><b>{num(city.openJobs)} postes vacants</b> : il manque environ {num(needPeople)} habitants. Vos bâtiments tournent à {pctPlain(staffing)}{lost >= 1 && <>, soit <b>{signedEur(-lost)}/j</b></>}.
+            {" "}{city.freeHousing >= needPeople ? `Les ${num(city.freeHousing)} places libres suffiront : les habitants arrivent.` : city.freeHousing > 0 ? `Seulement ${num(city.freeHousing)} places libres : construisez des logements.` : "Plus de place libre : construisez des logements."}</p>
+        )}
+        {!some && !short && <p>Équilibré : les actifs ont presque tous un poste, et les postes sont presque tous pourvus.</p>}
+        <button type="button" onClick={() => setOpen((o) => !o)} className="mt-1 font-semibold text-primary hover:underline">{open ? "Masquer" : "Où sont les postes ?"}</button>
+        {open && (
+          <ul className="mt-1 space-y-0.5 text-slate-700">
+            <li className="flex justify-between gap-3"><span>Actifs (60 % des habitants)</span><b className="tabular">{num(city.active)}</b></li>
+            {bySector.map(([k, v]) => <li key={k} className="flex justify-between gap-3"><span>{k}</span><span className="tabular">{num(v)} postes</span></li>)}
+            {!bySector.length && <li>Aucun bâtiment n&apos;embauche encore.</li>}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }

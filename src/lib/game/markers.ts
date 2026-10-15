@@ -1,11 +1,13 @@
 // Pastilles d'alerte de la ville (pur, testable) : quel problème, au-dessus de quel bâtiment.
 // Règle : une pastille se pose sur un bâtiment DU TYPE CONCERNÉ par le problème
 // (énergie → centrales, nourriture → exploitations, logements → quartiers, postes vacants → lieux de travail,
+// chômage → quartiers d'habitation, où vivent les chômeurs,
 // équipement public → équipements de ce service). S'il n'existe aucun bâtiment de ce type, le problème
 // concerne la ville entière : la pastille se pose sur la mairie (à défaut, le village d'origine des anciennes villes publiées).
 import type { CityMarker, MarkerKind } from "@/components/IsoCity";
 import { BUILDING_BY_ID, SERVICES, SERVICE_IDS, type BuildingType } from "./config";
 import type { CityStats } from "./engine";
+import { ACTIVE_RATIO } from "./config";
 import type { Plot } from "./layout";
 
 /** Pas plus de quelques pastilles par problème : la carte doit rester lisible. */
@@ -13,7 +15,7 @@ export const MAX_MARKERS = 3;
 
 type Issue = { kind: MarkerKind; weight: (b: BuildingType) => number; label: string; none: string };
 
-export function cityMarkers(plots: Plot[], city: Pick<CityStats, "energy" | "food" | "freeHousing" | "housing" | "openJobs" | "services">): CityMarker[] {
+export function cityMarkers(plots: Plot[], city: Pick<CityStats, "energy" | "food" | "freeHousing" | "housing" | "openJobs" | "services"> & Partial<Pick<CityStats, "unemployed" | "unemploymentRate">>): CityMarker[] {
   const issues: Issue[] = [];
   if (city.energy.balance < 0) issues.push({
     kind: "energy", weight: (b) => b.energyProd ?? 0,
@@ -28,12 +30,22 @@ export function cityMarkers(plots: Plot[], city: Pick<CityStats, "energy" | "foo
   const full = city.freeHousing === 0 && city.housing > 0;
   if (full) issues.push({ kind: "full", weight: (b) => b.housing ?? 0, label: "Logements pleins : la population ne grandit plus", none: "Logements pleins : la population ne grandit plus" });
   // Postes vacants : seulement quand il n'y a plus de logement pour accueillir de nouveaux travailleurs
-  if (full && city.openJobs > 0) issues.push({ kind: "staff", weight: (b) => (b.housing ? 0 : b.jobs ?? 0), label: "Postes vacants : il manque des habitants", none: "Postes vacants : il manque des habitants" });
+  const fmt = (n: number) => Math.round(n).toLocaleString("fr-FR");
+  if (full && city.openJobs > 0) {
+    const t = `${fmt(city.openJobs)} postes vacants : il manque environ ${fmt(city.openJobs / ACTIVE_RATIO)} habitants (construire des logements)`;
+    issues.push({ kind: "staff", weight: (b) => (b.housing ? 0 : b.jobs ?? 0), label: t, none: t });
+  }
   for (const id of SERVICE_IDS) {
     const s = city.services[id];
     if (!s?.needed || s.coverage >= 1) continue;
     const name = SERVICES[id].label;
     issues.push({ kind: "service", weight: (b) => (b.service === id ? b.serves ?? 1 : 0), label: `${name} : équipements saturés, il en faut d'autres`, none: `${name} : aucun équipement dans la ville` });
+  }
+
+  // Chômage (après les équipements : moins urgent) : les chômeurs vivent dans les quartiers ; il manque des bâtiments qui embauchent
+  if ((city.unemploymentRate ?? 0) >= 0.08) {
+    const t = `Chômage ${Math.round(city.unemploymentRate! * 100)} % : ${fmt(city.unemployed ?? 0)} habitants sans emploi, il manque autant de postes (commerces, industrie…)`;
+    issues.push({ kind: "jobs", weight: (b) => b.housing ?? 0, label: t, none: t });
   }
 
   const taken = new Set<string>();
