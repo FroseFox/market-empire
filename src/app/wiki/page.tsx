@@ -623,9 +623,10 @@ export default function WikiPage() {
             <Facts cols={3} items={[
               { label: "1 carreau", value: `${BUILDINGS.filter((b) => b.buildable !== false && !b.size).length} bâtiments`, sub: "petit quartier, commerce, parc…" },
               { label: "2 × 2 carreaux", value: `${BUILDINGS.filter((b) => b.size === 2).length} bâtiments`, sub: "grand quartier, usine moyenne, hôpital…" },
-              { label: "3 × 3 carreaux", value: `${BUILDINGS.filter((b) => b.size === 3).length} bâtiments`, sub: "un pâté de maisons entier : stade, aéroport…" },
+              { label: "4 × 4 carreaux", value: `${BUILDINGS.filter((b) => b.size === 4).length} bâtiments`, sub: "un îlot entier : stade, aéroport…" },
             ]} />
             <Points items={[
+              "Les routes dessinent des îlots de 4 × 4 carreaux : 16 petits bâtiments, 4 de 2 × 2 ou un de 4 × 4 par îlot.",
               "Un bâtiment ne peut pas être à cheval sur une route : il lui faut un carré libre entre les routes.",
               "En construction, le carré vert montre la place qu’il prendra : le carreau visé en est un angle.",
               "Les gros bâtiments remplissent la carte plus vite : pensez à agrandir le territoire.",
@@ -676,7 +677,7 @@ export default function WikiPage() {
             <p>À partir du rang « {CITY_RANKS[ORIENTATION_MIN_RANK].name} », la ville choisit une orientation, une seule à la fois. Le premier choix est gratuit ; en changer coûte {compactEur(ORIENTATION_CHANGE_COST)} × le rang de la ville.</p>
             <Table head={["Orientation", "Avantage", "Revers"]} rows={ORIENTATIONS.map((o) => [o.name, o.pro, o.con])} />
             <H3>Territoire</H3>
-            <p>La ville démarre sur une petite carte. Quand le terrain est plein, on ne peut plus construire : il faut acheter l’agrandissement suivant (Ville, bouton Objectifs), qui ajoute 4 carreaux de chaque côté. Le territoire acheté compte dans le patrimoine.</p>
+            <p>La ville démarre sur une petite carte. Quand le terrain est plein, on ne peut plus construire : il faut acheter l’agrandissement suivant (Ville, bouton Objectifs), qui ajoute une rangée d’îlots de chaque côté. Le territoire acheté compte dans le patrimoine.</p>
             <Table head={["Carte", "Prix", "Rang requis"]} rows={TERRITORY.map((t) => [`${t.size} × ${t.size} carreaux`, t.cost ? compactEur(t.cost) : "départ", CITY_RANKS[t.minRank].name])} />
             <H3>Missions du jour et série</H3>
             <p>Chaque jour à minuit (heure de Paris), {DAILY.missions} missions sont tirées d’après votre ville : construire, gagner des habitants, monter la satisfaction, débloquer une recherche, revenir quelques heures plus tard… Jamais d’achat ou de vente en bourse. Elles se trouvent sur l’accueil et dans Ville › Objectifs.</p>

@@ -216,8 +216,8 @@ export interface BuildingType {
   /** Population minimale pour débloquer le bâtiment. */
   unlockPop?: number;
   buildable?: boolean;
-  /** Côté du terrain occupé, en carreaux : 2 = 2 × 2, 3 = 3 × 3 (un pâté de maisons entier). 1 si absent. */
-  size?: 2 | 3;
+  /** Côté du terrain occupé, en carreaux : 2 = 2 × 2, 4 = 4 × 4 (un îlot entier). 1 si absent. */
+  size?: 2 | 4;
   description: string;
 }
 
@@ -255,8 +255,8 @@ export const BUILDINGS: BuildingType[] = [
   { id: "museum", name: "Musée", category: "commerce", cost: 220_000, jobs: 80, revenue: 4_400, energyUse: 20, unlockPop: 2_000, tourist: true, joy: 0.01, description: "Tourisme : revenus selon l'attrait de la ville, +1 point de satisfaction" },
   { id: "hotel", name: "Hôtel", category: "commerce", cost: 180_000, jobs: 150, revenue: 3_600, energyUse: 40, unlockPop: 2_500, tourist: true, description: "Tourisme : peu d'emplois, revenus selon l'attrait de la ville" },
   { id: "mall", size: 2, name: "Centre commercial", category: "commerce", cost: 350_000, jobs: 600, revenue: 7_000, energyUse: 90, unlockPop: 4_000, pollution: 8, description: "Grande surface et galerie" },
-  { id: "stadium", size: 3, name: "Stade", category: "commerce", cost: 900_000, jobs: 900, revenue: 20_000, energyUse: 150, unlockPop: 8_000, pollution: 10, tourist: true, joy: 0.02, description: "Tourisme : grands événements, +2 points de satisfaction" },
-  { id: "themepark", size: 3, name: "Parc d'attractions", category: "commerce", cost: 2_500_000, jobs: 3_600, revenue: 56_000, energyUse: 400, unlockPop: 20_000, pollution: 30, tourist: true, joy: 0.02, description: "Tourisme : la grande attraction de la région, +2 points de satisfaction" },
+  { id: "stadium", size: 4, name: "Stade", category: "commerce", cost: 900_000, jobs: 900, revenue: 20_000, energyUse: 150, unlockPop: 8_000, pollution: 10, tourist: true, joy: 0.02, description: "Tourisme : grands événements, +2 points de satisfaction" },
+  { id: "themepark", size: 4, name: "Parc d'attractions", category: "commerce", cost: 2_500_000, jobs: 3_600, revenue: 56_000, energyUse: 400, unlockPop: 20_000, pollution: 30, tourist: true, joy: 0.02, description: "Tourisme : la grande attraction de la région, +2 points de satisfaction" },
   { id: "services", name: "Entreprise de services", category: "services", cost: 100_000, jobs: 150, revenue: 2_200, energyUse: 15, unlockPop: 600, description: "Bureaux, conseil, santé" },
   { id: "bank", name: "Banque", category: "services", cost: 400_000, jobs: 300, revenue: 8_000, energyUse: 40, unlockPop: 5_000, description: "Siège bancaire régional" },
   { id: "bizdistrict", size: 2, name: "Quartier d'affaires", category: "services", cost: 1_500_000, jobs: 2_400, revenue: 24_000, energyUse: 200, unlockPop: 10_000, capitalBoost: 0.1, description: "Vos placements en bourse produisent +10 % de capital" },
@@ -266,7 +266,7 @@ export const BUILDINGS: BuildingType[] = [
   { id: "factory_s", name: "Petite usine", category: "industry", cost: 50_000, jobs: 100, revenue: 1_000, energyUse: 30, pollution: 10, description: "Consomme de l'énergie" },
   { id: "warehouse", size: 2, name: "Entrepôt logistique", category: "industry", cost: 120_000, jobs: 250, revenue: 2_400, energyUse: 20, unlockPop: 1_000, pollution: 5, description: "Beaucoup d'emplois, peu d'énergie" },
   { id: "factory_m", size: 2, name: "Usine moyenne", category: "industry", cost: 250_000, jobs: 500, revenue: 5_000, energyUse: 150, unlockPop: 1_500, pollution: 40, description: "Grosse consommatrice d'énergie" },
-  { id: "factory_l", size: 3, name: "Complexe industriel", category: "industry", cost: 1_000_000, jobs: 5_400, revenue: 24_000, energyUse: 600, unlockPop: 6_000, pollution: 150, description: "Pilier d'une grande ville" },
+  { id: "factory_l", size: 4, name: "Complexe industriel", category: "industry", cost: 1_000_000, jobs: 5_400, revenue: 24_000, energyUse: 600, unlockPop: 6_000, pollution: 150, description: "Pilier d'une grande ville" },
 
   { id: "recycling", name: "Centre de recyclage", category: "industry", cost: 320_000, jobs: 90, revenue: 600, energyUse: 40, unlockPop: 3_500, pollution: -90, description: "Absorbe la pollution des usines, sans prendre la place d'un parc" },
   { id: "port", size: 2, name: "Port de commerce", category: "industry", cost: 600_000, jobs: 350, revenue: 2_500, energyUse: 60, unlockPop: 4_000, pollution: 25, exportBonus: 0.05, description: "Vos surplus d'énergie et de nourriture s'exportent 5 points plus cher" },
@@ -277,7 +277,7 @@ export const BUILDINGS: BuildingType[] = [
   { id: "greenhouse", name: "Serres", category: "agriculture", cost: 150_000, jobs: 80, revenue: 400, foodProd: 900, energyUse: 60, unlockPop: 1_000, description: "+900 nourriture/j, consomme de l'énergie" },
   { id: "farm_m", size: 2, name: "Exploitation moyenne", category: "agriculture", cost: 200_000, jobs: 200, revenue: 800, foodProd: 1_000, energyUse: 20, unlockPop: 1_500, pollution: -8, description: "+1 000 nourriture/j" },
   { id: "ranch", size: 2, name: "Élevage", category: "agriculture", cost: 250_000, jobs: 150, revenue: 1_000, foodProd: 1_600, energyUse: 15, unlockPop: 2_500, pollution: -5, description: "+1 600 nourriture/j" },
-  { id: "farm_l", size: 3, name: "Grande exploitation", category: "agriculture", cost: 1_000_000, jobs: 1_800, revenue: 3_000, foodProd: 12_000, energyUse: 100, unlockPop: 8_000, pollution: -25, description: "+12 000 nourriture/j" },
+  { id: "farm_l", size: 4, name: "Grande exploitation", category: "agriculture", cost: 1_000_000, jobs: 1_800, revenue: 3_000, foodProd: 12_000, energyUse: 100, unlockPop: 8_000, pollution: -25, description: "+12 000 nourriture/j" },
 
   // ⚡ Énergie
   { id: "power_s", name: "Petite centrale", category: "energy", cost: 50_000, jobs: 20, energyProd: 160, description: "+160 énergie/j" },
@@ -295,12 +295,12 @@ export const BUILDINGS: BuildingType[] = [
   { id: "workshop", name: "Ateliers municipaux", category: "public", cost: 200_000, jobs: 80, energyUse: 10, unlockPop: 2_500, wearCut: 0.25, description: "La vétusté de la ville avance 25 % moins vite" },
   { id: "station", size: 2, name: "Gare", category: "public", cost: 350_000, jobs: 120, energyUse: 40, unlockPop: 3_000, visitors: 0.1, growthBoost: 0.15, description: "+10 % de visiteurs pour le tourisme, +15 % de nouveaux habitants" },
   { id: "police", name: "Commissariat", category: "public", cost: 260_000, jobs: 120, energyUse: 15, service: "safety", serves: 18_000, unlockPop: 6_000, description: "Protège 18 000 habitants" },
-  { id: "airport", size: 3, name: "Aéroport régional", category: "public", cost: 3_000_000, jobs: 800, energyUse: 500, unlockPop: 15_000, pollution: 120, visitors: 0.3, description: "+30 % de visiteurs pour le tourisme, mais bruyant et polluant" },
+  { id: "airport", size: 4, name: "Aéroport régional", category: "public", cost: 3_000_000, jobs: 800, energyUse: 500, unlockPop: 15_000, pollution: 120, visitors: 0.3, description: "+30 % de visiteurs pour le tourisme, mais bruyant et polluant" },
   { id: "hospital", size: 2, name: "Hôpital", category: "public", cost: 450_000, jobs: 250, energyUse: 40, service: "hospital", serves: 24_000, unlockPop: 5_000, description: "Soigne 24 000 habitants" },
 
   // 🏛️ Bâtiments de départ (non constructibles)
   // Grande mairie : tout l'îlot du centre, et les logements du village d'origine (qu'elle remplace) autour de sa place
-  { id: "townhall", size: 3, name: "Mairie", category: "civic", cost: 80_000, housing: 250, jobs: 30, energyUse: 5, buildable: false, description: "Cœur de la ville : administration et 250 logements autour de la place" },
+  { id: "townhall", size: 4, name: "Mairie", category: "civic", cost: 80_000, housing: 250, jobs: 30, energyUse: 5, buildable: false, description: "Cœur de la ville : administration et 250 logements autour de la place" },
   // 🏢 Site d'une entreprise implantée : un par entreprise, posé par le jeu (ses effets viennent de BRANCH_EFFECTS)
   { id: "branch", name: "Site d'entreprise", category: "services", cost: 0, buildable: false, description: "Entreprise dont vous êtes actionnaire" },
   // Ancien bâtiment de départ, remplacé par la grande mairie (les parties d'avant sont converties à l'ouverture)
@@ -555,16 +555,19 @@ export const FEATURES: { id: FeatureId; rank: number; label: string; text: strin
 
 // ─── Territoire ───────────────────────────────────────────────
 /** Territoire : côté de la carte, prix, rang de ville minimal. Compté dans le patrimoine.
- *  La ville démarre petite et achète son terrain : 4 carreaux de plus de chaque côté à chaque palier
- *  (les tailles vont de 8 en 8 pour que les routes, tracées tous les 4 carreaux, bordent toujours la carte). */
+ *  La ville démarre petite et achète son terrain : une rangée d'îlots de plus de chaque côté à chaque palier
+ *  (les côtés vont de 10 en 10, plus 1, pour qu'une route, tracée tous les 5 carreaux, borde toujours la carte).
+ *  Mêmes paliers qu'avec les anciens îlots de 3 × 3 (8, 16… 48) : même nombre d'îlots, chacun de 16 carreaux au lieu de 9. */
 export const TERRITORY: { size: number; cost: number; minRank: number }[] = [
-  { size: 8, cost: 0, minRank: 0 },
-  { size: 16, cost: 20_000, minRank: 0 },
-  { size: 24, cost: 150_000, minRank: 2 },
-  { size: 32, cost: 600_000, minRank: 3 },
-  { size: 40, cost: 2_000_000, minRank: 4 },
-  { size: 48, cost: 10_000_000, minRank: 6 },
+  { size: 11, cost: 0, minRank: 0 },
+  { size: 21, cost: 20_000, minRank: 0 },
+  { size: 31, cost: 150_000, minRank: 2 },
+  { size: 41, cost: 600_000, minRank: 3 },
+  { size: 51, cost: 2_000_000, minRank: 4 },
+  { size: 61, cost: 10_000_000, minRank: 6 },
 ];
+/** Version de la grille de la ville (une route tous les GRID carreaux). Les parties d'avant (îlots de 3 × 3) sont converties à l'ouverture. */
+export const GRID_VERSION = 5;
 /** Version des règles de territoire. Les parties d'avant (carte de 32 offerte au départ) sont converties à l'ouverture. */
 export const LAND_VERSION = 2;
 /** Tic prévient quand le terrain est occupé à ce point. */

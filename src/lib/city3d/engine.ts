@@ -5,7 +5,7 @@
 // qu'à 30 images par seconde au repos, et pas du tout quand elle est hors écran.
 import * as THREE from "three";
 import { BUILDING_BY_ID } from "@/lib/game/config";
-import { canPlace, footprint, isBuildable, isRoad, mapBounds, MAP_SIZE, MAX_MAP_SIZE, occupancy, sideOf, type Plot } from "@/lib/game/layout";
+import { canPlace, footprint, isBuildable, isRoad, mapBounds, MAP_SIZE, MAX_MAP_SIZE, CENTER, GRID, blockOf, cellOf, onRoadLine, roadAbove, roadBelow, occupancy, sideOf, type Plot } from "@/lib/game/layout";
 import { CAT_COLOR, MARKER_COLOR, markerTip, nightFactor, type CityMarker, type CityMode, type CitySign, type Light, type MarkerKind } from "@/components/IsoCity";
 import { SEASON_LABEL, seasonOf, type Season } from "@/lib/game/season";
 import { EventFx } from "./eventFx";
@@ -241,16 +241,16 @@ export class CityEngine {
     // Zone visible : autour des bâtiments (plus large en mode construction), arrêtée sur une route
     const xs = plots.flatMap((p) => [p.x, p.x + sideOf(p) - 1]), ys = plots.flatMap((p) => [p.y, p.y + sideOf(p) - 1]);
     const pad = f.interactive ? 3 : 1, span = f.interactive ? 6 : 3;
-    let x0 = Math.min(...xs, MAP_SIZE / 2 - span) - pad, x1 = Math.max(...xs, MAP_SIZE / 2 + span) + pad;
-    let y0 = Math.min(...ys, MAP_SIZE / 2 - span) - pad, y1 = Math.max(...ys, MAP_SIZE / 2 + span) + pad;
+    let x0 = Math.min(...xs, CENTER - span) - pad, x1 = Math.max(...xs, CENTER + span) + pad;
+    let y0 = Math.min(...ys, CENTER - span) - pad, y1 = Math.max(...ys, CENTER + span) + pad;
     const { lo, hi } = mapBounds(mapSize);
     x0 = Math.max(lo, x0); y0 = Math.max(lo, y0); x1 = Math.min(hi - 1, x1); y1 = Math.min(hi - 1, y1);
     // Dans sa propre ville, on voit et on peut construire sur tout le territoire, même là où il n'y a encore rien
     if (f.interactive) { x0 = lo; y0 = lo; x1 = hi - 1; y1 = hi - 1; }
-    this.x0 = Math.floor(x0 / 4) * 4; this.y0 = Math.floor(y0 / 4) * 4;
-    this.x1 = Math.min(hi - 1, Math.ceil(x1 / 4) * 4); this.y1 = Math.min(hi - 1, Math.ceil(y1 / 4) * 4);
+    this.x0 = roadBelow(x0); this.y0 = roadBelow(y0);
+    this.x1 = Math.min(hi - 1, roadAbove(x1)); this.y1 = Math.min(hi - 1, roadAbove(y1));
     this.byTile = occupancy(plots);
-    this.builtBlocks = new Set(plots.map((p) => `${Math.floor(p.x / 4)},${Math.floor(p.y / 4)}`));
+    this.builtBlocks = new Set(plots.map((p) => `${blockOf(p.x)},${blockOf(p.y)}`));
 
     this.rebuild();
     if (this.ev) this.setFx(this.ev.id);
@@ -276,9 +276,9 @@ export class CityEngine {
   /** Route goudronnée : autour des îlots bâtis, plus les deux axes qui relient la ville à l'extérieur. */
   private paved(x: number, y: number) {
     if (!isRoad(x, y)) return false;
-    if (x === MAP_SIZE / 2 || y === MAP_SIZE / 2) return true;
-    const bxs = x % 4 === 0 ? [x / 4 - 1, x / 4] : [Math.floor(x / 4)];
-    const bys = y % 4 === 0 ? [y / 4 - 1, y / 4] : [Math.floor(y / 4)];
+    if (x === CENTER || y === CENTER) return true;
+    const bxs = onRoadLine(x) ? [blockOf(x) - 1, blockOf(x)] : [blockOf(x)];
+    const bys = onRoadLine(y) ? [blockOf(y) - 1, blockOf(y)] : [blockOf(y)];
     return bxs.some((bx) => bys.some((by) => this.builtBlocks.has(`${bx},${by}`)));
   }
 
@@ -308,7 +308,7 @@ export class CityEngine {
     const ground = this.season ? GROUND[this.season] : { land: LAND, patches: PATCHES };
     (this.scene.background as THREE.Color).set(ground.land); (this.land.material as THREE.MeshStandardMaterial).color.set(ground.land);
     const bulbs: { x: number; y: number; z: number; r: number; c: number }[] = [];
-    const { x0, x1, y0, y1 } = this, mid = MAP_SIZE / 2;
+    const { x0, x1, y0, y1 } = this, mid = CENTER;
     const cx = (x0 + x1 + 1) / 2, cy = (y0 + y1 + 1) / 2, R = Math.max(28, Math.max(x1 - x0, y1 - y0) * 1.5 + 10);
     const wx0 = Math.floor(cx - R), wx1 = Math.ceil(cx + R), wy0 = Math.floor(cy - R), wy1 = Math.ceil(cy + R);
     const flat = new Flat();
@@ -368,15 +368,15 @@ export class CityEngine {
     for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) {
       if (!this.paved(x, y)) continue;
       flat.quad(x, y, x + 1, y + 1, 0.012, ROAD);
-      const cw = 0.1, rx = x % 4 === 0, ry = y % 4 === 0;
+      const cw = 0.1, rx = onRoadLine(x), ry = onRoadLine(y);
       if (!isRoad(x - 1, y)) flat.quad(x, y, x + cw, y + 1, 0.016, CURB);
       if (!isRoad(x + 1, y)) flat.quad(x + 1 - cw, y, x + 1, y + 1, 0.016, CURB);
       if (!isRoad(x, y - 1)) flat.quad(x, y, x + 1, y + cw, 0.016, CURB);
       if (!isRoad(x, y + 1)) flat.quad(x, y + 1 - cw, x + 1, y + 1, 0.016, CURB);
       if (rx && ry) { lamps.push([x + 0.1, y + 0.1]); continue; }
-      const nearCross = rx ? y % 4 === 1 || y % 4 === 3 : x % 4 === 1 || x % 4 === 3;
+      const nearCross = rx ? cellOf(y) === 1 || cellOf(y) === GRID - 1 : cellOf(x) === 1 || cellOf(x) === GRID - 1;
       if (nearCross) {
-        const edge = rx ? (y % 4 === 1 ? y + 0.08 : y + 0.72) : x % 4 === 1 ? x + 0.08 : x + 0.72;
+        const edge = rx ? (cellOf(y) === 1 ? y + 0.08 : y + 0.72) : cellOf(x) === 1 ? x + 0.08 : x + 0.72;
         for (let i = 0; i < 4; i++) {
           const a0 = 0.18 + i * 0.18, a1 = a0 + 0.09;
           if (rx) flat.quad(x + a0, edge, x + a1, edge + 0.2, 0.02, LINE); else flat.quad(edge, y + a0, edge + 0.2, y + a1, 0.02, LINE);
@@ -493,8 +493,8 @@ export class CityEngine {
 
     // ─── Voitures et passants ───
     const lines: { axis: "x" | "y"; k: number }[] = [];
-    for (let k = Math.ceil(x0 / 4) * 4; k <= x1; k += 4) lines.push({ axis: "x", k });
-    for (let k = Math.ceil(y0 / 4) * 4; k <= y1; k += 4) lines.push({ axis: "y", k });
+    for (let k = roadAbove(x0); k <= x1; k += GRID) lines.push({ axis: "x", k });
+    for (let k = roadAbove(y0); k <= y1; k += GRID) lines.push({ axis: "y", k });
     const compact = this.frameOpts.compact;
     if (lines.length && !compact) {
       const nc = Math.min(10, 2 + Math.floor(this.plots.length / 2)), nw = Math.min(26, Math.floor(this.plots.length * 0.8));

@@ -519,7 +519,7 @@ function Progression({ city, population, goals, onClaim }: { city: CityStats; po
           <div className="flex items-baseline justify-between gap-2 text-[13px] font-medium"><span>Territoire : {size} × {size} carreaux</span><span className={`text-[11px] tabular ${ground.used >= ground.total * LAND_ALMOST_FULL ? "font-semibold text-amber-700" : "text-muted"}`}>{num(ground.used)} / {num(ground.total)} occupés</span></div>
           <div className="my-1.5"><Progress value={ground.used / ground.total} tone={ground.used >= ground.total * LAND_ALMOST_FULL ? "bg-warning" : "bg-primary"} /></div>
           <div className="text-[11px] text-muted">
-            {!land ? "Taille maximale atteinte." : city.rank < land.minRank ? `Agrandissement à ${land.size} × ${land.size} au rang « ${CITY_RANKS[land.minRank].name} ».` : `Agrandir à ${land.size} × ${land.size} : 4 carreaux de plus de chaque côté.`}
+            {!land ? "Taille maximale atteinte." : city.rank < land.minRank ? `Agrandissement à ${land.size} × ${land.size} au rang « ${CITY_RANKS[land.minRank].name} ».` : `Agrandir à ${land.size} × ${land.size} : une rangée d'îlots de plus de chaque côté.`}
           </div>
         </div>
         {land && (city.rank < land.minRank ? <LockTag className="shrink-0 tabular">{compactEur(land.cost)}</LockTag>

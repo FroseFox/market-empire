@@ -9,7 +9,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Layers, Moon, Sun } from "lucide-react";
 import { BUILDING_BY_ID, CATEGORY_LABELS, type Category } from "@/lib/game/config";
-import { canPlace, footprint, isBuildable, isRoad, mapBounds, MAP_SIZE, MAX_MAP_SIZE, occupancy, sideOf, type Plot } from "@/lib/game/layout";
+import { canPlace, footprint, isBuildable, isRoad, mapBounds, MAP_SIZE, MAX_MAP_SIZE, CENTER, GRID, blockOf, cellOf, onRoadLine, roadAbove, roadBelow, occupancy, sideOf, type Plot } from "@/lib/game/layout";
 
 /** Enseigne d'une entreprise implantée, affichée au-dessus de son bâtiment. */
 export interface CitySign {
@@ -253,24 +253,24 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
     // Zone visible : autour des bâtiments (plus large en mode construction, pour avoir de la place)
     const xs = plots.flatMap((p) => [p.x, p.x + sideOf(p) - 1]), ys = plots.flatMap((p) => [p.y, p.y + sideOf(p) - 1]);
     const pad = interactive ? 3 : 1, span = interactive ? 6 : 3;
-    let x0 = Math.min(...xs, MAP_SIZE / 2 - span) - pad, x1 = Math.max(...xs, MAP_SIZE / 2 + span) + pad;
-    let y0 = Math.min(...ys, MAP_SIZE / 2 - span) - pad, y1 = Math.max(...ys, MAP_SIZE / 2 + span) + pad;
+    let x0 = Math.min(...xs, CENTER - span) - pad, x1 = Math.max(...xs, CENTER + span) + pad;
+    let y0 = Math.min(...ys, CENTER - span) - pad, y1 = Math.max(...ys, CENTER + span) + pad;
     const { lo, hi } = mapBounds(mapSize);
     x0 = Math.max(lo, x0); y0 = Math.max(lo, y0); x1 = Math.min(hi - 1, x1); y1 = Math.min(hi - 1, y1);
     // La ville s'arrête sur une route (boulevard de ceinture), pas au milieu d'un pâté de maisons
-    x0 = Math.floor(x0 / 4) * 4; y0 = Math.floor(y0 / 4) * 4;
-    x1 = Math.min(hi - 1, Math.ceil(x1 / 4) * 4); y1 = Math.min(hi - 1, Math.ceil(y1 / 4) * 4);
+    x0 = roadBelow(x0); y0 = roadBelow(y0);
+    x1 = Math.min(hi - 1, roadAbove(x1)); y1 = Math.min(hi - 1, roadAbove(y1));
 
     const byTile = occupancy(plots);
     // Routes goudronnées : seulement autour des îlots bâtis, plus les deux axes qui relient la ville à l'extérieur.
     // Le reste du territoire reste en herbe : un village ressemble à un village, et la ville s'étend à vue d'œil.
     // (En mode construction ou déplacement, tout le quadrillage s'affiche pour montrer où l'on peut bâtir.)
-    const builtBlocks = new Set(plots.map((p) => `${Math.floor(p.x / 4)},${Math.floor(p.y / 4)}`));
+    const builtBlocks = new Set(plots.map((p) => `${blockOf(p.x)},${blockOf(p.y)}`));
     const paved = (x: number, y: number) => {
       if (!isRoad(x, y)) return false;
-      if (x === MAP_SIZE / 2 || y === MAP_SIZE / 2) return true;
-      const bxs = x % 4 === 0 ? [x / 4 - 1, x / 4] : [Math.floor(x / 4)];
-      const bys = y % 4 === 0 ? [y / 4 - 1, y / 4] : [Math.floor(y / 4)];
+      if (x === CENTER || y === CENTER) return true;
+      const bxs = onRoadLine(x) ? [blockOf(x) - 1, blockOf(x)] : [blockOf(x)];
+      const bys = onRoadLine(y) ? [blockOf(y) - 1, blockOf(y)] : [blockOf(y)];
       return bxs.some((bx) => bys.some((by) => builtBlocks.has(`${bx},${by}`)));
     };
     const SLAB = 0; // plus de socle : la ville est posée dans son paysage
@@ -334,7 +334,7 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
     let lights: Pt[][] = [];
     // Lampadaires : un par carrefour
     const lamps: Pt[] = [];
-    for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) if (x % 4 === 0 && y % 4 === 0 && paved(x, y)) lamps.push([x + 0.1, y + 0.1]);
+    for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) if (onRoadLine(x) && onRoadLine(y) && paved(x, y)) lamps.push([x + 0.1, y + 0.1]);
     /** Le point d'ancrage (carreau) est-il à l'écran ? Marge pour la hauteur des tours et les ombres. */
     const onScreenAt = (ax: number, ay: number) => {
       const sx = ox + (ax - ay) * (TW / 2) * scale, sy = oy + (ax + ay) * (TH / 2) * scale;
@@ -880,8 +880,8 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
 
     // ─── Voitures ───
     const roadLines: { axis: "x" | "y"; k: number }[] = [];
-    for (let k = Math.ceil(x0 / 4) * 4; k <= x1; k += 4) roadLines.push({ axis: "x", k });
-    for (let k = Math.ceil(y0 / 4) * 4; k <= y1; k += 4) roadLines.push({ axis: "y", k });
+    for (let k = roadAbove(x0); k <= x1; k += GRID) roadLines.push({ axis: "x", k });
+    for (let k = roadAbove(y0); k <= y1; k += GRID) roadLines.push({ axis: "y", k });
     const carColors = ["#EF4444", "#F8FAFC", "#2563EB", "#F59E0B", "#0F172A", "#10B981"];
     const cars = Array.from({ length: compact ? 0 : Math.min(10, 2 + Math.floor(plots.length / 2)) }, (_, i) => ({
       line: roadLines[i % Math.max(1, roadLines.length)],
@@ -914,7 +914,7 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
           const q: Pt[] = [iso(x, y), iso(x + 1, y), iso(x + 1, y + 1), iso(x, y + 1)];
           if (isRoad(x, y) && (m || paved(x, y))) {
             poly(q, C.road);
-            const rx = x % 4 === 0, ry = y % 4 === 0;
+            const rx = onRoadLine(x), ry = onRoadLine(y);
             // Trottoirs le long de l'herbe
             const cw = 0.1;
             if (!isRoad(x - 1, y)) poly([iso(x, y), iso(x + cw, y), iso(x + cw, y + 1), iso(x, y + 1)], C.curb);
@@ -922,10 +922,10 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
             if (!isRoad(x, y - 1)) poly([iso(x, y), iso(x + 1, y), iso(x + 1, y + cw), iso(x, y + cw)], C.curb);
             if (!isRoad(x, y + 1)) poly([iso(x, y + 1 - cw), iso(x + 1, y + 1 - cw), iso(x + 1, y + 1), iso(x, y + 1)], C.curb);
             if (rx !== ry) {
-              const nearCross = rx ? (y % 4 === 1 || y % 4 === 3) : (x % 4 === 1 || x % 4 === 3);
+              const nearCross = rx ? (cellOf(y) === 1 || cellOf(y) === GRID - 1) : (cellOf(x) === 1 || cellOf(x) === GRID - 1);
               if (nearCross && scale > 0.5) {
                 // Passage piéton à l'approche du carrefour
-                const edge = rx ? (y % 4 === 1 ? y + 0.08 : y + 0.72) : (x % 4 === 1 ? x + 0.08 : x + 0.72);
+                const edge = rx ? (cellOf(y) === 1 ? y + 0.08 : y + 0.72) : (cellOf(x) === 1 ? x + 0.08 : x + 0.72);
                 for (let i = 0; i < 4; i++) {
                   const a0 = 0.18 + i * 0.18, a1 = a0 + 0.09;
                   poly(rx
@@ -998,7 +998,7 @@ export default function IsoCity({ plots, height = 440, compact = false, mode = n
         g.strokeStyle = C.roadLine; g.lineWidth = Math.max(0.6, scale); g.setLineDash([3 * scale, 4 * scale]);
         g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.stroke(); g.setLineDash([]);
       };
-      const mid = MAP_SIZE / 2;
+      const mid = CENTER;
       if (wx0 < x0) road(wx0, mid, x0, mid + 1, true);
       if (wx1 > x1 + 1) road(x1 + 1, mid, wx1, mid + 1, true);
       if (wy0 < y0) road(mid, wy0, mid + 1, y0, false);
