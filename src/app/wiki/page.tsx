@@ -174,6 +174,7 @@ const QUICK: { to: string; icon: LucideIcon; tint: Tint; title: string; text: st
 const LEXICON: [string, string][] = [
   ["Actif", "Ce qu’on achète en bourse : une action, un ETF, une cryptomonnaie, une matière première."],
   ["Capital", "Deuxième monnaie du jeu. Seuls vos placements en produisent ; les gros bâtiments en demandent."],
+  ["Casino", "Bâtiment de la ville (dès 3 000 habitants) qui ouvre la page Casino : roulette, machine à sous et crash, avec l’argent du jeu. L’améliorer relève la mise maximale et les limites du jour."],
   ["Contrat", "Achat régulier du surplus d’énergie ou de nourriture d’un autre joueur."],
   ["Dividende", "Part du flux net d’une ville versée chaque jour à ceux qui détiennent ses parts."],
   ["ETF", "Un panier d’actions acheté en une fois, qui suit un indice ou un secteur."],

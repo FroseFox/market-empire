@@ -11,6 +11,7 @@ import { fetchQuotes } from "@/lib/market/client";
 import type { OrientationId } from "@/lib/game/config";
 import { pack, unpack } from "@/lib/game/pack";
 import { now } from "@/lib/clock";
+import { playCasino, type CasinoChoice, type CasinoResult } from "@/lib/game/casino";
 
 export interface QuoteView { price: number; change: number; source: string }
 
@@ -72,6 +73,8 @@ interface Store {
   leaveSandbox: () => void;
   /** Mode test : déclenche tout de suite un événement de ville. Renvoie son nom. */
   forceEvent: () => string | null;
+  /** Casino : joue une partie avec `bet` euros de liquidités. Renvoie le résultat, ou null (message d'erreur affiché). */
+  casino: (choice: CasinoChoice, bet: number) => CasinoResult | null;
   reset: () => void;
   notify: (text: string, kind?: "ok" | "error") => void;
 }
@@ -198,6 +201,14 @@ export const useGame = create<Store>()(
         set({ game: r.state });
         get().notify("Mission réussie : récompense encaissée");
         return true;
+      },
+      casino: (choice, bet) => {
+        const g = get().game;
+        const worth = g.cash + E.portfolioValue(g.holdings, get().prices());
+        const r = playCasino(g, choice, bet, now(), worth);
+        if (!r.ok) { get().notify(r.error, "error"); return null; }
+        set({ game: r.state });
+        return r;
       },
       claimDailyBonus: () => {
         const r = D.claimBonus(get().game, now());

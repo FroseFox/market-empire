@@ -1,8 +1,9 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import DailyMissions from "@/components/DailyMissions";
 import {
-  BarChart3, ArrowUpCircle, Briefcase, CircleAlert, CloudLightning, FlaskConical, TriangleAlert, Copy, Undo2, Building2, Ellipsis, Handshake, Sparkles, Wrench, Factory, FastForward, Hammer, Home, Landmark, LayoutList, Lock, MousePointerClick, Move, Pencil, RotateCcw, Smile, Store, Target, Trash2, Trees, TrendingUp, Trophy, Users, Wheat, X, Zap,
+  BarChart3, ArrowUpCircle, Briefcase, CircleAlert, CloudLightning, Dices, FlaskConical, TriangleAlert, Copy, Undo2, Building2, Ellipsis, Handshake, Sparkles, Wrench, Factory, FastForward, Hammer, Home, Landmark, LayoutList, Lock, MousePointerClick, Move, Pencil, RotateCcw, Smile, Store, Target, Trash2, Trees, TrendingUp, Trophy, Users, Wheat, X, Zap,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useDerived, useGame } from "@/store/game";
@@ -15,12 +16,13 @@ import { MARKER_LEVEL, type CityMarker, type CityMode, type CitySign, type Marke
 import CompanyLogo, { companyBadge } from "@/components/CompanyLogo";
 import { cityMarkers } from "@/lib/game/markers";
 import { useMedia } from "@/lib/useMedia";
-import { capitalCost, computeCity, landUse, activeBranches, branchAt, branchCost, buildPreview, featureOpen, mapSize, nextTerritory, orientationCost, branchLimit, buildingAudit, forecast, goalStatuses, hasResearch, isTileFree, prestige, renovateCost, upgradeOffer, type CityStats } from "@/lib/game/engine";
+import { capitalCost, computeCity, landUse, activeBranches, branchAt, branchCost, buildPreview, featureOpen, mapSize, nextTerritory, orientationCost, branchLimit, buildingAudit, forecast, goalStatuses, hasResearch, isTileFree, prestige, renovateCost, upgradeOffer, FREE_UPGRADES, type CityStats } from "@/lib/game/engine";
 import { BRANCH_EFFECTS, BRANCH_MIN_VALUE, SECTOR_PERKS, FEATURES, FORECAST_DAYS, LAND_ALMOST_FULL, ORIENTATIONS, ORIENTATION_BY_ID, PROJECTS } from "@/lib/game/config";
 import { specialtyText } from "@/lib/world/countries";
 import { ASSET_BY_SYMBOL, familyOf } from "@/lib/market/universe";
 import { footprint, plotAt, type Plot } from "@/lib/game/layout";
 import { Capital } from "@/components/Capital";
+import { CASINO_IDS } from "@/lib/game/casino";
 import { compactEur, eur, num, pctPlain, signedEur, tone } from "@/lib/format";
 
 const CAT_ICON: Record<Category, LucideIcon> = {
@@ -824,7 +826,7 @@ function SelectedPanel({ plot, city, confirmDemolish, alert, onFix, onUpgrade, o
   if (!b) return null;
   const offer = upgradeOffer(game, plot.id);
   const next = offer ? BUILDING_BY_ID[offer.to] : null;
-  const canUpgrade = hasResearch(game, "city_upgrade");
+  const canUpgrade = FREE_UPGRADES.has(plot.id) || hasResearch(game, "city_upgrade");
   const popLocked = !!next?.unlockPop && game.population < next.unlockPop;
   const firm = plot.id === "branch" ? branchAt(game, plot.x, plot.y) : undefined;
   const firmAsset = firm ? ASSET_BY_SYMBOL[firm.symbol] : undefined;
@@ -843,6 +845,11 @@ function SelectedPanel({ plot, city, confirmDemolish, alert, onFix, onUpgrade, o
       </div>
       {alert && !confirmDemolish && <MarkerAlert marker={alert} onFix={onFix} />}
       <Effects b={b} />
+      {CASINO_IDS.includes(plot.id) && !confirmDemolish && (
+        <Link href="/casino" className="mt-2.5 flex items-center justify-center gap-2 rounded-[10px] bg-violet-600 px-3 py-2 text-[13px] font-semibold text-white hover:bg-violet-700">
+          <Dices size={16} /> Entrer au casino
+        </Link>
+      )}
       {audit && (
         <dl className="mt-2.5 grid grid-cols-3 gap-1.5 text-[11px]">
           <div className="rounded-[8px] bg-slate-50 px-2 py-1.5"><dt className="text-muted">Revenus</dt><dd className="font-semibold tabular">{signedEur(audit.revenue)}</dd></div>
