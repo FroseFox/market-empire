@@ -10,7 +10,8 @@ export type Sfx =
   | "ok" | "error" | "notify"                             // retours
   | "buy" | "sell" | "coin" | "research"                  // bourse, subventions, recherche
   | "place" | "build" | "demolish" | "move" | "upgrade" | "undo" | "renovate" // ville
-  | "day" | "rank" | "project" | "contract" | "travel";   // temps, progression, monde
+  | "day" | "rank" | "project" | "contract" | "travel"    // temps, progression, monde
+  | "tick" | "reel" | "win" | "bigwin" | "lose";          // casino
 
 type Ctx = BaseAudioContext;
 /** Un son = une fonction qui programme ses notes sur un contexte audio, à partir de l'instant `t`. */
@@ -81,6 +82,12 @@ export const VOICES: Record<Sfx, Voice> = {
   project: (c, o, t) => { tone(c, o, t, 98, 0.5, { gain: 0.16, to: 65 }); arp(c, o, t + 0.05, [N.C4, N.G4, N.C5, N.E5, N.G5, N.C6], 0.09, 0.4, { type: "triangle", gain: 0.1 }); tone(c, o, t + 0.6, N.E6, 0.8, { gain: 0.07 }); tone(c, o, t + 0.6, N.G5, 0.8, { gain: 0.07 }); },
   contract: (c, o, t) => { tone(c, o, t, N.D5, 0.1, { type: "triangle", gain: 0.09 }); tone(c, o, t + 0.09, N.A5, 0.22, { type: "triangle", gain: 0.09 }); noise(c, o, t, 0.05, { freq: 3500, gain: 0.03 }); },
   travel: (c, o, t) => { noise(c, o, t, 0.6, { freq: 400, to: 3000, gain: 0.05, q: 1.5 }); tone(c, o, t + 0.1, N.G4, 0.5, { gain: 0.07, to: N.D5 * 2 }); },
+  // Casino : cliquetis discret, arrêt de rouleau feutré, gains en arpège clair (jamais de sirène)
+  tick: (c, o, t) => { noise(c, o, t, 0.025, { freq: 4200, gain: 0.025, q: 4 }); tone(c, o, t, 2100, 0.02, { type: "triangle", gain: 0.02 }); },
+  reel: (c, o, t) => { tone(c, o, t, 160, 0.08, { gain: 0.14, to: 110 }); noise(c, o, t, 0.05, { freq: 1600, gain: 0.03 }); },
+  win: (c, o, t) => { arp(c, o, t, [N.G4, N.C5, N.E5, N.G5], 0.06, 0.2, { type: "triangle", gain: 0.09 }); tone(c, o, t + 0.26, N.C6, 0.4, { gain: 0.06 }); },
+  bigwin: (c, o, t) => { arp(c, o, t, [N.C5, N.E5, N.G5, N.C6, N.E6], 0.07, 0.3, { type: "triangle", gain: 0.1 }); [0, 0.12, 0.24, 0.36].forEach((d, i) => tone(c, o, t + 0.4 + d, [N.E6, N.G5, N.C6, N.E6][i], 0.25, { gain: 0.05 })); tone(c, o, t + 0.4, N.C5, 0.9, { gain: 0.05 }); },
+  lose: (c, o, t) => { tone(c, o, t, N.E5, 0.18, { type: "triangle", gain: 0.06, to: N.C5 }); tone(c, o, t + 0.12, N.G4, 0.3, { gain: 0.05, to: N.E4 }); },
 };
 
 // ─── Réglages (mémorisés sur l'appareil) ───

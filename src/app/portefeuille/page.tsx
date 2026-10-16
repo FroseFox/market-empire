@@ -9,7 +9,8 @@ import { ASSET_BY_SYMBOL, KIND_LABEL, familyOf, regionOf } from "@/lib/market/un
 import { Button, Card, Delta, Empty, PageHeader, Progress, Segmented, StatCard, LockTag } from "@/components/ui";
 import CompanyLogo from "@/components/CompanyLogo";
 import { Donut } from "@/components/charts";
-import { capitalFmt, compactEur, eur, eur2, pctPlain, signedEur, tone, qtyFmt } from "@/lib/format";
+import { Capital, CapitalCoin } from "@/components/Capital";
+import { compactEur, eur, eur2, pctPlain, signedEur, tone, qtyFmt } from "@/lib/format";
 import PriceStatus from "@/components/PriceStatus";
 import { focusAsset } from "@/lib/market/focus";
 
@@ -56,8 +57,8 @@ function BankCard({ staked, perDay }: { staked: number; perDay: number }) {
         </div>
         <div className={cell}>
           <div className="text-muted">Capital</div>
-          <div className="text-[18px] font-bold tabular text-violet-700">{capitalFmt(game.capital ?? 0)}</div>
-          <div className="text-[11px] text-muted">+{capitalFmt(perDay)} par jour de ville</div>
+          <div className="text-[18px] font-bold tabular text-violet-700"><Capital value={game.capital ?? 0} /></div>
+          <div className="text-[11px] text-muted">+<Capital value={perDay} /> par jour de ville</div>
         </div>
         <div className={cell}>
           <div className="text-muted">Intérêts</div>
@@ -66,7 +67,7 @@ function BankCard({ staked, perDay }: { staked: number; perDay: number }) {
         </div>
       </div>
       <p className="mt-3 text-[12px] text-muted">
-        Vos placements produisent du <b className="font-semibold text-violet-700">capital ◆</b> : {pctPlain(CAPITAL.dayRate)} de leur valeur par jour de ville.
+        Vos placements produisent du <b className="font-semibold text-violet-700">capital <CapitalCoin /></b> : {pctPlain(CAPITAL.dayRate)} de leur valeur par jour de ville.
         Les bâtiments à partir de {compactEur(CAPITAL.fromCost)} en demandent {pctPlain(CAPITAL.share)} de leur prix, en plus des liquidités (sauf énergie, agriculture et équipements publics) : sans bourse, la ville ne grandit plus.
       </p>
       {next && (

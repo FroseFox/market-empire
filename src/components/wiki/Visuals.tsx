@@ -2,7 +2,7 @@
 // Schémas et petites simulations du wiki. Tous les chiffres viennent de la configuration du jeu :
 // ce que le joueur manipule ici se comporte exactement comme dans sa partie.
 import { useEffect, useMemo, useState } from "react";
-import { ArrowDown, ArrowRight, Building2, Factory, Gem, Home, Landmark, LineChart, Lock, Search, Sprout, Store, Trees, TriangleAlert, Zap, Briefcase } from "lucide-react";
+import { ArrowDown, ArrowRight, Building2, Factory, Home, Landmark, LineChart, Lock, Search, Sprout, Store, Trees, TriangleAlert, Zap, Briefcase } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import {
   BANK, BUILDINGS, BUILDING_BY_ID, CAPITAL, CATEGORY_LABELS, CITY_EFFECT_CAPS, CITY_RANKS, FEATURES, LEVERAGE, PROJECTS, SHARES, TERRITORY, TOURISM, UPGRADES,
@@ -10,7 +10,8 @@ import {
 } from "@/lib/game/config";
 import { capitalCost, sharePrice, shareDividend } from "@/lib/game/engine";
 import { requestThumb } from "@/lib/city3d/thumb";
-import { compactEur, eur, num, capitalFmt, signedEur } from "@/lib/format";
+import { compactEur, eur, num, signedEur } from "@/lib/format";
+import { Capital, CapitalCoin } from "@/components/Capital";
 import { Demo, Slider, Tag } from "./ui";
 
 const fr = (v: number, d = 1) => v.toLocaleString("fr-FR", { maximumFractionDigits: d });
@@ -41,7 +42,7 @@ export function LoopDiagram() {
       <div className="flex flex-col md:flex-row md:items-stretch">
         <Node icon={LineChart} tint="bg-primary text-white" title="Bourse" text="Vous placez de l’argent sur de vrais actifs." delay={0} />
         <Flow label="produit" />
-        <Node icon={Gem} tint="bg-violet-600 text-white" title="Capital ◆" text={`${fr(CAPITAL.dayRate * 100)} % de vos placements, chaque jour.`} delay={300} />
+        <Node icon={CapitalCoin as unknown as LucideIcon} tint="bg-amber-100" title="Capital" text={`${fr(CAPITAL.dayRate * 100)} % de vos placements, chaque jour.`} delay={300} />
         <Flow label="construit" />
         <Node icon={Building2} tint="bg-emerald-600 text-white" title="Ville" text="Elle grandit et rapporte tous les jours." delay={600} />
         <Flow label="agrandit" />
@@ -117,8 +118,8 @@ export function CapitalDemo() {
         </label>
       </div>
       <div className="mt-4 grid gap-2 sm:grid-cols-3">
-        <div className="rounded-[12px] bg-violet-50 p-3 ring-1 ring-violet-200"><div className="text-[11px] text-muted">Capital produit</div><div className="text-[17px] font-bold tabular text-violet-700">+{capitalFmt(perDay)}</div><div className="text-[11px] text-muted">par jour de ville (1 heure réelle)</div></div>
-        <div className="rounded-[12px] bg-white p-3 ring-1 ring-line"><div className="text-[11px] text-muted">{b.name} demande</div><div className="text-[17px] font-bold tabular">{compactEur(b.cost)} <span className="text-violet-700">+ {capitalFmt(need)}</span></div><div className="text-[11px] text-muted">liquidités + capital</div></div>
+        <div className="rounded-[12px] bg-violet-50 p-3 ring-1 ring-violet-200"><div className="text-[11px] text-muted">Capital produit</div><div className="text-[17px] font-bold tabular text-violet-700">+<Capital value={perDay} /></div><div className="text-[11px] text-muted">par jour de ville (1 heure réelle)</div></div>
+        <div className="rounded-[12px] bg-white p-3 ring-1 ring-line"><div className="text-[11px] text-muted">{b.name} demande</div><div className="text-[17px] font-bold tabular">{compactEur(b.cost)} <span className="text-violet-700">+ <Capital value={need} /></span></div><div className="text-[11px] text-muted">liquidités + capital</div></div>
         <div className="rounded-[12px] bg-white p-3 ring-1 ring-line"><div className="text-[11px] text-muted">Capital réuni en</div><div className="text-[17px] font-bold tabular">{num(days)} jour{days > 1 ? "s" : ""} de ville</div><div className="text-[11px] text-muted">soit environ {days < 24 ? `${days} h` : `${fr(days / 24)} jours`} réels</div></div>
       </div>
     </Demo>
@@ -292,7 +293,7 @@ export function BuildingGallery({ population }: { population: number }) {
               <Thumb b={b} />
               <div className="flex flex-wrap items-start justify-between gap-x-2">
                 <div className="min-w-0"><div className="text-[13px] font-semibold leading-tight">{b.name}</div><div className="text-[11px] text-muted">{CATEGORY_LABELS[b.category]}</div></div>
-                <div className="shrink-0 text-right text-[12px] font-bold tabular">{compactEur(b.cost)}{cap > 0 && <div className="text-[11px] text-violet-700">+ {capitalFmt(cap)}</div>}</div>
+                <div className="shrink-0 text-right text-[12px] font-bold tabular">{compactEur(b.cost)}{cap > 0 && <div className="text-[11px] text-violet-700">+ <Capital value={cap} /></div>}</div>
               </div>
               <div className="flex flex-wrap gap-1">{chips(b).map((c) => <Tag key={c.text} cls={c.cls}>{c.text}</Tag>)}</div>
               <p className="hidden text-[12px] leading-snug text-muted sm:block">{b.description}</p>

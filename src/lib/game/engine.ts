@@ -17,6 +17,10 @@ import { ASSET_BY_SYMBOL, familyOf, regionOf, type Asset } from "../market/unive
 import { RESEARCH_BY_ID, RETIRED_RESEARCH, STARTING_RESEARCH, researchFx } from "./research";
 import { EVENTS, EVENT_BY_ID, effectText, eventStrength, pickEvent, scaledEffect, type CityEvent, type CityEventDef } from "./events";
 import type { DailyState } from "./daily";
+import type { CasinoDay } from "./casino";
+
+/** Bâtiments qui s'améliorent sans la recherche « Rénovation urbaine » (le casino grandit avec ses joueurs). */
+export const FREE_UPGRADES = new Set(["casino", "casino_m"]);
 
 /** Ligne du portefeuille. `qty` = titres détenus (mise × levier), `debt` = part prêtée par la Banque de la ville.
  *  Ce que la ligne vaut pour le joueur : `qty × cours − debt` (voir holdingValue). */
@@ -127,6 +131,8 @@ export interface GameState {
   grid?: number;
   /** Missions du jour et série de jours de connexion (voir daily.ts). */
   daily?: DailyState;
+  /** Casino de la ville : mises et gains du jour (voir casino.ts). */
+  casino?: CasinoDay;
   /** Mode test (comptes de test uniquement) : `saved` = la vraie partie, mise de côté pour pouvoir y revenir. */
   sandbox?: { saved: unknown };
   /** Ancien système (positions à levier séparées) : converti en lignes du portefeuille au chargement. */
@@ -1223,7 +1229,7 @@ export function upgradeOffer(state: Pick<GameState, "buildings">, buildingId: st
 export function upgrade(state: GameState, tile: { x: number; y: number }, at: number): ActionResult {
   const plot = plotAt(state.plots, tile.x, tile.y);
   if (!plot) return { ok: false, error: "Aucun bâtiment ici." };
-  if (!hasResearch(state, "city_upgrade")) return { ok: false, error: "Débloquez d'abord « Rénovation urbaine » dans Recherche." };
+  if (!FREE_UPGRADES.has(plot.id) && !hasResearch(state, "city_upgrade")) return { ok: false, error: "Débloquez d'abord « Rénovation urbaine » dans Recherche." };
   const offer = upgradeOffer(state, plot.id);
   if (!offer) return { ok: false, error: "Ce bâtiment n'a pas de version supérieure." };
   const from = BUILDING_BY_ID[plot.id], to = BUILDING_BY_ID[offer.to];

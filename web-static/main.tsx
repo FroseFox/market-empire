@@ -11,10 +11,11 @@ import News from "@/app/actualites/page";
 import Relations from "@/app/relations/page";
 import Research from "@/app/recherche/page";
 import Wiki from "@/app/wiki/page";
+import Casino from "@/app/casino/page";
 
 const PAGES: Record<string, () => React.ReactNode> = {
   "/": Economy, "/marches": Markets, "/portefeuille": Portfolio, "/ville": City, "/monde": World,
-  "/actualites": News, "/relations": Relations, "/recherche": Research, "/wiki": Wiki,
+  "/actualites": News, "/relations": Relations, "/recherche": Research, "/casino": Casino, "/wiki": Wiki,
 };
 
 function App() {

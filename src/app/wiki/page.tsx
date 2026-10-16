@@ -6,10 +6,11 @@ import { WORLD_CAP, WORLD_UNITS } from "@/lib/worldGoal";
 import Link from "next/link";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import {
-  BarChart3, Bell, BookOpen, Briefcase, Building2, Clock, CloudLightning, Coins, Ellipsis, Factory, FlaskConical, Footprints, Gem, Globe, Hammer, Handshake, Hash,
+  BarChart3, Bell, BookOpen, Briefcase, Building2, Clock, CloudLightning, Coins, Ellipsis, Factory, FlaskConical, Footprints, Globe, Hammer, Handshake, Hash,
   Landmark, LayoutDashboard, LayoutGrid, LayoutList, LifeBuoy, LineChart, Move, Newspaper, PieChart, Rocket, Search, Share2, ShieldCheck, Smile, Swords, Target, Trash2, Trophy, User, Users, X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { Capital, CapitalCoin } from "@/components/Capital";
 import { useGame } from "@/store/game";
 import {
   ACTIVE_RATIO, ALLIANCE, BANK, BLOCKADE, BRANCH_COST, BRANCH_EFFECTS, BRANCH_PERK_CAPS, SECTOR_PERKS, perkEffects, BRANCH_MIN_VALUE, BUILDINGS, CAPITAL, CATEGORY_LABELS, CITIES_PER_COUNTRY, CITY_EFFECT_CAPS, CITY_RANKS,
@@ -50,7 +51,7 @@ const NAV: { group: string; items: Item[] }[] = [
   { group: "Bourse", items: [
     { id: "bourse", label: "Investir", icon: LineChart, tint: "blue" },
     { id: "levier", label: "Levier et Banque", icon: Landmark, tint: "amber" },
-    { id: "capital", label: "Le capital ◆", icon: Gem, tint: "violet" },
+    { id: "capital", label: "Le capital", icon: CapitalCoin as unknown as LucideIcon, tint: "violet" },
     { id: "recherche", label: "Recherche", icon: FlaskConical, tint: "violet" },
   ] },
   { group: "Ville", items: [
@@ -172,7 +173,8 @@ const QUICK: { to: string; icon: LucideIcon; tint: Tint; title: string; text: st
 
 const LEXICON: [string, string][] = [
   ["Actif", "Ce qu’on achète en bourse : une action, un ETF, une cryptomonnaie, une matière première."],
-  ["Capital ◆", "Deuxième monnaie du jeu. Seuls vos placements en produisent ; les gros bâtiments en demandent."],
+  ["Capital", "Deuxième monnaie du jeu. Seuls vos placements en produisent ; les gros bâtiments en demandent."],
+  ["Casino", "Bâtiment de la ville (dès 3 000 habitants) qui ouvre la page Casino : roulette, machine à sous et crash, avec l’argent du jeu. L’améliorer relève la mise maximale et les limites du jour."],
   ["Contrat", "Achat régulier du surplus d’énergie ou de nourriture d’un autre joueur."],
   ["Dividende", "Part du flux net d’une ville versée chaque jour à ceux qui détiennent ses parts."],
   ["ETF", "Un panier d’actions acheté en une fois, qui suit un indice ou un secteur."],
@@ -404,7 +406,7 @@ export default function WikiPage() {
               { title: "Regardez la page Économie", text: "Votre argent, ce que la ville rapporte par jour, la valeur de votre portefeuille." },
               { title: "Réglez les soucis de la ville", text: <>Sous la barre « Satisfaction », chaque ligne rouge est un problème à corriger (voir <Jump to="soucis">Que faire si…</Jump>).</> },
               { title: "Faites grandir la ville", text: "Des logements pour accueillir des habitants, puis des emplois pour qu’ils travaillent, puis l’énergie et la nourriture qu’ils consomment." },
-              { title: "Gardez une part en bourse", text: <>Vos placements produisent le <Jump to="capital">capital ◆</Jump> que les gros bâtiments demandent. Gardez aussi un peu d’argent : la ville peut coûter certains jours.</> },
+              { title: "Gardez une part en bourse", text: <>Vos placements produisent le <Jump to="capital">capital <CapitalCoin /></Jump> que les gros bâtiments demandent. Gardez aussi un peu d’argent : la ville peut coûter certains jours.</> },
               { title: "Visez le prochain palier", text: <>Les Objectifs versent des subventions, et chaque <Jump to="progression">rang de ville</Jump> ouvre de nouvelles fonctions.</> },
             ]} />
             <Callout tone="tip" title="Pas de fin, pas de défaite.">Votre <b>patrimoine</b> (argent + portefeuille + valeur de la ville) vous classe face aux autres joueurs dans Monde.</Callout>
@@ -453,7 +455,7 @@ export default function WikiPage() {
               ["pollution +40 / pollution −25", "Étiquette d’un bâtiment", "Ce que le bâtiment émet (+) ou absorbe (−) par jour. Si le total de la ville est positif, la satisfaction baisse."],
               ["+100 ou −30 avec un éclair", "Étiquette d’un bâtiment", "L’énergie produite (+) ou consommée (−) par jour. Même chose avec l’épi pour la nourriture."],
               ["+240 €/j", "Étiquette d’un bâtiment", "Le revenu par jour quand tous ses emplois sont pourvus. Avec la moitié des postes occupés, il rapporte la moitié."],
-              ["12 ◆", "Prix d’un bâtiment, Portefeuille", "Du capital : la monnaie que vos placements produisent, demandée par les gros bâtiments."],
+              [<Capital key="c" value={12} />, "Prix d’un bâtiment, Portefeuille", "Du capital : la monnaie que vos placements produisent, demandée par les gros bâtiments."],
               ["×2", "Banque de la ville, achat en bourse", "Le levier : votre mise est multipliée par ce nombre."],
               ["Croissance +12", "Ville", "Le nombre d’habitants qui arriveront au prochain jour."],
               ["Jour 14 · prochain jour dans 23 min", "En haut de l’écran", "Le temps de la ville. À chaque nouveau jour, elle encaisse son revenu."],
@@ -476,7 +478,7 @@ export default function WikiPage() {
               { q: `${SERVICE_IDS.map((id) => SERVICES[id].label).join(", ")}`, why: "La ville est assez grande pour attendre cet équipement public.", fix: `Construire l’équipement correspondant (catégorie ${CATEGORY_LABELS.public}).` },
               { q: "La population ne grandit plus", why: "Il n’y a plus de logement libre, ou trop peu d’emplois et de satisfaction.", fix: "D’abord des logements, puis des emplois." },
               { q: "Le revenu de la ville est négatif", tone: "bad", why: "L’entretien et les importations dépassent les impôts et les revenus.", fix: "Pourvoir les emplois vides (il faut des habitants), produire votre énergie et votre nourriture." },
-              { q: "Je ne peux pas construire un gros bâtiment", why: `À partir de ${compactEur(CAPITAL.fromCost)}, un bâtiment demande du capital ◆ en plus de l’argent (sauf énergie, agriculture et équipements publics).`, fix: <>Garder des placements en bourse : ce sont eux qui produisent le capital (voir <Jump to="capital">Le capital ◆</Jump>).</> },
+              { q: "Je ne peux pas construire un gros bâtiment", why: `À partir de ${compactEur(CAPITAL.fromCost)}, un bâtiment demande du capital en plus de l’argent (sauf énergie, agriculture et équipements publics).`, fix: <>Garder des placements en bourse : ce sont eux qui produisent le capital (voir <Jump to="capital">Le capital <CapitalCoin /></Jump>).</> },
               { q: "Plus de place sur la carte", why: "Tous les carreaux constructibles de votre territoire sont occupés.", fix: <>Acheter l’agrandissement suivant dans la Ville, bouton Objectifs (voir <Jump to="progression">Rangs et objectifs</Jump>). S’il demande un rang plus haut, améliorer ou remplacer des bâtiments en attendant.</> },
               { q: "Un site d’entreprise est en sommeil", why: "Vous avez vendu une partie des actions de cette entreprise : vous êtes passé sous la participation de départ.", fix: "Racheter des actions jusqu’à retrouver la participation de départ." },
             ]} />
@@ -557,7 +559,7 @@ export default function WikiPage() {
           </Sec>
 
           <Sec id="capital" brief="La monnaie que seuls vos placements produisent, et que les gros bâtiments demandent.">
-            <p>Le capital ◆ est le lien entre la bourse et la ville. Chaque jour de ville, vos placements en produisent <b>{pct(CAPITAL.dayRate)} de ce qu’ils valent</b>. Tout bâtiment à partir de <b>{compactEur(CAPITAL.fromCost)}</b> en demande <b>{pct(CAPITAL.share)} de son prix</b>, en plus des liquidités. Seules exceptions : les centrales, les exploitations agricoles et les équipements publics se paient en argent seul, pour qu’une pénurie se règle toujours tout de suite.</p>
+            <p>Le capital <CapitalCoin /> est le lien entre la bourse et la ville. Chaque jour de ville, vos placements en produisent <b>{pct(CAPITAL.dayRate)} de ce qu’ils valent</b>. Tout bâtiment à partir de <b>{compactEur(CAPITAL.fromCost)}</b> en demande <b>{pct(CAPITAL.share)} de son prix</b>, en plus des liquidités. Seules exceptions : les centrales, les exploitations agricoles et les équipements publics se paient en argent seul, pour qu’une pénurie se règle toujours tout de suite.</p>
             <CapitalDemo />
             <Points items={[
               "Sans bourse, la ville ne grandit donc plus au-delà des petits bâtiments.",

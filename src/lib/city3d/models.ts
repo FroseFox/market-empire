@@ -601,7 +601,7 @@ const DECOR: Record<Season, (k: Kit) => void> = {
       k.motion({ kind: "bob", at: [dx, B + 0.05, 0.3 + dz], amount: 0.02, period: p }, (m) => { m.ball(0.008, P.waterL, 0, 0, 0, 2.4, 1); });
     }
     // Palmiers, transats, parasols
-    for (const [x, z] of [[-0.42, 0.13], [0.42, 0.13], [-0.2, 0.43], [0.2, 0.43]] as const) palm(k, x, z);
+    for (const [x, z] of [[-0.42, 0.13], [0.42, 0.13], [-0.2, 0.43], [0.2, 0.43]] as const) palm(k, x, z, 1.9);
     for (const [x, z, c] of [[-0.34, 0.27, P.fire], [-0.25, 0.35, P.primary], [0.3, 0.27, P.gold], [0.36, 0.36, P.teal]] as const) {
       k.cyl(0.003, 0.07, P.snow, x, B, z, 0.003, 6); k.cone(0.042, 0.02, c, x, B + 0.065, z, 10);
       k.box(0.03, 0.004, 0.014, c, x + 0.03, B + 0.006, z + 0.02, 0.002, 0.3); k.box(0.012, 0.012, 0.014, c, x + 0.044, B + 0.01, z + 0.02, 0.002, 0.3);
@@ -965,6 +965,48 @@ const BUILD: Record<string, (k: Kit) => void> = {
     });
     k.box(0.1, 0.07, 0.08, P.orange, 0.34, B, -0.3, 0.012); k.box(0.12, 0.02, 0.1, P.snow, 0.34, B + 0.07, -0.3, 0.006);
     k.tree(0.4, -0.06, 0.6); k.bush(0.04, 0.4);
+  },
+  // ── Casinos, style moderne : pierre noire, verre, auvent doré, grande enseigne écran, voiturier ──
+  casino(k) {
+    k.lot(P.paveD);
+    casinoBlock(k, 0, -0.1, 0.84, 0.3, 0.5);
+    casinoScreen(k, 0, B + 0.34, 0.15, 0.5, 0.16);
+    casinoCanopy(k, 0, 0.15, 0.56);
+    casinoValet(k, 0.36);
+  },
+  casino_m(k) {
+    k.lot(P.paveD);
+    casinoBlock(k, 0, 0, 0.86, 0.26, 0.56);
+    // Tour de verre posée sur le socle, ailettes de pierre noire et couronne dorée
+    const tx = -0.12, tz = -0.1, tw = 0.42, td = 0.32, h = 1.05;
+    k.box(tw, h, td, P.glassD, tx, B + 0.29, tz, 0.03); k.bands(tw, td, B + 0.33, h - 0.08, 9, P.glassL, tx, tz);
+    for (let i = 0; i < 4; i++) k.box(0.025, h, 0.03, P.black, tx - tw / 2 + 0.03 + i * ((tw - 0.06) / 3), B + 0.29, tz + td / 2 + 0.005, 0.006);
+    k.box(tw + 0.03, 0.05, td + 0.03, P.gold, tx, B + 0.29 + h, tz, 0.01); k.box(tw - 0.04, 0.05, td - 0.04, P.black, tx, B + 0.34 + h, tz, 0.01);
+    k.beacon(tx + 0.12, B + 0.42 + h, tz, P.red, 0.014, 2.2);
+    casinoScreen(k, 0.24, B + 0.3, 0.2, 0.3, 0.14);
+    casinoCanopy(k, 0.02, 0.28, 0.5);
+    casinoValet(k, 0.42);
+  },
+  casino_l(k) {
+    k.lot(P.paveD);
+    casinoBlock(k, 0, -0.06, 0.9, 0.24, 0.6);
+    // Deux tours de verre de hauteurs différentes, reliées par une passerelle
+    for (const [x, h] of [[-0.25, 1.15], [0.24, 0.9]] as const) {
+      k.box(0.3, h, 0.28, P.glassD, x, B + 0.26, -0.18, 0.03); k.bands(0.3, 0.28, B + 0.3, h - 0.08, 9, P.glassL, x, -0.18);
+      k.box(0.03, h, 0.035, P.black, x - 0.1, B + 0.26, -0.035, 0.006); k.box(0.03, h, 0.035, P.black, x + 0.1, B + 0.26, -0.035, 0.006);
+      k.box(0.33, 0.045, 0.31, P.gold, x, B + 0.26 + h, -0.18, 0.01); k.box(0.26, 0.04, 0.24, P.black, x, B + 0.3 + h, -0.18, 0.01);
+    }
+    k.beacon(-0.25, B + 1.47, -0.18, P.red, 0.014, 2.2);
+    k.box(0.22, 0.07, 0.12, P.glassL, 0, B + 0.86, -0.18, 0.015); k.box(0.22, 0.012, 0.13, P.gold, 0, B + 0.85, -0.18, 0.004);
+    casinoScreen(k, 0, B + 0.26, 0.26, 0.62, 0.17);
+    casinoCanopy(k, 0, 0.25, 0.62);
+    // Sculpture en roue de roulette qui tourne sur le parvis
+    k.cyl(0.1, 0.04, P.black, -0.32, B, 0.36, 0.1, 20);
+    k.motion({ kind: "spin", axis: "y", at: [-0.32, B + 0.05, 0.36], amount: 0.12 }, (m) => {
+      for (let i = 0; i < 12; i++) { const g = new THREE.CylinderGeometry(0.09, 0.09, 0.014, 2, 1, false, (i * Math.PI) / 6, Math.PI / 6); m.add(g, i === 0 ? P.green : i % 2 ? P.red : P.black, 0, 0, 0); }
+      m.cyl(0.025, 0.025, P.gold, 0, 0.007, 0, 0.01, 10);
+    });
+    casinoValet(k, 0.44);
   },
   bizdistrict(k) {
     k.lot(P.pave);
@@ -1463,6 +1505,41 @@ function fallback(k: Kit) { k.lot(P.pave); k.tower(0.6, 0.4, 0.6, P.white, P.ste
 
 const cache = new Map<string, Model>();
 /** Modèle d'un bâtiment, construit à la première demande puis gardé. */
+/** Socle de casino : pierre noire, façade vitrée sur toute la hauteur, ailettes dorées. */
+function casinoBlock(k: Kit, x: number, z: number, w: number, h: number, d: number) {
+  k.box(w, h, d, P.black, x, B, z, 0.025);
+  k.box(w * 0.86, h - 0.07, 0.02, P.glassD, x, B + 0.03, z + d / 2, 0.004);
+  for (let i = 0; i <= 6; i++) k.box(0.012, h - 0.07, 0.025, P.gold, x - w * 0.43 + (i * w * 0.86) / 6, B + 0.03, z + d / 2 + 0.008, 0.003);
+  k.wins(w, d, B + 0.05, h - 0.1, 1, 0, x, z, 4);
+  k.box(w + 0.02, 0.025, d + 0.02, P.gold, x, B + h, z, 0.006);
+  k.box(w - 0.06, 0.02, d - 0.06, P.steel, x, B + h + 0.02, z, 0.006);
+  k.roofUnit(x + w / 2 - 0.12, B + h + 0.03, z - d / 2 + 0.1, 0.9);
+}
+/** Grande enseigne écran sur le toit : cadre noir, écran allumé, liseré doré. */
+function casinoScreen(k: Kit, x: number, y: number, z: number, w: number, h: number) {
+  k.box(0.015, 0.06, 0.015, P.steel, x - w / 3, y, z - 0.02, 0); k.box(0.015, 0.06, 0.015, P.steel, x + w / 3, y, z - 0.02, 0);
+  k.box(w + 0.03, h + 0.03, 0.035, P.black, x, y + 0.05, z, 0.008);
+  k.box(w + 0.034, 0.008, 0.038, P.gold, x, y + 0.05 + h + 0.025, z, 0.002);
+  k.add(new THREE.PlaneGeometry(w, h), P.violet, x, y + 0.065 + h / 2, z + 0.019, 0, true);
+  k.add(new THREE.PlaneGeometry(w * 0.6, h * 0.3), P.gold, x, y + 0.065 + h / 2, z + 0.021, 0, true);
+}
+/** Auvent doré en porte-à-faux au-dessus de l'entrée, éclairé par-dessous. */
+function casinoCanopy(k: Kit, x: number, zFront: number, w: number) {
+  k.box(w, 0.025, 0.16, P.gold, x, B + 0.17, zFront + 0.06, 0.006);
+  k.box(w - 0.02, 0.006, 0.14, P.black, x, B + 0.164, zFront + 0.06, 0.002);
+  for (let i = 0; i < 6; i++) k.light(x - w / 2 + 0.05 + (i * (w - 0.1)) / 5, B + 0.158, zFront + 0.08, 0xfff1c9, 0.006);
+  for (const sx of [-1, 1]) k.cyl(0.009, 0.17, P.gold, x + sx * (w / 2 - 0.03), B, zFront + 0.12, 0.009, 8);
+  k.win(w * 0.4, 0.12, x, B + 0.07, zFront + 0.006, 0, true);
+  k.box(w * 0.7, 0.01, 0.14, P.concrete, x, B, zFront + 0.07, 0.003);
+}
+/** Voie du voiturier : asphalte, bornes lumineuses, voitures sombres, deux bacs d'arbres. */
+function casinoValet(k: Kit, z: number) {
+  k.box(0.94, 0.006, 0.12, P.asphalt, 0, B, z, 0);
+  k.car(-0.16, z, P.black, Math.PI / 2); k.car(0.14, z, P.snow, Math.PI / 2);
+  for (const x of [-0.42, 0.42]) { k.box(0.08, 0.04, 0.08, P.black, x, B, z - 0.12, 0.01); k.tree(x, z - 0.12, 0.55, false, B + 0.04); }
+  for (const x of [-0.3, 0, 0.3]) { k.cyl(0.008, 0.035, P.black, x, B, z - 0.07, 0.008, 6); k.light(x, B + 0.04, z - 0.07, 0xfff1c9, 0.005); }
+}
+
 export function buildingModel(id: string): Model {
   let m = cache.get(id);
   if (!m) {

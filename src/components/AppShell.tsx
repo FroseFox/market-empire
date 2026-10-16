@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import {
+  Dices,
   BarChart3, BookOpen, Building2, Cloud, CloudOff, FlaskConical, Globe2, LineChart, Network, Newspaper, Wallet, Plus, Clock, LayoutGrid, X,
 } from "lucide-react";
 import { useGame } from "@/store/game";
@@ -30,11 +31,13 @@ import { startChat } from "@/lib/chat";
 import { useSound } from "@/lib/sound";
 import AuthGate, { Splash } from "@/components/AuthGate";
 import { DAY_MS } from "@/lib/game/engine";
+import { casinoTier } from "@/lib/game/casino";
 import { nextHourly } from "@/lib/refresh";
 import { now as gameNow } from "@/lib/clock";
-import { capitalFmt, compactEur, eur } from "@/lib/format";
+import { compactEur, eur } from "@/lib/format";
+import { Capital, CapitalCoin } from "@/components/Capital";
 
-const NAV: { href: string; label: string; icon: typeof BarChart3; soon?: boolean }[] = [
+const NAV: { href: string; label: string; icon: typeof BarChart3; soon?: boolean; casino?: boolean }[] = [
   { href: "/", label: "Économie", icon: BarChart3 },
   { href: "/marches", label: "Marchés", icon: LineChart },
   { href: "/portefeuille", label: "Portefeuille", icon: Wallet },
@@ -43,6 +46,7 @@ const NAV: { href: string; label: string; icon: typeof BarChart3; soon?: boolean
   { href: "/actualites", label: "Actualités", icon: Newspaper },
   { href: "/relations", label: "Relations", icon: Network },
   { href: "/recherche", label: "Recherche", icon: FlaskConical },
+  { href: "/casino", label: "Casino", icon: Dices, casino: true },
   { href: "/wiki", label: "Wiki", icon: BookOpen },
 ];
 
@@ -197,6 +201,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const quotesAt = useGame((s) => s.quotesAt);
   const toast = useGame((s) => s.toast);
 
+  const nav = useNav();
   const isActive = (href: string) => (href === "/" ? path === "/" : path.startsWith(href));
 
   // Informations légales : lisibles sans compte, hors du cadre du jeu
@@ -211,7 +216,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <aside className="hidden lg:flex w-[232px] shrink-0 flex-col bg-navy text-slate-300 px-4 py-5 sticky top-0 h-screen">
         <div className="px-2 mb-8"><Logo light /></div>
         <nav className="flex flex-col gap-1">
-          {NAV.map(({ href, label, icon: Icon, soon }) => (
+          {nav.map(({ href, label, icon: Icon, soon }) => (
             <Link key={href} href={href}
               className={`flex items-center gap-3 rounded-[10px] px-3 py-2.5 text-[14px] font-medium transition-colors ${isActive(href) ? "bg-primary text-white" : "hover:bg-white/5 hover:text-white"}`}>
               <Icon size={18} strokeWidth={1.8} />
@@ -257,7 +262,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 {/* Téléphone : montant abrégé à partir du million, pour que la barre ne déborde jamais */}
                 <div className="whitespace-nowrap text-[14px] font-bold text-emerald-700 tabular">{!hydrated ? "—" : sandbox ? "∞ €" : <><span className="sm:hidden">{cash >= 1_000_000 ? compactEur(cash) : eur(cash)}</span><span className="hidden sm:inline">{eur(cash)}</span></>}</div>
                 {/* Deuxième monnaie : le capital, produit par les placements en bourse */}
-                <div className="whitespace-nowrap text-[10px] text-emerald-700/70">Liquidités{hydrated && <> · <b className="font-semibold text-violet-700" title="Capital : produit par vos placements, demandé par les gros bâtiments">{sandbox ? "∞ ◆" : capitalFmt(capital)}</b></>}</div>
+                <div className="whitespace-nowrap text-[10px] text-emerald-700/70">Liquidités{hydrated && <> · <b className="font-semibold text-violet-700" title="Capital : produit par vos placements, demandé par les gros bâtiments">{sandbox ? <>∞{"\u00a0"}<CapitalCoin /></> : <Capital value={capital} />}</b></>}</div>
               </div>
               <span className="hidden sm:grid h-6 w-6 rounded-full bg-success text-white place-items-center"><Plus size={14} /></span>
             </Link>
@@ -287,12 +292,18 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 }
 
 const MOBILE_MAIN = ["/", "/marches", "/portefeuille", "/ville"];
+/** Pages du menu : le Casino n'apparaît qu'une fois construit dans la ville. */
+function useNav() {
+  const casino = useGame((s) => !!casinoTier(s.game));
+  return NAV.filter((n) => !n.casino || casino);
+}
 
 function MobileNav({ isActive, mode, quotesAt }: { isActive: (href: string) => boolean; mode: string; quotesAt: number }) {
   const [open, setOpen] = usePopover("more");
   const path = usePathname();
-  const main = NAV.filter((n) => MOBILE_MAIN.includes(n.href));
-  const more = NAV.filter((n) => !MOBILE_MAIN.includes(n.href));
+  const nav = useNav();
+  const main = nav.filter((n) => MOBILE_MAIN.includes(n.href));
+  const more = nav.filter((n) => !MOBILE_MAIN.includes(n.href));
   const moreActive = more.some((n) => isActive(n.href));
   // Fermer le panneau quand on change de page
   const [lastPath, setLastPath] = useState(path);
