@@ -20,7 +20,8 @@ import { BRANCH_EFFECTS, BRANCH_MIN_VALUE, SECTOR_PERKS, FEATURES, FORECAST_DAYS
 import { specialtyText } from "@/lib/world/countries";
 import { ASSET_BY_SYMBOL, familyOf } from "@/lib/market/universe";
 import { footprint, plotAt, type Plot } from "@/lib/game/layout";
-import { capitalFmt, compactEur, eur, num, pctPlain, signedEur, tone } from "@/lib/format";
+import { Capital } from "@/components/Capital";
+import { compactEur, eur, num, pctPlain, signedEur, tone } from "@/lib/format";
 
 const CAT_ICON: Record<Category, LucideIcon> = {
   housing: Home, commerce: Store, services: Briefcase, industry: Factory, agriculture: Wheat, energy: Zap, public: Trees, civic: Landmark,
@@ -165,7 +166,7 @@ export default function CityPage() {
 
   // Bandeau d'aide : dit toujours quoi faire maintenant
   let hintText: React.ReactNode = null;
-  if (mode?.kind === "place" && modeBuilding) hintText = <><b>{modeBuilding.name}</b> · {compactEur(modeBuilding.cost)}{capitalCost(modeBuilding) > 0 && <> + {capitalFmt(capitalCost(modeBuilding))}</>} — choisissez un carreau vert</>;
+  if (mode?.kind === "place" && modeBuilding) hintText = <><b>{modeBuilding.name}</b> · {compactEur(modeBuilding.cost)}{capitalCost(modeBuilding) > 0 && <> + <Capital value={capitalCost(modeBuilding)} /></>} — choisissez un carreau vert</>;
   else if (mode?.kind === "move" && modeBuilding) hintText = <>Déplacement de <b>{modeBuilding.name}</b> — choisissez un carreau vert</>;
   else if (tool === "move") hintText = <>Déplacer : {small ? "touchez" : "cliquez sur"} un bâtiment</>;
   else if (tool === "demolish" && !selectedPlot) hintText = <>Démolir : {small ? "touchez" : "cliquez sur"} un bâtiment</>;
@@ -788,7 +789,7 @@ function Palette({ active, onPick, onClose, initialCat = "housing" }: { active: 
                   <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-[9px] ${locked ? "bg-slate-200 text-slate-500" : CAT_TINT[b.category]}`}>{locked ? <Lock size={15} strokeWidth={2.2} /> : <Icon size={16} />}</span>
                   <span className={`min-w-0 flex-1 ${locked ? "text-slate-500" : ""}`}>
                     <span className="block truncate text-[13px] font-semibold">{b.name}{owned > 0 && <span className="ml-1.5 text-[11px] text-primary">×{owned}</span>}</span>
-                    <span className="block text-[12px] font-bold tabular">{compactEur(b.cost)}{cc > 0 && <span className={locked ? "" : noCapital ? "text-danger" : "text-violet-700"} title="Capital : produit par vos placements en bourse"> + {capitalFmt(cc)}</span>}</span>
+                    <span className="block text-[12px] font-bold tabular">{compactEur(b.cost)}{cc > 0 && <span className={locked ? "" : noCapital ? "text-danger" : "text-violet-700"} title="Capital : produit par vos placements en bourse"> + <Capital value={cc} /></span>}</span>
                   </span>
                 </span>
                 <Effects b={b} />
@@ -803,7 +804,7 @@ function Palette({ active, onPick, onClose, initialCat = "housing" }: { active: 
                 <span className="mt-auto block text-[11px] text-muted">
                   {locked ? <LockTag>Dès {num(b.unlockPop!)} habitants</LockTag>
                     : b.cost > game.cash ? "Liquidités insuffisantes"
-                    : noCapital ? `Capital insuffisant (${capitalFmt(game.capital ?? 0)}) : placez en bourse`
+                    : noCapital ? <>Capital insuffisant (<Capital value={game.capital ?? 0} />) : placez en bourse</>
                     : isActive ? "Choisissez un carreau sur la carte"
                     : b.category !== "housing" && net > 0 ? `Rentabilisé en ~${Math.round(b.cost / net)} jours`
                     : "Cliquez pour placer"}
@@ -859,8 +860,8 @@ function SelectedPanel({ plot, city, confirmDemolish, alert, onFix, onUpgrade, o
               {!canUpgrade ? "Recherche « Rénovation urbaine » requise"
                 : popLocked ? `Débloqué à ${num(next.unlockPop!)} habitants`
                 : offer.cost > game.cash ? `${compactEur(offer.cost)} · liquidités insuffisantes`
-                : offer.capital > (game.capital ?? 0) ? `${compactEur(offer.cost)} + ${capitalFmt(offer.capital)} · capital insuffisant`
-                : `${offer.cost < next.cost ? `${compactEur(offer.cost)} au lieu de ${compactEur(next.cost)}` : compactEur(offer.cost)}${offer.capital > 0 ? ` + ${capitalFmt(offer.capital)}` : ""}`}
+                : offer.capital > (game.capital ?? 0) ? <>{compactEur(offer.cost)} + <Capital value={offer.capital} /> · capital insuffisant</>
+                : <>{offer.cost < next.cost ? `${compactEur(offer.cost)} au lieu de ${compactEur(next.cost)}` : compactEur(offer.cost)}{offer.capital > 0 && <> + <Capital value={offer.capital} /></>}</>}
             </div>
           </div>
           <Button onClick={onUpgrade} disabled={!canUpgrade || popLocked || offer.cost > game.cash || offer.capital > (game.capital ?? 0)} className="shrink-0 !px-3">{canUpgrade ? "Améliorer" : <Lock size={14} />}</Button>

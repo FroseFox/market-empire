@@ -23,7 +23,9 @@ export function compactEur(v: number) {
   return eur(v);
 }
 
-/** Capital (deuxième monnaie, produite par les placements) : même abréviation que les euros, avec son propre signe. */
-export const capitalFmt = (v: number) => compactEur(Math.floor(v)).replace("€", "◆");
+/** Capital (deuxième monnaie, produite par les placements) : même abréviation que les euros, sans le signe (la pièce est dessinée à côté, voir <Capital>). */
+export const capitalNum = (v: number) => compactEur(Math.floor(v)).replace(/\s*€/, "");
+/** Version texte seul (attributs title, notifications) : « 12 k capital ». */
+export const capitalFmt = (v: number) => `${capitalNum(v)} capital`;
 
 export const tone = (v: number) => (v > 0 ? "text-success" : v < 0 ? "text-danger" : "text-muted");
