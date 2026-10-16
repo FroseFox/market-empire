@@ -42,7 +42,7 @@ export function LoopDiagram() {
       <div className="flex flex-col md:flex-row md:items-stretch">
         <Node icon={LineChart} tint="bg-primary text-white" title="Bourse" text="Vous placez de l’argent sur de vrais actifs." delay={0} />
         <Flow label="produit" />
-        <Node icon={CapitalCoin as unknown as LucideIcon} tint="bg-violet-100" title="Capital" text={`${fr(CAPITAL.dayRate * 100)} % de vos placements, chaque jour.`} delay={300} />
+        <Node icon={CapitalCoin as unknown as LucideIcon} tint="bg-amber-100" title="Capital" text={`${fr(CAPITAL.dayRate * 100)} % de vos placements, chaque jour.`} delay={300} />
         <Flow label="construit" />
         <Node icon={Building2} tint="bg-emerald-600 text-white" title="Ville" text="Elle grandit et rapporte tous les jours." delay={600} />
         <Flow label="agrandit" />
