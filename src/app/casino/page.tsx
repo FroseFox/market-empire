@@ -6,8 +6,7 @@ import { useDerived, useGame } from "@/store/game";
 import { now } from "@/lib/clock";
 import { play } from "@/lib/sound";
 import { Button, Card, PageHeader, Progress, Segmented } from "@/components/ui";
-import { CapitalCoin } from "@/components/Capital";
-import { compactEur, eur } from "@/lib/format";
+import { Capital, CapitalCoin } from "@/components/Capital";
 import { BUILDING_BY_ID } from "@/lib/game/config";
 import {
   CASINO_TIERS, CRASH, MIN_BET, RED, SLOT_TRIPLE, SLOT_WEIGHTS, casinoLimits, roulettePays,
@@ -19,17 +18,17 @@ type GameTab = (typeof GAMES)[number];
 interface Played { id: number; game: GameTab; bet: number; payout: number; detail: string }
 
 export default function CasinoPage() {
-  const { game, portfolio } = useDerived();
+  const { game } = useDerived();
   const casino = useGame((s) => s.casino);
   const [tab, setTab] = useState<GameTab>("Roulette");
-  const [bet, setBet] = useState(500);
+  const [bet, setBet] = useState(50);
   const [busy, setBusy] = useState(false);
   const [log, setLog] = useState<Played[]>([]);
-  const lim = casinoLimits(game, now(), game.cash + portfolio);
+  const lim = casinoLimits(game, now());
 
   if (!lim) return <Locked />;
 
-  const maxNow = Math.max(0, Math.min(lim.maxBet, lim.stakeLeft, Math.floor(game.cash)));
+  const maxNow = Math.max(0, Math.min(lim.maxBet, lim.stakeLeft, Math.floor(game.capital ?? 0)));
   const closed = lim.winLeft <= 0 || lim.stakeLeft < MIN_BET;
   const stake = Math.max(MIN_BET, Math.min(bet, lim.maxBet));
   /** Joue la partie tout de suite (le résultat est fixé), puis laisse l'animation le révéler. */
@@ -43,7 +42,7 @@ export default function CasinoPage() {
 
   return (
     <div>
-      <PageHeader icon={Dices} title="Casino" subtitle={`${BUILDING_BY_ID[lim.tier.id].name} · argent du jeu uniquement, plafonds remis à zéro à minuit`} />
+      <PageHeader icon={Dices} title="Casino" subtitle={`${BUILDING_BY_ID[lim.tier.id].name} · on mise du capital, plafonds remis à zéro à minuit`} />
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
         <div className="card min-w-0 p-3.5 sm:p-5">
           <div className="mb-4 flex flex-wrap items-center gap-3">
@@ -58,19 +57,20 @@ export default function CasinoPage() {
         <div className="flex min-w-0 flex-col gap-4">
           <Card title="Aujourd’hui">
             <div className="space-y-3 text-[12px]">
-              <div className="flex justify-between"><span className="text-muted">Mise maximale</span><b className="tabular">{eur(lim.maxBet)}</b></div>
+              <div className="flex items-center justify-between rounded-[10px] bg-amber-50 px-3 py-2"><span className="text-amber-900">Votre capital</span><b className="text-[15px] tabular text-amber-900"><Capital value={game.capital ?? 0} /></b></div>
+              <div className="flex justify-between"><span className="text-muted">Mise maximale</span><b className="tabular"><Capital value={lim.maxBet} /></b></div>
               <div>
-                <div className="mb-1 flex justify-between"><span className="text-muted">Misé</span><span className="tabular"><b>{compactEur(lim.staked)}</b> / {compactEur(lim.tier.dayStake)}</span></div>
+                <div className="mb-1 flex justify-between"><span className="text-muted">Misé</span><span className="tabular"><b><Capital value={lim.staked} /></b> / <Capital value={lim.tier.dayStake} /></span></div>
                 <Progress value={lim.staked / lim.tier.dayStake} tone="bg-violet-500" />
               </div>
               <div>
-                <div className="mb-1 flex justify-between"><span className="text-muted">Gain net</span><span className="tabular"><b className={lim.net > 0 ? "text-success" : lim.net < 0 ? "text-danger" : ""}>{lim.net > 0 ? "+" : ""}{compactEur(lim.net)}</b> / {compactEur(lim.winCap)} max</span></div>
+                <div className="mb-1 flex justify-between"><span className="text-muted">Gain net</span><span className="tabular"><b className={lim.net > 0 ? "text-success" : lim.net < 0 ? "text-danger" : ""}>{lim.net > 0 ? "+" : lim.net < 0 ? "−" : ""}<Capital value={Math.abs(lim.net)} /></b> / <Capital value={lim.winCap} /> max</span></div>
                 <Progress value={lim.net / lim.winCap} tone="bg-success" />
               </div>
               {closed && <p className="rounded-[10px] bg-amber-50 px-3 py-2 text-amber-800">{lim.winLeft <= 0 ? "Plafond de gains atteint : revenez demain." : "Limite de mises atteinte : revenez demain."}</p>}
               {next && (
                 <p className="rounded-[10px] bg-violet-50 px-3 py-2 text-violet-900">
-                  Améliorez en <b>{BUILDING_BY_ID[next.id].name}</b> (sur la carte de la Ville) : mise max {compactEur(next.maxBet)}, {compactEur(next.dayStake)} misés par jour.
+                  Améliorez en <b>{BUILDING_BY_ID[next.id].name}</b> (sur la carte de la Ville) : mise max <Capital value={next.maxBet} />, <Capital value={next.dayStake} /> misés par jour.
                 </p>
               )}
             </div>
@@ -81,13 +81,13 @@ export default function CasinoPage() {
                 {log.map((p) => (
                   <li key={p.id} className="flex items-center justify-between gap-2 py-1.5">
                     <span className="min-w-0 truncate"><b>{p.game}</b> <span className="text-muted">· {p.detail}</span></span>
-                    <span className={`shrink-0 font-semibold tabular ${p.payout > p.bet ? "text-success" : p.payout < p.bet ? "text-danger" : "text-muted"}`}>{p.payout - p.bet > 0 ? "+" : ""}{compactEur(p.payout - p.bet)}</span>
+                    <span className={`shrink-0 font-semibold tabular ${p.payout > p.bet ? "text-success" : p.payout < p.bet ? "text-danger" : "text-muted"}`}>{p.payout - p.bet > 0 ? "+" : p.payout < p.bet ? "−" : ""}<Capital value={Math.abs(p.payout - p.bet)} /></span>
                   </li>
                 ))}
               </ul>
             ) : <p className="text-[12px] text-muted">Aucune partie pour l’instant.</p>}
           </Card>
-          <p className="px-1 text-[11px] leading-relaxed text-muted">Chaque jeu rend en moyenne un peu moins que ce qu’on y mise : le casino est un divertissement, pas un placement. Il ne se joue qu’avec l’argent de la partie, qui ne s’achète pas.</p>
+          <p className="px-1 text-[11px] leading-relaxed text-muted">Le casino se joue avec le capital que produisent vos placements, jamais avec vos liquidités. Chaque jeu rend en moyenne un peu moins que ce qu’on y mise : c’est un divertissement, pas un placement.</p>
         </div>
       </div>
     </div>
@@ -113,11 +113,11 @@ function BetBar({ bet, setBet, max, busy, closed }: { bet: number; setBet: (v: n
   const clamp = (v: number) => Math.max(MIN_BET, Math.min(Math.max(MIN_BET, max), Math.floor(v) || MIN_BET));
   return (
     <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-line pt-4">
-      <label className="flex items-center gap-2 text-[12px] text-muted">Mise
+      <label className="flex items-center gap-2 text-[12px] text-muted">Mise en capital
         <input type="number" inputMode="numeric" min={MIN_BET} max={max} value={bet} disabled={busy || closed}
           onChange={(e) => setBet(Math.max(0, Math.floor(Number(e.target.value) || 0)))} onBlur={() => setBet(clamp(bet))}
           className="w-28 rounded-[10px] border border-line bg-card px-3 py-1.5 text-[14px] font-semibold tabular text-ink" />
-        €
+        <CapitalCoin size={18} />
       </label>
       {[["½", bet / 2], ["×2", bet * 2], ["Max", max]].map(([l, v]) => (
         <button key={l as string} type="button" disabled={busy || closed} onClick={() => setBet(clamp(v as number))}
