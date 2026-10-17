@@ -1,10 +1,9 @@
-// Casino de la ville (pur, testable) : roulette, machine à sous et crash, joués avec les liquidités du jeu.
-// Aucun argent réel : on ne mise que l'argent virtuel de la partie, qui ne s'achète pas.
+// Casino de la ville (pur, testable) : roulette, machine à sous et crash, joués avec le CAPITAL (la monnaie que
+// produisent les placements), jamais avec les liquidités. Aucun argent réel : le capital ne s'achète pas.
 // - Il se débloque en construisant un bâtiment Casino ; l'améliorer relève la mise maximale et les plafonds du jour.
-// - Plafonds par jour réel (minuit à Paris) : total misé, et gain net. Le gain net est aussi limité selon la valeur de la
-//   partie, pour qu'une bonne série ne fasse jamais refuser la sauvegarde par l'anti-triche du serveur
-//   (qui refuse une valeur qui fait plus que doubler en un jour, +150 000 € de marge).
+// - Plafonds par jour réel (minuit à Paris) : total misé, et gain net.
 // - Chaque jeu rend en moyenne un peu moins que la mise (avantage de la maison), comme un vrai casino.
+// Le capital vaut environ un dixième de l'euro (un bâtiment en demande 10 % de son prix) : les limites suivent.
 import type { GameState } from "./engine";
 import { parisDate } from "./daily";
 
@@ -13,24 +12,20 @@ export type CasinoGame = "roulette" | "slots" | "crash";
 export interface CasinoTier { id: string; level: number; maxBet: number; dayStake: number; dayWin: number }
 /** Du plus petit au plus grand : le meilleur casino de la ville fixe les limites. */
 export const CASINO_TIERS: CasinoTier[] = [
-  { id: "casino", level: 1, maxBet: 2_000, dayStake: 25_000, dayWin: 60_000 },
-  { id: "casino_m", level: 2, maxBet: 10_000, dayStake: 120_000, dayWin: 300_000 },
-  { id: "casino_l", level: 3, maxBet: 40_000, dayStake: 500_000, dayWin: 1_000_000 },
+  { id: "casino", level: 1, maxBet: 200, dayStake: 2_500, dayWin: 6_000 },
+  { id: "casino_m", level: 2, maxBet: 1_000, dayStake: 12_000, dayWin: 30_000 },
+  { id: "casino_l", level: 3, maxBet: 4_000, dayStake: 50_000, dayWin: 100_000 },
 ];
 export const CASINO_IDS = CASINO_TIERS.map((t) => t.id);
-/** Gain net du jour, au plus : socle + part de la valeur de la partie (liquidités + placements) au début du jour. */
-export const CASINO_SAFE = { floor: 60_000, share: 0.5 };
-export const MIN_BET = 10;
+export const MIN_BET = 5;
 
 /** Suivi du jour (remis à zéro à minuit, heure de Paris). */
 export interface CasinoDay {
   date: string;
-  /** Total misé aujourd'hui. */
+  /** Capital misé aujourd'hui. */
   staked: number;
   /** Gains moins mises, aujourd'hui (négatif = perdu). */
   net: number;
-  /** Valeur de la partie à la première mise du jour (fixe le plafond de gain). */
-  worth: number;
   /** Nombre de parties jouées aujourd'hui. */
   plays: number;
 }
@@ -48,13 +43,12 @@ export function casinoDay(state: Pick<GameState, "casino">, at: number): CasinoD
   return d && d.date === parisDate(at) ? d : null;
 }
 
-/** Limites restantes pour aujourd'hui. `worth` = valeur actuelle de la partie (sert si c'est la première mise du jour). */
-export function casinoLimits(state: Pick<GameState, "buildings" | "casino">, at: number, worth: number) {
+/** Limites restantes pour aujourd'hui. */
+export function casinoLimits(state: Pick<GameState, "buildings" | "casino">, at: number) {
   const tier = casinoTier(state);
   if (!tier) return null;
   const day = casinoDay(state, at);
-  const base = day?.worth ?? worth;
-  const winCap = Math.floor(Math.min(tier.dayWin, CASINO_SAFE.floor + CASINO_SAFE.share * Math.max(0, base)));
+  const winCap = tier.dayWin;
   const staked = day?.staked ?? 0, net = day?.net ?? 0;
   return {
     tier,
@@ -132,18 +126,16 @@ export interface CasinoResult {
   capped: boolean;
 }
 
-/**
- * Joue une partie : mise `bet` euros. `rng` renvoie un nombre dans [0, 1) (Math.random en jeu, fixé dans les tests).
- * `worth` = valeur actuelle de la partie (liquidités + placements), pour le plafond de gain.
- */
-export function playCasino(state: GameState, choice: CasinoChoice, bet: number, at: number, worth: number, rng: () => number = Math.random): CasinoResult | { ok: false; error: string } {
-  const lim = casinoLimits(state, at, worth);
+/** Joue une partie : mise `bet` de capital. `rng` renvoie un nombre dans [0, 1) (Math.random en jeu, fixé dans les tests). */
+export function playCasino(state: GameState, choice: CasinoChoice, bet: number, at: number, rng: () => number = Math.random): CasinoResult | { ok: false; error: string } {
+  const lim = casinoLimits(state, at);
   if (!lim) return { ok: false, error: "Construisez d'abord un casino dans votre ville." };
   bet = Math.floor(bet);
-  if (!(bet >= MIN_BET)) return { ok: false, error: `Mise minimale : ${MIN_BET} €.` };
-  if (bet > lim.maxBet) return { ok: false, error: `Mise maximale de votre casino : ${lim.maxBet.toLocaleString("fr-FR")} €. Améliorez-le pour miser plus.` };
-  if (bet > state.cash) return { ok: false, error: "Liquidités insuffisantes." };
-  if (bet > lim.stakeLeft) return { ok: false, error: lim.stakeLeft > 0 ? `Il ne vous reste que ${lim.stakeLeft.toLocaleString("fr-FR")} € à miser aujourd'hui.` : "Limite de mises du jour atteinte : revenez demain." };
+  const fr = (v: number) => v.toLocaleString("fr-FR");
+  if (!(bet >= MIN_BET)) return { ok: false, error: `Mise minimale : ${MIN_BET} de capital.` };
+  if (bet > lim.maxBet) return { ok: false, error: `Mise maximale de votre casino : ${fr(lim.maxBet)} de capital. Améliorez-le pour miser plus.` };
+  if (bet > Math.floor(state.capital ?? 0)) return { ok: false, error: "Capital insuffisant : vos placements en bourse en produisent chaque jour." };
+  if (bet > lim.stakeLeft) return { ok: false, error: lim.stakeLeft > 0 ? `Il ne vous reste que ${fr(lim.stakeLeft)} de capital à miser aujourd'hui.` : "Limite de mises du jour atteinte : revenez demain." };
   if (lim.winLeft <= 0) return { ok: false, error: "Plafond de gains du jour atteint : le casino vous attend demain." };
 
   let mult: number, outcome: CasinoOutcome;
@@ -167,14 +159,14 @@ export function playCasino(state: GameState, choice: CasinoChoice, bet: number, 
   // Gain net limité à ce qu'il reste du plafond du jour
   let payout = Math.floor(bet * mult), capped = false;
   if (payout - bet > lim.winLeft) { payout = bet + lim.winLeft; capped = true; }
-  const day = casinoDay(state, at) ?? { date: parisDate(at), staked: 0, net: 0, worth: Math.max(0, Math.floor(worth)), plays: 0 };
+  const day = casinoDay(state, at) ?? { date: parisDate(at), staked: 0, net: 0, plays: 0 };
   const round2 = (v: number) => Math.round(v * 100) / 100;
   return {
     ok: true,
     outcome, bet, payout, won: payout > bet, capped,
     state: {
       ...state,
-      cash: round2(state.cash - bet + payout),
+      capital: round2((state.capital ?? 0) - bet + payout),
       casino: { ...day, staked: day.staked + bet, net: day.net + payout - bet, plays: day.plays + 1 },
     },
   };

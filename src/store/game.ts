@@ -73,7 +73,7 @@ interface Store {
   leaveSandbox: () => void;
   /** Mode test : déclenche tout de suite un événement de ville. Renvoie son nom. */
   forceEvent: () => string | null;
-  /** Casino : joue une partie avec `bet` euros de liquidités. Renvoie le résultat, ou null (message d'erreur affiché). */
+  /** Casino : joue une partie avec `bet` de capital. Renvoie le résultat, ou null (message d'erreur affiché). */
   casino: (choice: CasinoChoice, bet: number) => CasinoResult | null;
   reset: () => void;
   notify: (text: string, kind?: "ok" | "error") => void;
@@ -204,8 +204,7 @@ export const useGame = create<Store>()(
       },
       casino: (choice, bet) => {
         const g = get().game;
-        const worth = g.cash + E.portfolioValue(g.holdings, get().prices());
-        const r = playCasino(g, choice, bet, now(), worth);
+        const r = playCasino(g, choice, bet, now());
         if (!r.ok) { get().notify(r.error, "error"); return null; }
         set({ game: r.state });
         return r;

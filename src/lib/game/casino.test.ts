@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import * as E from "./engine";
 import {
-  CASINO_SAFE, CASINO_TIERS, CRASH, SLOT_TRIPLE, SLOT_WEIGHTS, casinoLimits, crashPoint, playCasino, rouletteWins, slotPays, slotSymbol,
+  CASINO_TIERS, CRASH, SLOT_TRIPLE, SLOT_WEIGHTS, casinoLimits, crashPoint, playCasino, rouletteWins, slotPays, slotSymbol,
   type CasinoResult, type Symbol,
 } from "./casino";
 
@@ -9,7 +9,7 @@ const T0 = 1_700_000_000_000;
 const ok = (r: E.ActionResult) => { if (!r.ok) throw new Error(r.error); return r.state; };
 const played = (r: ReturnType<typeof playCasino>): CasinoResult => { if (!r.ok) throw new Error(r.error); return r; };
 /** Ville riche avec un casino de niveau `level`. */
-const withCasino = (level = 1): E.GameState => ({ ...E.newGame(T0), cash: 5_000_000, capital: 1e9, population: 50_000, buildings: { ...E.newGame(T0).buildings, [CASINO_TIERS[level - 1].id]: 1 } });
+const withCasino = (level = 1): E.GameState => ({ ...E.newGame(T0), cash: 1_000, capital: 500_000, population: 50_000, buildings: { ...E.newGame(T0).buildings, [CASINO_TIERS[level - 1].id]: 1 } });
 const seq = (...v: number[]) => { let i = 0; return () => v[i++ % v.length]; };
 
 describe("casino : règles des jeux", () => {
@@ -44,45 +44,42 @@ describe("casino : règles des jeux", () => {
 
 describe("casino : déblocage et limites", () => {
   it("il faut un casino dans la ville", () => {
-    const r = playCasino({ ...E.newGame(T0), cash: 100_000 }, { game: "slots" }, 100, T0, 100_000);
+    const r = playCasino({ ...E.newGame(T0), capital: 100_000 }, { game: "slots" }, 100, T0);
     expect(r.ok).toBe(false);
   });
 
-  it("une partie gagnée et une perdue changent les liquidités et le suivi du jour", () => {
+  it("on mise du capital, jamais des liquidités", () => {
     let g = withCasino();
-    const win = played(playCasino(g, { game: "roulette", bet: { kind: "number", n: 7 } }, 1_000, T0, g.cash, seq(7 / 37 + 0.001)));
-    expect(win.payout).toBe(36_000);
-    expect(win.state.cash).toBe(g.cash + 35_000);
+    const win = played(playCasino(g, { game: "roulette", bet: { kind: "number", n: 7 } }, 100, T0, seq(7 / 37 + 0.001)));
+    expect(win.payout).toBe(3_600);
+    expect(win.state.capital).toBe(g.capital! + 3_500);
+    expect(win.state.cash).toBe(g.cash);
     g = win.state;
-    const lose = played(playCasino(g, { game: "crash", target: 2 }, 1_000, T0, g.cash, seq(0)));
+    const lose = played(playCasino(g, { game: "crash", target: 2 }, 100, T0, seq(0)));
     expect(lose.payout).toBe(0);
-    expect(lose.state.casino).toMatchObject({ staked: 2_000, net: 34_000, plays: 2 });
+    expect(lose.state.capital).toBe(g.capital! - 100);
+    expect(lose.state.casino).toMatchObject({ staked: 200, net: 3_400, plays: 2 });
+    // Sans capital, pas de mise, même avec la caisse pleine
+    expect(playCasino({ ...withCasino(), cash: 1e9, capital: 50 }, { game: "slots" }, 100, T0).ok).toBe(false);
   });
 
   it("mise max, total du jour, et gain plafonné", () => {
     const g = withCasino();
-    expect(playCasino(g, { game: "slots" }, 2_001, T0, g.cash).ok).toBe(false);
-    // Plafond de gain : 60 000 € au niveau 1 → un numéro plein à 2 000 € (72 000 €) est ramené au plafond
-    const r = played(playCasino(g, { game: "roulette", bet: { kind: "number", n: 7 } }, 2_000, T0, g.cash, seq(7 / 37 + 0.001)));
+    expect(playCasino(g, { game: "slots" }, 201, T0).ok).toBe(false);
+    // Plafond de gain : 6 000 au niveau 1 → un numéro plein à 200 (7 200) est ramené au plafond
+    const r = played(playCasino(g, { game: "roulette", bet: { kind: "number", n: 7 } }, 200, T0, seq(7 / 37 + 0.001)));
     expect(r.capped).toBe(true);
-    expect(r.payout - r.bet).toBe(60_000);
-    expect(playCasino(r.state, { game: "slots" }, 100, T0, r.state.cash).ok).toBe(false);
+    expect(r.payout - r.bet).toBe(6_000);
+    expect(playCasino(r.state, { game: "slots" }, 10, T0).ok).toBe(false);
     // Le lendemain (heure de Paris), tout repart de zéro
-    expect(playCasino(r.state, { game: "slots" }, 100, T0 + 86_400_000, r.state.cash).ok).toBe(true);
-  });
-
-  it("le gain du jour reste sous la marge de l'anti-triche pour une petite partie", () => {
-    const g = { ...withCasino(3), cash: 50_000 };
-    const lim = casinoLimits(g, T0, 50_000)!;
-    expect(lim.winCap).toBe(CASINO_SAFE.floor + 25_000);
-    expect(lim.winCap).toBeLessThan(150_000);
+    expect(playCasino(r.state, { game: "slots" }, 10, T0 + 86_400_000).ok).toBe(true);
   });
 
   it("le total misé du jour est limité", () => {
     let g = withCasino();
-    for (let i = 0; i < 12; i++) g = played(playCasino(g, { game: "crash", target: 2 }, 2_000, T0, g.cash, seq(0))).state;
-    expect(playCasino(g, { game: "crash", target: 2 }, 2_000, T0, g.cash, seq(0)).ok).toBe(false); // 24 000 + 2 000 > 25 000
-    expect(playCasino(g, { game: "crash", target: 2 }, 1_000, T0, g.cash, seq(0)).ok).toBe(true);
+    for (let i = 0; i < 12; i++) g = played(playCasino(g, { game: "crash", target: 2 }, 200, T0, seq(0))).state;
+    expect(playCasino(g, { game: "crash", target: 2 }, 200, T0, seq(0)).ok).toBe(false); // 2 400 + 200 > 2 500
+    expect(playCasino(g, { game: "crash", target: 2 }, 100, T0, seq(0)).ok).toBe(true);
   });
 
   it("le casino s'améliore sans la recherche « Rénovation urbaine »", () => {
@@ -90,6 +87,6 @@ describe("casino : déblocage et limites", () => {
     g = ok(E.build(g, "casino", T0, { x: 7, y: 7 }));
     g = ok(E.upgrade(g, { x: 7, y: 7 }, T0));
     expect(g.buildings.casino_m).toBe(1);
-    expect(casinoLimits(g, T0, g.cash)!.maxBet).toBe(10_000);
+    expect(casinoLimits(g, T0)!.maxBet).toBe(CASINO_TIERS[1].maxBet);
   });
 });
